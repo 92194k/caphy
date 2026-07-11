@@ -1,0 +1,1 @@
+# Makes the 'storage' folder an importable Python package.

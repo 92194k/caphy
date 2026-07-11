@@ -1,0 +1,1 @@
+# Makes the 'web' folder an importable Python package.
