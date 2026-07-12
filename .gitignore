@@ -1,0 +1,19 @@
+# ---- Secrets: NEVER commit these ----
+firebase_key.json
+caphy_app/android/app/google-services.json
+
+# ---- Python ----
+venv/
+__pycache__/
+*.pyc
+
+# ---- Generated data (don't need to share) ----
+caphy.db
+captures/
+captures_compressed/
+cloud_sim/
+models/
+
+# ---- Flutter build junk ----
+caphy_app/build/
+caphy_app/.dart_tool/
