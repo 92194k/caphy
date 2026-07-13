@@ -1,0 +1,8 @@
+# CAPHY custom dataset config (YOLO format)
+path: training/dataset      # dataset root
+train: images/train         # training images (relative to path)
+val: images/val             # validation images (relative to path)
+
+# classes - keep 'person' as class 0. Add more if you label other things.
+names:
+  0: person
