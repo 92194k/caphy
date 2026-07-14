@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CAPHY - Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body{align-items:center;justify-content:center}
+    .box{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:38px;width:370px}
+    .box .logo{width:56px;height:56px;border-radius:14px;margin:0 auto 12px}
+    .remember{display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:12.5px}
+    .remember label{display:flex;align-items:center;gap:8px;color:var(--muted);margin:0;cursor:pointer}
+    .remember input{width:16px;height:16px;padding:0;accent-color:var(--teal)}
+    .forgot{color:var(--teal2);cursor:pointer}
+    .hint{display:none;color:var(--muted);font-size:11.5px;background:var(--bg2);border:1px solid var(--line);
+      border-radius:9px;padding:10px 12px;margin-top:12px;line-height:1.5}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div style="text-align:center;margin-bottom:6px">
+      <div class="logo">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#08110f" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>
+      </div>
+      <b style="font-size:26px;letter-spacing:3px">CAPHY</b>
+      <div style="color:var(--teal2);font-size:11px;letter-spacing:3px">SECURITY CONSOLE</div>
+    </div>
+    <form method="post">
+      <label>USERNAME</label><input name="username" value="admin" style="width:100%">
+      <label>PASSWORD</label><input name="password" type="password" style="width:100%">
+      <div class="remember">
+        <label><input type="checkbox" name="remember" value="on"> Remember this device</label>
+        <span class="forgot" onclick="document.getElementById('h').style.display='block'">Forgot?</span>
+      </div>
+      <div id="h" class="hint">
+        This console runs locally on your device. If you're locked out, reset the password from
+        <b>Settings &rarr; Users</b> on a signed-in device, or restore the default <b>admin / admin</b>.
+      </div>
+      <div style="color:var(--red);font-size:12px;margin-top:10px">{{ err }}</div>
+      <button class="btn" style="width:100%;margin-top:18px;padding:12px">Sign In</button>
+    </form>
+    <div style="color:var(--dim);font-size:11px;text-align:center;margin-top:16px">Default: admin / admin</div>
+  </div>
+</body>
+</html>

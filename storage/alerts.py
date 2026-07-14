@@ -17,9 +17,10 @@ import cv2
 
 class AlertManager:
     def __init__(self, db, captures_dir, cooldown_sec,
-                 snapshot_tiers, record_tiers, presence_grace_sec):
+                 snapshot_tiers, record_tiers, presence_grace_sec, camera_name=None):
         self.db = db
         self.dir = captures_dir
+        self.camera_name = camera_name
         self.cooldown = cooldown_sec
         self.snapshot_tiers = set(snapshot_tiers)
         self.record_tiers = set(record_tiers)
@@ -81,7 +82,8 @@ class AlertManager:
             snapshot_path = os.path.join(self.dir, f"alert_{self._stamp()}_t{tier}.jpg")
             cv2.imwrite(snapshot_path, frame)
         video_path = self._video_path if tier in self.record_tiers else None
-        alert_id = self.db.add_alert(tier, p["distance_m"], p["conf"], snapshot_path, video_path)
+        alert_id = self.db.add_alert(tier, p["distance_m"], p["conf"], snapshot_path,
+                                     video_path, self.camera_name)
         self.db.add_threat_log(alert_id, result["motion_area"],
                                p["box"][3] - p["box"][1], p["distance_m"], tier)
         return alert_id

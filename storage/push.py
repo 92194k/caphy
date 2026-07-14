@@ -4,6 +4,12 @@ Uploads the alert snapshot to Firebase Storage, gets a shareable URL, and
 includes it in the push so the phone shows the real photo. The storage bucket
 name is read from config.FIREBASE_BUCKET. Safe no-op if key/library/bucket missing.
 """
+import threading
+
+# One Firebase app is shared by every camera worker. This lock makes the
+# "check if initialized, else initialize" step atomic so multiple worker
+# threads starting at once don't race and trip "default app already exists".
+_INIT_LOCK = threading.Lock()
 
 
 class PushSender:
@@ -21,9 +27,10 @@ class PushSender:
             if not os.path.exists(key_path):
                 print(f"[CAPHY] Push off (no key at {key_path}).")
                 return
-            if not firebase_admin._apps:
-                opts = {"storageBucket": bucket} if bucket else None
-                firebase_admin.initialize_app(credentials.Certificate(key_path), opts)
+            with _INIT_LOCK:
+                if not firebase_admin._apps:
+                    opts = {"storageBucket": bucket} if bucket else None
+                    firebase_admin.initialize_app(credentials.Certificate(key_path), opts)
             self._messaging = messaging
             if bucket:
                 try:
@@ -48,6 +55,14 @@ class PushSender:
         except Exception as e:
             print(f"[CAPHY] Snapshot upload failed ({e}).")
             return None
+
+    def send_async(self, tier, distance, snapshot_path=None, camera="Front Gate"):
+        """Fire-and-forget: run the upload + push on a background thread so the
+        camera/detection loop never blocks on the network."""
+        if not self.enabled:
+            return
+        threading.Thread(target=self.send, args=(tier, distance, snapshot_path, camera),
+                         daemon=True).start()
 
     def send(self, tier, distance, snapshot_path=None, camera="Front Gate"):
         if not self.enabled:

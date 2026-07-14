@@ -2,7 +2,16 @@
 
 # ---- Camera ----
 CAMERA_INDEX  = 0
-FRAME_WIDTH   = 640
+AUTO_SCAN_CAMERAS = True     # auto-find any plugged-in / built-in camera (USB, laptop, DroidCam)
+MAX_CAMERAS       = 2        # system is limited to 2 cameras (CCTV grid)
+EXTRA_CAMERAS     = [        # network (WiFi/IP) cameras added by URL
+    # V380 Pro removed: it has no ONVIF/RTSP option, so it cannot stream to CAPHY.
+    # Use a phone as the 2nd camera instead (IP Webcam app) -> paste its URL here, e.g.:
+    # "http://192.168.1.6:4747/video",
+]
+CAMERAS           = [0, 1]   # used ONLY if AUTO_SCAN_CAMERAS = False (manual list)
+CAMERA_NAMES      = ["Cam 0", "Cam 1"]   # display names per camera slot - rename freely (e.g. "Front Gate")
+FRAME_WIDTH   = 640    # safe, widely-supported resolution (480x360 is non-standard and breaks some cams)
 FRAME_HEIGHT  = 480
 
 # ---- Factor 1: Motion (pixel-change via MOG2 background subtraction) ----
@@ -63,7 +72,10 @@ BATTERY_LOW       = 20     # percent at/below this = low battery warning
 POWER_SAVE_SKIP   = 2      # in power-save mode, run YOLO every Nth frame
 
 # ---- Performance ----
-PERSON_EVERY_N = 2     # run YOLO every Nth frame (1 = every frame, 2 = half as often = ~2x FPS)
+PERSON_EVERY_N = 8     # run YOLO every Nth frame (higher = smoother video, less CPU)
+PERSON_IMGSZ   = 256   # YOLO input size (lower = much faster; 320 fastest, 640 most accurate)
+CAP_BUFFERSIZE = 1     # keep only the newest frame (kills lag/delay build-up)
+JPEG_QUALITY   = 55    # MJPEG stream quality 1-100 (low = lightest stream)
 
 # ---- Firebase Storage (real photos on phone) ----
 FIREBASE_BUCKET = "caphy-c6b77.firebasestorage.app"    # e.g. "caphy-xxxx.appspot.com"  (from Firebase Console -> Storage)

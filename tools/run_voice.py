@@ -1,3 +1,8 @@
+# --- path bootstrap: run from tools/ but import project modules at repo root ---
+import sys, os as _bootos
+sys.path.insert(0, _bootos.path.dirname(_bootos.path.dirname(_bootos.path.abspath(__file__))))
+# --- end bootstrap ---
+
 """CAPHY Phase 8 - Voice control.  Run:  python run_voice.py
 
 Say one of:  arm system  /  disarm system  /  stop siren  /  system status

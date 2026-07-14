@@ -1,3 +1,8 @@
+# --- path bootstrap: run from tools/ but import project modules at repo root ---
+import sys, os as _bootos
+sys.path.insert(0, _bootos.path.dirname(_bootos.path.dirname(_bootos.path.abspath(__file__))))
+# --- end bootstrap ---
+
 import queue, json
 import sounddevice as sd
 from vosk import Model, KaldiRecognizer

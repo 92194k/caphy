@@ -37,6 +37,7 @@ class Database:
             confidence    REAL,
             snapshot_path TEXT,
             video_path    TEXT,
+            camera        TEXT,                -- which camera fired the alert
             synced        INTEGER DEFAULT 0,   -- 0 = not uploaded yet (for Phase 6)
             timestamp     TEXT);
 
@@ -65,6 +66,16 @@ class Database:
             armed        INTEGER,
             night_vision INTEGER);
         """)
+        # migration: add 'camera' column to alert databases created before this field existed.
+        # Wrapped in try/except because two camera workers open the DB at the same moment on
+        # startup and can race to add the column; the loser would otherwise crash its thread
+        # with "duplicate column name" and take that camera offline.
+        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(alerts)")]
+        if "camera" not in cols:
+            try:
+                self.conn.execute("ALTER TABLE alerts ADD COLUMN camera TEXT")
+            except Exception:
+                pass   # another connection already added it
         self.conn.commit()
 
     def _seed(self):
@@ -79,12 +90,12 @@ class Database:
                 (1500, 0.5, 1, 0))
         self.conn.commit()
 
-    def add_alert(self, tier, distance_m, confidence, snapshot_path, video_path):
+    def add_alert(self, tier, distance_m, confidence, snapshot_path, video_path, camera=None):
         """Save one confirmed threat. Returns the new alert_id."""
         cur = self.conn.execute(
-            "INSERT INTO alerts(tier, distance_m, confidence, snapshot_path, video_path, synced, timestamp) "
-            "VALUES(?,?,?,?,?,0,?)",
-            (tier, distance_m, confidence, snapshot_path, video_path, _now()))
+            "INSERT INTO alerts(tier, distance_m, confidence, snapshot_path, video_path, camera, synced, timestamp) "
+            "VALUES(?,?,?,?,?,?,0,?)",
+            (tier, distance_m, confidence, snapshot_path, video_path, camera, _now()))
         self.conn.commit()
         return cur.lastrowid
 

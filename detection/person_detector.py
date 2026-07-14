@@ -7,18 +7,19 @@ part of CAPHY that works regardless of lighting or whether the face is visible.
 
 
 class PersonDetector:
-    def __init__(self, model_path, person_class, conf):
+    def __init__(self, model_path, person_class, conf, imgsz=640):
         # imported here (not at top) so the motion half of the system can still
         # run for testing even if ultralytics is not installed yet.
         from ultralytics import YOLO
         self.model = YOLO(model_path)
         self.person_class = person_class
         self.conf = conf
+        self.imgsz = imgsz            # smaller = faster inference
 
     def detect(self, frame):
         """Return a list of persons: [{'box': (x1,y1,x2,y2), 'conf': float}, ...]."""
         results = self.model(
-            frame, verbose=False, classes=[self.person_class], conf=self.conf)
+            frame, verbose=False, classes=[self.person_class], conf=self.conf, imgsz=self.imgsz)
 
         persons = []
         for r in results:

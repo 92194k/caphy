@@ -7,6 +7,12 @@ venv/
 __pycache__/
 *.pyc
 
+# ---- Model weights (large; download separately) ----
+*.pt
+
+# ---- YOLO training runs ----
+runs/
+
 # ---- Generated data (don't need to share) ----
 caphy.db
 captures/
@@ -17,3 +23,5 @@ models/
 # ---- Flutter build junk ----
 caphy_app/build/
 caphy_app/.dart_tool/
+# ---- runtime UI prefs (per-install) ----
+ui_prefs.json
