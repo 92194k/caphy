@@ -17,3 +17,6 @@ models/
 # ---- Flutter build junk ----
 caphy_app/build/
 caphy_app/.dart_tool/
+# YOLO training outputs
+runs/
+*.cache
