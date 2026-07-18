@@ -51,6 +51,28 @@ class Database:
             timestamp    TEXT,
             FOREIGN KEY(alert_id) REFERENCES alerts(alert_id));
 
+        -- EVALUATION DATA (thesis Chapter 4).
+        -- alerts/threat_logs only record events that BECAME alerts. This table
+        -- records every motion event, including the ones Factor 2 rejected -
+        -- that rejected count is the evidence that two-factor validation cuts
+        -- false alarms, and it was being thrown away.
+        CREATE TABLE IF NOT EXISTS detection_events(
+            event_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            session      TEXT,     -- experiment label, e.g. "daylight-run1"
+            ground_truth TEXT,     -- 'person' / 'no_person' / '' if unlabelled
+            camera       TEXT,
+            motion       INTEGER,  -- Factor 1 fired
+            ran_yolo     INTEGER,  -- Factor 2 actually ran this frame
+            person       INTEGER,  -- Factor 2 confirmed a person
+            persons_n    INTEGER,
+            motion_area  REAL,
+            bbox_height  INTEGER,
+            est_distance REAL,
+            tier         INTEGER,
+            confidence   REAL,
+            fps          REAL,
+            timestamp    TEXT);
+
         CREATE TABLE IF NOT EXISTS voice_commands(
             cmd_id       INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id      INTEGER,
@@ -105,6 +127,25 @@ class Database:
             "INSERT INTO threat_logs(alert_id, motion_area, bbox_height, est_distance, tier, timestamp) "
             "VALUES(?,?,?,?,?,?)",
             (alert_id, motion_area, bbox_height, est_distance, tier, _now()))
+        self.conn.commit()
+
+    def log_detection_event(self, session, ground_truth, camera, motion, ran_yolo,
+                            person, persons_n, motion_area, bbox_height,
+                            est_distance, tier, confidence, fps):
+        """Record one motion event and what Factor 2 decided about it.
+
+        This is the raw data for the thesis evaluation. Rows where
+        motion=1 and person=0 are the false alarms two-factor validation
+        prevented - a motion-only system would have alerted on every one.
+        """
+        self.conn.execute(
+            "INSERT INTO detection_events(session, ground_truth, camera, motion,"
+            " ran_yolo, person, persons_n, motion_area, bbox_height,"
+            " est_distance, tier, confidence, fps, timestamp)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (session, ground_truth, camera, int(motion), int(ran_yolo),
+             int(person), persons_n, motion_area, bbox_height, est_distance,
+             tier, confidence, fps, _now()))
         self.conn.commit()
 
     def count_alerts(self):

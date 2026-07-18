@@ -25,3 +25,6 @@ caphy_app/build/
 caphy_app/.dart_tool/
 # ---- runtime UI prefs (per-install) ----
 ui_prefs.json
+
+# ---- API keys (never commit) ----
+caphy_keys.json

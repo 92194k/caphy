@@ -13,9 +13,15 @@ a{text-decoration:none;color:inherit}
 .side{width:230px;background:var(--bg2);border-right:1px solid var(--line2);
   padding:16px 0;flex-shrink:0;position:fixed;height:100vh;display:flex;flex-direction:column}
 .brand{display:flex;align-items:center;gap:11px;padding:4px 20px 18px}
-.logo{width:38px;height:38px;border-radius:10px;
-  background:linear-gradient(135deg,var(--teal),var(--teal2));
-  display:flex;align-items:center;justify-content:center;color:#08110f;box-shadow:0 0 14px rgba(61,215,196,.35)}
+.logo{width:38px;height:38px;border-radius:10px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 14px rgba(61,215,196,.35)}
+.logo svg{display:block}
+/* living CAPHY logo — blink + glance */
+.caphy-logo .eye{transform-box:fill-box;transform-origin:center;animation:caphy-blink 4.2s infinite}
+.caphy-logo .pupil{transform-box:fill-box;transform-origin:center;animation:caphy-glance 4.2s ease-in-out infinite}
+@keyframes caphy-blink{0%,86%,100%{transform:scaleY(1)}90%{transform:scaleY(.08)}94%{transform:scaleY(1)}}
+@keyframes caphy-glance{0%,50%,100%{transform:translateX(0)}25%{transform:translateX(6px)}75%{transform:translateX(-6px)}}
 .brand b{font-size:19px;letter-spacing:3px}
 .brand small{display:block;color:var(--teal2);font-size:9px;letter-spacing:3px;margin-top:1px}
 .nav{margin-top:6px}

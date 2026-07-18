@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'api.dart';
 import 'theme.dart';
+import 'voice_screen.dart';
 
 class LiveTab extends StatefulWidget {
   const LiveTab({super.key});
@@ -189,34 +191,8 @@ class _LiveTabState extends State<LiveTab> {
   }
 
   void _openVoice() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: cPanel2,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Voice Command',
-              style: TextStyle(
-                  color: cText, fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          const Text('Tap a command to send it to the system',
-              style: TextStyle(color: cMuted, fontSize: 12)),
-          const SizedBox(height: 16),
-          Wrap(spacing: 10, runSpacing: 10, children: [
-            for (final c in ['Arm', 'Disarm', 'Snapshot', 'Siren', 'Stop', 'Night vision'])
-              FilledButton.tonal(
-                style: FilledButton.styleFrom(backgroundColor: cPanel),
-                onPressed: () async {
-                  Navigator.pop(context);
-                  final r = await Api.voice(c);
-                  _toast(r['message']?.toString() ?? 'Done');
-                },
-                child: Text(c, style: const TextStyle(color: cTeal2)),
-              ),
-          ]),
-        ]),
-      ),
-    );
+    Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const VoiceScreen()));
   }
 
   void _openFullscreen() {
@@ -235,34 +211,109 @@ class _FullscreenView extends StatefulWidget {
 class _FullscreenViewState extends State<_FullscreenView> {
   int _f = 0;
   Timer? _t;
+  bool _showControls = true;
+  Timer? _hideTimer;
+
   @override
   void initState() {
     super.initState();
+
+    // True fullscreen: hide the status bar AND the navigation bar.
+    // immersiveSticky means a swipe from the edge shows them briefly and then
+    // they slide away again - right for a CCTV view you watch for a long time.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    // Camera footage is landscape, so rotate to match.
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
     _t = Timer.periodic(
         const Duration(milliseconds: 250), (_) => setState(() => _f++));
+    _startHideTimer();
   }
 
   @override
   void dispose() {
     _t?.cancel();
+    _hideTimer?.cancel();
+
+    // Put the phone back the way we found it, or the rest of the app stays
+    // stuck fullscreen and locked in landscape.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
+  }
+
+  void _startHideTimer() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showControls = false);
+    });
+  }
+
+  void _tapScreen() {
+    setState(() => _showControls = !_showControls);
+    if (_showControls) _startHideTimer();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: Colors.black,
-        body: Stack(children: [
-          Center(
-            child: Image.network('${Api.frameUrl(widget.cam)}&t=$_f',
-                fit: BoxFit.contain, gaplessPlayback: true),
-          ),
-          Positioned(
-            top: 40,
-            right: 16,
-            child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                onPressed: () => Navigator.pop(context)),
-          ),
-        ]),
+        body: GestureDetector(
+          onTap: _tapScreen,
+          child: Stack(children: [
+            Positioned.fill(
+              child: Center(
+                child: Image.network('${Api.frameUrl(widget.cam)}&t=$_f',
+                    fit: BoxFit.contain, gaplessPlayback: true),
+              ),
+            ),
+            // Controls fade out so nothing covers the footage; tap to bring back.
+            AnimatedOpacity(
+              opacity: _showControls ? 1 : 0,
+              duration: const Duration(milliseconds: 250),
+              child: IgnorePointer(
+                ignoring: !_showControls,
+                child: Stack(children: [
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.close,
+                            color: Colors.white, size: 28),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text('Tap to hide controls',
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 12)),
+                      ),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ]),
+        ),
       );
 }

@@ -1,0 +1,399 @@
+{
+  "version": 1,
+  "notes": "Phrases must use words that exist in the Vosk model lexicon for that language. Keep this file as the single source of truth for voice phrases - do not hardcode phrases in voice_commands.py. Each intent 'id' matches a method name on the controller object in app.py.",
+  "fallback": {
+    "unrecognized": {
+      "en": "Sorry, I did not understand that command.",
+      "tl": "Pasensya, hindi ko naintindihan ang utos."
+    },
+    "system_error": {
+      "en": "Something went wrong running that command.",
+      "tl": "May problema sa pagpatakbo ng utos."
+    }
+  },
+  "intents": [
+    {
+      "id": "arm_system",
+      "phrases": {
+        "en": [
+          "arm system",
+          "activate security",
+          "start security",
+          "enable security",
+          "protect house"
+        ],
+        "tl": [
+          "i arm ang sistema",
+          "i activate ang security",
+          "simulan ang security",
+          "bantayan ang bahay",
+          "paandar security"
+        ]
+      },
+      "response": {
+        "en": "Security system armed.",
+        "tl": "Naka arm na ang security system."
+      }
+    },
+    {
+      "id": "disarm_system",
+      "phrases": {
+        "en": [
+          "disarm system",
+          "disable security",
+          "stop security"
+        ],
+        "tl": [
+          "i disarm ang sistema",
+          "patayin security",
+          "itigil security"
+        ]
+      },
+      "response": {
+        "en": "Security system disarmed.",
+        "tl": "Naka disarm na ang security system."
+      },
+      "sensitive": true
+    },
+    {
+      "id": "camera_on",
+      "phrases": {
+        "en": [
+          "turn on camera",
+          "start camera",
+          "enable camera"
+        ],
+        "tl": [
+          "buksan camera",
+          "paandar camera"
+        ]
+      },
+      "response": {
+        "en": "Camera activated.",
+        "tl": "Nabuksan ko na ang camera."
+      }
+    },
+    {
+      "id": "camera_off",
+      "phrases": {
+        "en": [
+          "turn off camera",
+          "disable camera",
+          "stop camera"
+        ],
+        "tl": [
+          "patayin camera",
+          "isara camera"
+        ]
+      },
+      "response": {
+        "en": "Camera deactivated. Detection is paused.",
+        "tl": "Napatay ko na ang camera. Naka pause ang detection."
+      }
+    },
+    {
+      "id": "siren_on",
+      "phrases": {
+        "en": [
+          "activate siren",
+          "turn on siren",
+          "sound alarm",
+          "start siren"
+        ],
+        "tl": [
+          "paandarin sirena",
+          "patunugin sirena"
+        ]
+      },
+      "response": {
+        "en": "Siren activated.",
+        "tl": "Pinatunog ko na ang sirena."
+      }
+    },
+    {
+      "id": "siren_off",
+      "phrases": {
+        "en": [
+          "stop siren",
+          "silence siren",
+          "disable siren"
+        ],
+        "tl": [
+          "patayin sirena",
+          "itigil sirena",
+          "tahimik sirena"
+        ]
+      },
+      "response": {
+        "en": "Siren silenced.",
+        "tl": "Pinatay ko na ang sirena."
+      }
+    },
+    {
+      "id": "emergency_on",
+      "phrases": {
+        "en": [
+          "emergency mode",
+          "activate emergency mode",
+          "panic mode",
+          "security emergency"
+        ],
+        "tl": [
+          "may emergency",
+          "activate emergency",
+          "panic mode"
+        ]
+      },
+      "response": {
+        "en": "Emergency mode activated.",
+        "tl": "Naka activate na ang emergency mode."
+      }
+    },
+    {
+      "id": "emergency_off",
+      "phrases": {
+        "en": [
+          "disable emergency mode",
+          "stop emergency mode",
+          "cancel emergency"
+        ],
+        "tl": [
+          "patayin emergency mode",
+          "itigil emergency mode"
+        ]
+      },
+      "response": {
+        "en": "Emergency mode disabled.",
+        "tl": "Napatay ko na ang emergency mode."
+      }
+    },
+    {
+      "id": "night_vision_on",
+      "phrases": {
+        "en": [
+          "enable night vision",
+          "activate night vision",
+          "start night vision"
+        ],
+        "tl": [
+          "buksan night vision",
+          "paandar night vision"
+        ]
+      },
+      "response": {
+        "en": "Night vision enabled.",
+        "tl": "Naka on na ang night vision."
+      }
+    },
+    {
+      "id": "night_vision_off",
+      "phrases": {
+        "en": [
+          "disable night vision",
+          "stop night vision"
+        ],
+        "tl": [
+          "patayin night vision",
+          "itigil night vision"
+        ]
+      },
+      "response": {
+        "en": "Night vision disabled.",
+        "tl": "Naka off na ang night vision."
+      }
+    },
+    {
+      "id": "take_snapshot",
+      "phrases": {
+        "en": [
+          "take snapshot",
+          "capture image",
+          "take picture",
+          "take photo"
+        ],
+        "tl": [
+          "kumuha ng larawan",
+          "kuha ng litrato"
+        ]
+      },
+      "response": {
+        "en": "Snapshot captured.",
+        "tl": "Nakuha ko na ang larawan."
+      }
+    },
+    {
+      "id": "check_status",
+      "phrases": {
+        "en": [
+          "system status",
+          "check status",
+          "security status",
+          "what is the status"
+        ],
+        "tl": [
+          "status ng system",
+          "kamusta system",
+          "ano status"
+        ]
+      },
+      "response": {
+        "en": "System is {armed}. Camera is {camera}. Night vision is {night_vision}. {threat}",
+        "tl": "{armed} ang system. {camera} ang camera. {night_vision} ang night vision. {threat}"
+      },
+      "template": true
+    },
+    {
+      "id": "alert_status",
+      "phrases": {
+        "en": [
+          "recent alerts",
+          "show alerts",
+          "last alert",
+          "alert history"
+        ],
+        "tl": [
+          "mga alert",
+          "huling alert",
+          "ipakita alerts"
+        ]
+      },
+      "response": {
+        "en": "{count} recent alerts. Latest: {latest}",
+        "tl": "May {count} na alerts. Pinakahuli: {latest}"
+      },
+      "template": true
+    },
+    {
+      "id": "clear_alerts",
+      "phrases": {
+        "en": [
+          "clear alerts",
+          "delete alerts",
+          "remove alerts"
+        ],
+        "tl": [
+          "burahin alerts",
+          "tanggalin alerts"
+        ]
+      },
+      "response": {
+        "en": "Alerts cleared.",
+        "tl": "Nabura ko na ang mga alert."
+      }
+    },
+    {
+      "id": "threat_level",
+      "phrases": {
+        "en": [
+          "current threat level",
+          "threat level",
+          "danger level"
+        ],
+        "tl": [
+          "antas ng banta",
+          "gaano kalaki ang banta"
+        ]
+      },
+      "response": {
+        "en": "Current threat level is {tier}.",
+        "tl": "{tier} ang kasalukuyang antas ng banta."
+      },
+      "template": true
+    },
+    {
+      "id": "calibration",
+      "phrases": {
+        "en": [
+          "start calibration",
+          "run calibration",
+          "calibrate system"
+        ],
+        "tl": [
+          "simulan calibration",
+          "i calibrate ang system"
+        ]
+      },
+      "response": {
+        "en": "Calibration started. Please stand at the marked distances.",
+        "tl": "Nagsimula na ang calibration. Tumayo po sa mga markadong distansya."
+      }
+    },
+    {
+      "id": "greeting",
+      "phrases": {
+        "en": [
+          "hello caphy",
+          "hi caphy"
+        ],
+        "tl": [
+          "kumusta caphy",
+          "kamusta caphy"
+        ]
+      },
+      "response": {
+        "en": "Hello. CAPHY security system is online.",
+        "tl": "Magandang araw. Aktibo at handa ang CAPHY security system."
+      }
+    }
+  ],
+  "status_words": {
+    "en": {
+      "armed_true": "armed",
+      "armed_false": "disarmed",
+      "camera_true": "on",
+      "camera_false": "off",
+      "nv_true": "active",
+      "nv_false": "off",
+      "no_threat": "No current threat detected."
+    },
+    "tl": {
+      "armed_true": "Naka arm",
+      "armed_false": "Naka disarm",
+      "camera_true": "Naka on",
+      "camera_false": "Naka off",
+      "nv_true": "Aktibo",
+      "nv_false": "Naka off",
+      "no_threat": "Walang kasalukuyang banta."
+    }
+  },
+  "confirm": {
+    "yes": {
+      "en": [
+        "yes",
+        "yeah",
+        "yep",
+        "okay"
+      ],
+      "tl": [
+        "oo",
+        "opo",
+        "sige",
+        "tama"
+      ]
+    },
+    "no": {
+      "en": [
+        "no",
+        "nope",
+        "cancel"
+      ],
+      "tl": [
+        "hindi",
+        "huwag",
+        "wag"
+      ]
+    },
+    "ask": {
+      "en": "Are you sure?",
+      "tl": "Sigurado ka ba?"
+    },
+    "cancelled": {
+      "en": "Cancelled.",
+      "tl": "Kanselado."
+    },
+    "say_yes_no": {
+      "en": "Please say yes or no.",
+      "tl": "Pakisabi ng oo o hindi."
+    }
+  }
+}

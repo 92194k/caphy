@@ -174,53 +174,32 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Widget _alertRow(BuildContext context, dynamic a) {
-    final tier = (a['tier'] ?? 1) as int;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
-      child: InkWell(
+    final tier = asInt(a['tier'], 1);
+    final id = asInt(a['id']);
+    final event = (a['event'] ?? 'Alert #$id').toString();
+    final sub = '${a['distance_m'] ?? '-'} m'
+        '${a['camera'] != null ? ' · ${a['camera']}' : ''}'
+        ' · ${_time(a['timestamp'])}';
+    return Card(
+      color: cPanel,
+      margin: const EdgeInsets.only(bottom: 9),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: cLine),
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => AlertDetailScreen(id: a['id'] as int))),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: cPanel,
-            borderRadius: BorderRadius.circular(12),
-            border: Border(
-                left: BorderSide(color: tierColor(tier), width: 4),
-                top: BorderSide(color: cLine),
-                right: BorderSide(color: cLine),
-                bottom: BorderSide(color: cLine)),
-          ),
-          child: Row(children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    tierPill(tier),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text((a['event'] ?? 'Alert').toString(),
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: cText,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                  ]),
-                  const SizedBox(height: 4),
-                  Text(
-                      '${a['distance_m'] ?? '-'} m'
-                      '${a['camera'] != null ? ' · ${a['camera']}' : ''}',
-                      style: const TextStyle(color: cMuted, fontSize: 12)),
-                ],
-              ),
-            ),
-            Text(_time(a['timestamp']),
-                style: const TextStyle(color: cDim, fontSize: 11)),
-          ]),
+      ),
+      child: ListTile(
+        onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => AlertDetailScreen(id: id))),
+        leading: CircleAvatar(
+          backgroundColor: tierColor(tier).withValues(alpha: 0.2),
+          child: Text('$tier',
+              style: TextStyle(
+                  color: tierColor(tier), fontWeight: FontWeight.bold)),
         ),
+        title: Text(event,
+            style: const TextStyle(color: cText, fontWeight: FontWeight.w600)),
+        subtitle: Text(sub, style: const TextStyle(color: cMuted)),
+        trailing: const Icon(Icons.chevron_right, color: cDim),
       ),
     );
   }

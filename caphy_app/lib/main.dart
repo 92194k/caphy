@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api.dart';
 import 'theme.dart';
 import 'home_tab.dart';
@@ -6,9 +9,36 @@ import 'alerts_tab.dart';
 import 'live_tab.dart';
 import 'me_tab.dart';
 
+@pragma('vm:entry-point')
+Future<void> _bgHandler(RemoteMessage message) async {
+  // A notification payload is shown by the OS automatically when the app is
+  // in the background/terminated, so nothing to do here.
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Draw behind the status and navigation bars instead of being boxed in by
+  // them, and make both bars transparent so the dark theme runs edge to edge.
+  // The live camera view goes further and hides them entirely.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarDividerColor: Colors.transparent,
+  ));
+
   await Store.init();
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_bgHandler);
+    await FirebaseMessaging.instance.requestPermission();
+    await FirebaseMessaging.instance.subscribeToTopic('caphy_alerts');
+  } catch (_) {
+    // Firebase not set up / offline — the app still works over local Wi-Fi.
+  }
   runApp(const CaphyApp());
 }
 
@@ -108,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.shield, color: cTeal2, size: 46),
+                const Center(child: CaphyLogo(size: 56)),
                 const SizedBox(height: 10),
                 const Center(
                     child: Text('CAPHY',
@@ -118,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             letterSpacing: 3,
                             color: cText))),
                 const Center(
-                    child: Text('SECURITY CONSOLE',
+                    child: Text('AI SECURITY',
                         style: TextStyle(
                             fontSize: 11, letterSpacing: 3, color: cTeal2))),
                 const SizedBox(height: 24),
@@ -183,6 +213,36 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _i = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // foreground alert -> quick in-app banner, tap to open the alert
+    FirebaseMessaging.onMessage.listen((m) {
+      final n = m.notification;
+      if (n != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: cPanel,
+          content: Text('${n.title ?? "Alert"} — ${n.body ?? ""}',
+              style: const TextStyle(color: cText)),
+          action: SnackBarAction(
+            label: 'View',
+            textColor: cTeal2,
+            onPressed: () => _openAlert(m.data['alert_id']),
+          ),
+        ));
+      }
+    });
+    // tapped a notification while the app was in the background
+    FirebaseMessaging.onMessageOpenedApp.listen((m) => _openAlert(m.data['alert_id']));
+  }
+
+  void _openAlert(dynamic id) {
+    final aid = int.tryParse('${id ?? ''}');
+    if (aid == null || !mounted) return;
+    Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => AlertDetailScreen(id: aid)));
+  }
 
   @override
   Widget build(BuildContext context) {

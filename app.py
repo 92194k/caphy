@@ -5,9 +5,12 @@ Run modes:
     python app.py 0          -> LAPTOP only  (camera index 0)
     python app.py 1          -> PHONE only   (DroidCam index - check with list_cameras.py)
     python app.py 0 1        -> BOTH at once (CCTV grid)
-    python app.py 0 1   -> phone via IP Webcam URL, alone
 
 Then open http://127.0.0.1:5000 and log in (admin / admin).
+
+Voice lives ONLY in the phone app. The app does speech-to-text on the device,
+POSTs the words to /api/voice, and speaks the reply with its own text-to-speech.
+This PC never listens and never talks - no microphone, no Vosk, no TTS.
 """
 import sys
 import config
@@ -22,7 +25,8 @@ def parse_args(argv):
 
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
+    # strip flags so they are never mistaken for a camera index / URL
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
     if args:
         cameras = parse_args(args)
         print(f"[CAPHY] Cameras from command line: {cameras}")

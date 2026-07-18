@@ -127,13 +127,30 @@ class Api {
   static String frameUrl(int cam) =>
       '${Store.baseUrl}/api/frame/$cam?token=${Store.token}';
 
-  static Future<Map<String, dynamic>> voice(String command) async {
+  /// The list of commands CAPHY understands, served from voice/intents.json.
+  /// Fetched from the system so the app can never show a stale list.
+  static Future<List<dynamic>> intents() async {
+    try {
+      final r = await http.get(_u('/api/intents'), headers: _h);
+      if (r.statusCode == 200) {
+        final m = jsonDecode(r.body) as Map<String, dynamic>;
+        return (m['commands'] as List<dynamic>? ) ?? [];
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Send a spoken command. Fixed commands only - CAPHY does not converse.
+  /// Anything unrecognized comes back with ok:false and a "did not understand"
+  /// reply, which the app speaks.
+  static Future<Map<String, dynamic>> voice(String command,
+      {String lang = 'en'}) async {
     try {
       final r = await http.post(_u('/api/voice'),
-          headers: _h, body: jsonEncode({'command': command}));
+          headers: _h, body: jsonEncode({'command': command, 'lang': lang}));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
     } catch (_) {}
-    return {'ok': false, 'message': 'Could not reach the system'};
+    return {'ok': false, 'reply': '', 'message': 'Could not reach the system'};
   }
 
   static Future<bool> renameCamera(int cam, String name) async {

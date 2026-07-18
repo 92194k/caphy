@@ -58,18 +58,23 @@ class Worker(threading.Thread):
         names = getattr(config, "CAMERA_NAMES", [])
         self.name = names[cam_id] if cam_id < len(names) else f"Cam {cam_id}"
         self.running = True
+        self.paused = False             # camera OFF: release the device, stop detecting
         self.lock = threading.Lock()
         self.jpeg = None
         self.manual_record = False      # toggled by the phone Live tab
         self._mrec = None
         self._mrec_path = None
         self.stats = {"online": False, "motion": False, "person": False,
-                      "tier": 0, "distance": "-", "conf": "-", "fps": 0.0, "armed": True}
+                      "tier": 0, "distance": "-", "conf": "-", "fps": 0.0,
+                      "armed": True, "camera_on": True}
         self.logs = deque(maxlen=200)
 
         self.motion = MotionDetector(config.MOTION_MIN_AREA, config.MOG2_HISTORY,
                                      config.MOG2_VAR_THRESHOLD, config.MOTION_BLUR)
-        self.tier = TierEngine(config.DISTANCE_K, config.TIER1_MIN_DIST, config.TIER3_MAX_DIST)
+        self.tier = TierEngine(config.DISTANCE_K, config.TIER1_MIN_DIST,
+                               config.TIER3_MAX_DIST,
+                               getattr(config, "TIER_SMOOTHING", 0.35),
+                               getattr(config, "TIER_HYSTERESIS", 0.12))
         self.nv = NightVision(config.CLAHE_CLIP, config.CLAHE_TILE, config.NIGHT_LOW_LIGHT,
                               config.NIGHT_GAMMA, config.NIGHT_VISION_AUTO)
         self.person = None
@@ -120,26 +125,23 @@ class Worker(threading.Thread):
                               config.SNAPSHOT_TIERS, config.RECORD_TIERS, config.PRESENCE_GRACE_SEC,
                               self.name)
         push = PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC)
-        src = self.source
-        if isinstance(src, str) and src.isdigit():
-            src = int(src)
-        if isinstance(src, int) and os.name == "nt":
-            cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)   # DirectShow = reliable on Windows
-        else:
-            cap = cv2.VideoCapture(src)
-        try:
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, getattr(config, "CAP_BUFFERSIZE", 1))
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
-        except Exception:
-            pass
-        if not cap.isOpened():
-            self._log("WARN", "camera", f"{self.name}: source {self.source} did NOT open "
-                      f"(camera unplugged, wrong RTSP URL/password, or in use by another app?)")
-        else:
-            self._log("INFO", "camera", f"{self.name}: opened source {self.source}")
+        cap = self._open_capture()
         prev = time.time()
         while self.running:
+            # ---- camera OFF: release the device entirely, run no detection ----
+            if self.paused:
+                if cap is not None:
+                    cap.release()
+                    cap = None
+                    self._log("INFO", "camera", f"{self.name}: camera OFF (device released)")
+                self._store_placeholder("Camera off")
+                _update_siren(self.cam_id, False)
+                time.sleep(0.3)
+                continue
+            if cap is None:                      # coming back from OFF
+                cap = self._open_capture()
+                prev = time.time()
+
             ok, frame = cap.read()
             if not ok:
                 self._store_placeholder()
@@ -167,6 +169,30 @@ class Worker(threading.Thread):
                     self._log("DETECT", "yolo", f"person conf={result['persons'][0]['conf']:.2f} tier={result['tier']}")
                 else:
                     self._log("DETECT", "yolo", "motion, no person - ignored")
+
+                # ---- evaluation data (thesis Chapter 4) ----
+                # Logged only when EVAL_LOGGING is on, so normal runs don't
+                # fill the database. Records rejected motion too - that is the
+                # evidence that Factor 2 prevents false alarms.
+                if getattr(config, "EVAL_LOGGING", False):
+                    try:
+                        pp = result["persons"][0] if result["persons"] else None
+                        db.log_detection_event(
+                            session=getattr(config, "EVAL_SESSION", ""),
+                            ground_truth=getattr(config, "EVAL_GROUND_TRUTH", ""),
+                            camera=self.name,
+                            motion=True,
+                            ran_yolo=True,
+                            person=bool(result["persons"]),
+                            persons_n=len(result["persons"]),
+                            motion_area=result.get("motion_area", 0.0),
+                            bbox_height=(pp["box"][3] - pp["box"][1]) if pp else 0,
+                            est_distance=(pp.get("distance_m") if pp else None),
+                            tier=result["tier"],
+                            confidence=(pp["conf"] if pp else None),
+                            fps=round(fps, 1))
+                    except Exception as e:
+                        self._log("WARN", "eval", f"could not log event ({e})")
 
             siren_on = armed and result["threat"] and result["tier"] in config.SIREN_TIERS
             _update_siren(self.cam_id, siren_on)
@@ -196,7 +222,8 @@ class Worker(threading.Thread):
                     self._log("ALERT", "db", f"alert #{aid} Tier {result['tier']} saved")
                     if result["tier"] >= config.PUSH_MIN_TIER:
                         srow = db.conn.execute("SELECT snapshot_path FROM alerts WHERE alert_id=?", (aid,)).fetchone()
-                        push.send_async(result["tier"], p["distance_m"], srow["snapshot_path"] if srow else None, self.name)
+                        push.send_async(result["tier"], p["distance_m"],
+                                        srow["snapshot_path"] if srow else None, self.name, aid)
                         self._log("ALERT", "fcm", f"push Tier {result['tier']} queued")
 
             p0 = result["persons"][0] if result["persons"] else None
@@ -204,9 +231,33 @@ class Worker(threading.Thread):
                                 "person": bool(result["persons"]), "tier": result["tier"],
                                 "distance": (p0["distance_m"] if p0 else "-"),
                                 "conf": (round(p0["conf"], 2) if p0 else "-"),
-                                "fps": round(fps, 1), "armed": armed})
-        cap.release()
+                                "fps": round(fps, 1), "armed": armed,
+                                "camera_on": True})
+        if cap is not None:
+            cap.release()
         db.close()
+
+    def _open_capture(self):
+        """Open the video source. Returns a VideoCapture (possibly not opened)."""
+        src = self.source
+        if isinstance(src, str) and src.isdigit():
+            src = int(src)
+        if isinstance(src, int) and os.name == "nt":
+            cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)   # DirectShow = reliable on Windows
+        else:
+            cap = cv2.VideoCapture(src)
+        try:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, getattr(config, "CAP_BUFFERSIZE", 1))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
+        except Exception:
+            pass
+        if not cap.isOpened():
+            self._log("WARN", "camera", f"{self.name}: source {self.source} did NOT open "
+                      f"(camera unplugged, wrong RTSP URL/password, or in use by another app?)")
+        else:
+            self._log("INFO", "camera", f"{self.name}: opened source {self.source}")
+        return cap
 
     def _store(self, frame, stats):
         q = getattr(config, "JPEG_QUALITY", 80)
@@ -216,15 +267,17 @@ class Worker(threading.Thread):
                 self.jpeg = buf.tobytes()
                 self.stats = stats
 
-    def _store_placeholder(self):
+    def _store_placeholder(self, text="Camera offline"):
         img = np.full((config.FRAME_HEIGHT, config.FRAME_WIDTH, 3), 18, np.uint8)
-        cv2.putText(img, "Camera offline", (40, config.FRAME_HEIGHT // 2),
+        cv2.putText(img, text, (40, config.FRAME_HEIGHT // 2),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (110, 110, 110), 2)
         ok, buf = cv2.imencode(".jpg", img)
         if ok:
             with self.lock:
                 self.jpeg = buf.tobytes()
-                self.stats = {**self.stats, "online": False}
+                self.stats = {**self.stats, "online": False, "motion": False,
+                              "person": False, "tier": 0,
+                              "camera_on": not self.paused}
 
     def get_jpeg(self):
         with self.lock:
@@ -800,48 +853,235 @@ def api_camera_name(cam):
     return jsonify({"ok": False}), 400
 
 
-def _run_voice_command(cmd):
-    """Map a spoken/text command to a system action. Returns a result dict."""
-    global _siren_manual
-    cmd = (cmd or "").lower().strip()
+_emergency_on = False        # panic override; remembers the state it interrupted
+_emergency_prev = None
+
+
+def _set_armed(value):
     db = Database(config.DB_PATH)
     try:
-        if "disarm" in cmd:
-            db.conn.execute("UPDATE settings SET armed=0 WHERE setting_id=1")
-            db.conn.commit()
-            return {"ok": True, "action": "disarm", "message": "System disarmed"}
-        if "arm" in cmd:
-            db.conn.execute("UPDATE settings SET armed=1 WHERE setting_id=1")
-            db.conn.commit()
-            return {"ok": True, "action": "arm", "message": "System armed"}
-        if any(k in cmd for k in ("snapshot", "capture", "photo", "picture")):
-            name = _save_snapshot(0)
-            return {"ok": bool(name), "action": "snapshot",
-                    "message": "Snapshot saved" if name else "No camera available"}
-        if "stop" in cmd:
-            _siren_manual = False
-            with _siren_lock:
-                _recompute_siren()
-            return {"ok": True, "action": "stop", "message": "Siren stopped"}
-        if any(k in cmd for k in ("siren", "alarm")):
-            _siren_manual = True
-            with _siren_lock:
-                _recompute_siren()
-            return {"ok": True, "action": "siren", "message": "Siren triggered"}
-        if "night" in cmd or "vision" in cmd:
-            for w in workers:
-                if getattr(w, "nv", None):
-                    w.nv.enabled = not w.nv.enabled
-            return {"ok": True, "action": "nightvision", "message": "Night vision toggled"}
-        return {"ok": False, "message": f"Unrecognized command: {cmd}"}
+        db.conn.execute("UPDATE settings SET armed=? WHERE setting_id=1", (1 if value else 0,))
+        db.conn.commit()
     finally:
         db.close()
 
 
+def _is_armed():
+    db = Database(config.DB_PATH)
+    try:
+        row = db.conn.execute("SELECT armed FROM settings WHERE setting_id=1").fetchone()
+        return bool(row["armed"]) if row else True
+    finally:
+        db.close()
+
+
+def _set_siren(on):
+    global _siren_manual
+    _siren_manual = bool(on)
+    with _siren_lock:
+        _recompute_siren()
+
+
+def _set_camera(on):
+    for w in workers:
+        w.paused = not on
+
+
+def _set_night_vision(on):
+    for w in workers:
+        if getattr(w, "nv", None):
+            w.nv.enabled = bool(on)
+
+
+def _system_snapshot():
+    """Current state, for the reporting intents."""
+    st = workers[0].get_stats() if workers else {}
+    return {"armed": _is_armed(),
+            "camera_on": any(not w.paused for w in workers) if workers else False,
+            "night_vision": any(getattr(w, "nv", None) and w.nv.enabled for w in workers),
+            "threat_level": (f"Tier {st['tier']}" if st.get("tier") else None)}
+
+
+def _do_action(action):
+    """Perform one intent. Returns a data dict for reporting intents, else {}."""
+    global _emergency_on, _emergency_prev
+
+    if action == "arm_system":        _set_armed(True)
+    elif action == "disarm_system":   _set_armed(False)
+    elif action == "camera_on":       _set_camera(True)
+    elif action == "camera_off":      _set_camera(False)
+    elif action == "siren_on":        _set_siren(True)
+    elif action == "siren_off":       _set_siren(False)
+    elif action == "night_vision_on":  _set_night_vision(True)
+    elif action == "night_vision_off": _set_night_vision(False)
+    elif action == "take_snapshot":   _save_snapshot(0)
+    elif action == "calibration":     pass          # calibrate.py is run separately
+
+    elif action == "emergency_on":
+        # remember what we interrupted so emergency_off can restore it
+        _emergency_prev = {"armed": _is_armed(),
+                           "camera_on": any(not w.paused for w in workers) if workers else True}
+        _emergency_on = True
+        _set_camera(True)             # overrides camera OFF
+        _set_armed(True)
+        _set_siren(True)
+        for w in workers:
+            w.highest = True          # every confirmed person reports as Tier 3
+        try:
+            PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC).send_async(
+                3, "-", None, "EMERGENCY", None)
+        except Exception as e:
+            print(f"[CAPHY] emergency push failed: {e}")
+
+    elif action == "emergency_off":
+        _emergency_on = False
+        _set_siren(False)
+        for w in workers:
+            w.highest = config.HIGHEST_SECURITY
+        if _emergency_prev:
+            _set_armed(_emergency_prev["armed"])
+            _set_camera(_emergency_prev["camera_on"])
+            _emergency_prev = None
+
+    elif action == "clear_alerts":
+        db = Database(config.DB_PATH)
+        try:
+            db.conn.execute("DELETE FROM alerts")
+            db.conn.commit()
+        finally:
+            db.close()
+
+    elif action == "check_status":
+        return _system_snapshot()
+
+    elif action == "threat_level":
+        st = workers[0].get_stats() if workers else {}
+        return {"tier": (f"Tier {st['tier']}" if st.get("tier") else "none")}
+
+    elif action == "alert_status":
+        db = Database(config.DB_PATH)
+        try:
+            rows = db.conn.execute(
+                "SELECT timestamp FROM alerts ORDER BY alert_id DESC LIMIT 10").fetchall()
+            return {"alerts": [{"timestamp": r["timestamp"]} for r in rows]}
+        finally:
+            db.close()
+
+    return {}
+
+
+# One interpreter for the web/phone path. main.py keeps its own so the two
+# confirmation dialogs don't interfere with each other.
+_web_interpreter = None
+
+
+def _run_voice_command(cmd, lang="en"):
+    """Interpret a command sent from the phone app, perform it, and return the
+    reply as TEXT. action=None means nothing matched (the caller may then hand
+    it is reported as "not understood").
+
+    The PC does not listen and does not speak - the phone app does both. It
+    runs speech-to-text on the device, POSTs the words here, and speaks the
+    reply itself. Phrases come from voice/intents.json.
+    """
+    global _web_interpreter
+    from voice.commands import CommandInterpreter, response_text
+
+    if _web_interpreter is None:
+        _web_interpreter = CommandInterpreter()
+
+    r = _web_interpreter.interpret(cmd)
+    if r is None:
+        # Not a command. There is no chat fallback any more, so say so out
+        # loud rather than going silent - otherwise the user cannot tell the
+        # difference between "not understood" and "app is broken".
+        from voice.commands import config as intents_config
+        lang = lang if lang in ("en", "tl") else "en"
+        reply = intents_config()["fallback"]["unrecognized"][lang]
+        return {"ok": False, "action": None, "reply": reply,
+                "message": reply, "lang": lang}
+
+    # the caller may force a language (phone UI toggle); otherwise use detected
+    lang = lang if lang in ("en", "tl") else r.lang
+
+    if r.action is None:                       # "Are you sure?" / "Cancelled."
+        reply = r.speak
+        return {"ok": True, "action": None, "awaiting": r.awaiting,
+                "reply": reply, "message": reply, "lang": lang}
+
+    data = _do_action(r.action)
+    reply = response_text(r.intent, lang, data) if r.intent else r.speak
+    return {"ok": True, "action": r.action, "message": reply, "reply": reply, "lang": lang}
+
+
+
+@app.route("/api/intents")
+def api_intents():
+    """The command list, straight from voice/intents.json.
+
+    The phone app and the dashboard both render this, so the list a user sees
+    can never drift from what CAPHY actually understands.
+    """
+    from voice.commands import config as intents_config
+    cfg = intents_config()
+    labels = {
+        "arm_system": ("Arm system", "I-arm ang sistema"),
+        "disarm_system": ("Disarm system", "I-disarm ang sistema"),
+        "camera_on": ("Turn on camera", "Buksan ang camera"),
+        "camera_off": ("Turn off camera", "Patayin ang camera"),
+        "siren_on": ("Sound the siren", "Patunugin ang sirena"),
+        "siren_off": ("Silence the siren", "Patayin ang sirena"),
+        "emergency_on": ("Emergency mode", "Emergency mode"),
+        "emergency_off": ("Cancel emergency", "Kanselahin ang emergency"),
+        "night_vision_on": ("Night vision on", "Buksan ang night vision"),
+        "night_vision_off": ("Night vision off", "Patayin ang night vision"),
+        "take_snapshot": ("Take a snapshot", "Kumuha ng larawan"),
+        "check_status": ("System status", "Status ng sistema"),
+        "alert_status": ("Recent alerts", "Mga alert"),
+        "clear_alerts": ("Clear alerts", "Burahin ang alerts"),
+        "threat_level": ("Threat level", "Antas ng banta"),
+        "calibration": ("Start calibration", "Simulan ang calibration"),
+        "greeting": ("Say hello", "Batiin si CAPHY"),
+    }
+    groups = {
+        "arm_system": "Security", "disarm_system": "Security",
+        "camera_on": "Camera", "camera_off": "Camera",
+        "take_snapshot": "Camera",
+        "night_vision_on": "Camera", "night_vision_off": "Camera",
+        "siren_on": "Alarm", "siren_off": "Alarm",
+        "emergency_on": "Alarm", "emergency_off": "Alarm",
+        "check_status": "Info", "alert_status": "Info",
+        "threat_level": "Info", "clear_alerts": "Info",
+        "calibration": "Setup", "greeting": "Setup",
+    }
+    out = []
+    for intent in cfg["intents"]:
+        iid = intent["id"]
+        en_label, tl_label = labels.get(iid, (iid.replace("_", " ").title(),) * 2)
+        out.append({
+            "id": iid,
+            "group": groups.get(iid, "Other"),
+            "label": {"en": en_label, "tl": tl_label},
+            # what the user should actually SAY
+            "say": {"en": intent["phrases"].get("en", []),
+                    "tl": intent["phrases"].get("tl", [])},
+            "sensitive": bool(intent.get("sensitive")),
+        })
+    return jsonify({"version": cfg.get("version", 1), "commands": out})
+
+
 @app.route("/api/voice", methods=["POST"])
 def api_voice():
+    """The only voice endpoint. Fixed commands, no conversation.
+
+    CAPHY does not chat. Anything that isn't a known command gets the
+    "I did not understand" reply from voice/intents.json. That keeps the whole
+    system offline - no cloud LLM, no internet needed to control the house.
+    """
     data = request.get_json(silent=True) or request.form
-    return jsonify(_run_voice_command(data.get("command", "")))
+    lang = (data.get("lang") or "en").lower()
+    cmd = (data.get("command") or data.get("text") or "").strip()
+    return jsonify(_run_voice_command(cmd, lang))
 
 
 @app.route("/video/<name>")
@@ -1078,7 +1318,6 @@ def logs():
             ("YOLOv8-nano", "running" if yolo_ok else "off", G if yolo_ok else R),
             ("Tier engine", "running", G),
             ("Night vision (CLAHE)", "engaged" if nv_on else "standby", T if nv_on else M),
-            ("Vosk voice", "listening", T),
             ("Flask API / MJPEG", "running", G),
             ("SQLite", "ok", T),
             ("Cloud sync", f"offline &middot; queue {pending}" if pending else "synced", R if pending else G),
@@ -1288,15 +1527,34 @@ def settings():
       {_irow("Pending upload", f"{pending} queued" if pending else "all synced")}"""
 
     # ---- Voice ----
-    en_ok = os.path.exists(getattr(config, "VOSK_MODEL_EN", "models/vosk-en"))
-    tl_ok = os.path.exists(getattr(config, "VOSK_MODEL_TL", "models/vosk-tl"))
+    # Voice runs on the phone app, so there is nothing to configure here - this
+    # panel documents the command set and confirms the API is serving it.
+    try:
+        from voice.commands import config as _icfg
+        _c = _icfg()
+        n_cmds = len(_c["intents"])
+        cmd_rows = "".join(
+            _irow(i["id"].replace("_", " ").title(),
+                  " &middot; ".join(f'"{p}"' for p in i["phrases"].get("en", [])[:3]))
+            for i in _c["intents"])
+    except Exception as e:
+        n_cmds, cmd_rows = 0, f'<div class="fdesc">Could not read intents.json ({e})</div>'
+
     sec_voice = f"""
-      <div class="sechead">Voice Control</div><div class="subd">Offline bilingual commands via Vosk</div>
-      {_irow("Engine", "Vosk (offline)")}
-      {_irow("English model", "installed" if en_ok else "missing")}
-      {_irow("Tagalog model", "installed" if tl_ok else "not downloaded yet")}
-      {_irow("Sample rate", f"{getattr(config,'VOICE_SAMPLE_RATE',16000)} Hz")}
-      {_irow("Status", "listening")}"""
+      <div class="sechead">Voice Control</div>
+      <div class="subd">Spoken commands run from the CAPHY mobile app</div>
+      {_irow("Where it runs", "CAPHY mobile app")}
+      {_irow("Speech to text", "on the phone (device recognizer)")}
+      {_irow("Spoken replies", "on the phone (device TTS)")}
+      {_irow("This console", "serves the commands, does not listen")}
+      {_irow("Languages", "English + Tagalog")}
+      {_irow("Commands available", f"{n_cmds}")}
+      {_irow("Source of truth", "voice/intents.json")}
+      {_irow("Served to the app by", "GET /api/intents")}
+      <div class="secheadsmall" style="margin-top:20px">COMMAND LIST</div>
+      <div class="fdesc" style="margin-bottom:10px">Say any of these in the app.
+        Edit voice/intents.json to change them - the app picks up changes on restart.</div>
+      {cmd_rows}"""
 
     # ---- Users ----
     pw = request.args.get("pw", "")
@@ -1327,10 +1585,11 @@ def settings():
       {_irow("Detection", "OpenCV motion + YOLOv8-nano")}
       {_irow("Cameras online", f"{ncam}")}
       {_irow("Mobile alerts", "Firebase Cloud Messaging")}
-      {_irow("Voice", "Vosk (English + Tagalog)")}"""
+      {_irow("Voice commands", "CAPHY mobile app (English + Tagalog)")}"""
 
     sections = {"detection": sec_detection, "cameras": sec_cameras, "alerts": sec_alerts,
-                "storage": sec_storage, "voice": sec_voice, "users": sec_users, "about": sec_about}
+                "storage": sec_storage, "voice": sec_voice, "users": sec_users,
+                "about": sec_about}
     nav = "".join(
         f'<a class="{"active" if tid == active else ""}" onclick="setTab(\'{tid}\',this)">{label}</a>'
         for tid, label in SETTINGS_TABS)

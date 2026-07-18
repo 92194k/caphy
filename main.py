@@ -7,8 +7,8 @@
 
 Voice runs in-process: arm / disarm / stop siren / system status.
 
-    python main.py            # webcam + detection + voice
-    python main.py --no-voice # detection only
+    python main.py            # webcam + detection (no voice - voice is in the app)
+    python main.py --no-yolo  # motion only, skip person verification
     python main.py --no-yolo  # motion only
 
 Keys:  q quit,  m motion mask,  n night vision,  h toggle Highest-Security
@@ -58,38 +58,6 @@ class SystemState:
             v = self._stop
             self._stop = False
             return v
-
-
-def voice_worker(state):
-    import os
-    models = [p for p in (config.VOSK_MODEL_EN, config.VOSK_MODEL_TL) if os.path.isdir(p)]
-    if not models:
-        print("[CAPHY] Voice off (no Vosk model found).")
-        return
-    try:
-        from voice.engine import BilingualVoice
-        from voice.commands import CommandInterpreter
-    except Exception as e:
-        print(f"[CAPHY] Voice off ({e}).")
-        return
-    voice = BilingualVoice(models, config.VOICE_SAMPLE_RATE)
-    ci = CommandInterpreter()
-    langs = "English + Tagalog" if len(models) > 1 else "English"
-    print(f"[CAPHY] Voice active ({langs}): arm / disarm / stop siren / system status.")
-    for text in voice.listen():
-        r = ci.interpret(text)
-        if r is None:
-            continue
-        if r.action == "status":
-            voice.say(f"System is {'armed' if state.armed else 'disarmed'}.")
-        else:
-            voice.say(r.speak)
-        if r.action == "arm":
-            state.set_armed(True)
-        elif r.action == "disarm":
-            state.set_armed(False)
-        elif r.action == "stop_siren":
-            state.request_stop()
 
 
 def open_source(source):
@@ -145,11 +113,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default=str(config.CAMERA_INDEX))
     ap.add_argument("--no-yolo", action="store_true")
-    ap.add_argument("--no-voice", action="store_true")
     args = ap.parse_args()
 
     motion = MotionDetector(config.MOTION_MIN_AREA, config.MOG2_HISTORY, config.MOG2_VAR_THRESHOLD, config.MOTION_BLUR)
-    tier = TierEngine(config.DISTANCE_K, config.TIER1_MIN_DIST, config.TIER3_MAX_DIST)
+    tier = TierEngine(config.DISTANCE_K, config.TIER1_MIN_DIST, config.TIER3_MAX_DIST,
+                      getattr(config, "TIER_SMOOTHING", 0.35),
+                      getattr(config, "TIER_HYSTERESIS", 0.12))
     nv = NightVision(config.CLAHE_CLIP, config.CLAHE_TILE, config.NIGHT_LOW_LIGHT, config.NIGHT_GAMMA, config.NIGHT_VISION_AUTO)
     person = None
     if not args.no_yolo:
@@ -169,9 +138,6 @@ def main():
     state = SystemState(armed=bool(row["armed"]) if row else True, highest=config.HIGHEST_SECURITY)
     siren = Siren()
     print(f"[CAPHY] Ready. Alerts: {db.count_alerts()}. Armed: {state.armed}. Highest-Security: {state.highest}")
-
-    if not args.no_voice:
-        threading.Thread(target=voice_worker, args=(state,), daemon=True).start()
 
     cap = open_source(args.source)
     if not cap.isOpened():
@@ -199,7 +165,7 @@ def main():
         prev = now
         armed = state.armed
 
-        # stop request from voice (and later the app) stops siren + recording
+        # stop request from the phone app stops siren + recording
         stop_now = state.take_stop()
         if stop_now:
             alerts.request_stop()
