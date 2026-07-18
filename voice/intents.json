@@ -301,24 +301,6 @@
       "template": true
     },
     {
-      "id": "calibration",
-      "phrases": {
-        "en": [
-          "start calibration",
-          "run calibration",
-          "calibrate system"
-        ],
-        "tl": [
-          "simulan calibration",
-          "i calibrate ang system"
-        ]
-      },
-      "response": {
-        "en": "Calibration started. Please stand at the marked distances.",
-        "tl": "Nagsimula na ang calibration. Tumayo po sa mga markadong distansya."
-      }
-    },
-    {
       "id": "greeting",
       "phrases": {
         "en": [

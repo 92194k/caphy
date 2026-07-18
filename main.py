@@ -132,7 +132,8 @@ def main():
 
     db = Database(config.DB_PATH)
     alerts = AlertManager(db, config.CAPTURES_DIR, config.ALERT_COOLDOWN_SEC,
-                          config.SNAPSHOT_TIERS, config.RECORD_TIERS, config.PRESENCE_GRACE_SEC)
+                          config.SNAPSHOT_TIERS, config.RECORD_TIERS, config.PRESENCE_GRACE_SEC,
+                          videos_dir=getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR))
     push = PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC)
     row = db.conn.execute("SELECT armed FROM settings WHERE setting_id=1").fetchone()
     state = SystemState(armed=bool(row["armed"]) if row else True, highest=config.HIGHEST_SECURITY)

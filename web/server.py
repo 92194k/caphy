@@ -64,6 +64,7 @@ class Worker(threading.Thread):
         self.manual_record = False      # toggled by the phone Live tab
         self._mrec = None
         self._mrec_path = None
+        self.last_record = None         # basename of the last finished recording
         self.stats = {"online": False, "motion": False, "person": False,
                       "tier": 0, "distance": "-", "conf": "-", "fps": 0.0,
                       "armed": True, "camera_on": True}
@@ -123,7 +124,8 @@ class Worker(threading.Thread):
         db = Database(config.DB_PATH)
         alerts = AlertManager(db, config.CAPTURES_DIR, config.ALERT_COOLDOWN_SEC,
                               config.SNAPSHOT_TIERS, config.RECORD_TIERS, config.PRESENCE_GRACE_SEC,
-                              self.name)
+                              self.name,
+                              videos_dir=getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR))
         push = PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC)
         cap = self._open_capture()
         prev = time.time()
@@ -202,20 +204,18 @@ class Worker(threading.Thread):
             # manual recording toggled from the phone (Live tab)
             if self.manual_record:
                 if self._mrec is None:
-                    os.makedirs(config.CAPTURES_DIR, exist_ok=True)
-                    self._mrec_path = os.path.join(
-                        config.CAPTURES_DIR,
-                        f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}_cam{self.cam_id}.mp4")
-                    h, w = frame.shape[:2]
-                    self._mrec = cv2.VideoWriter(
-                        self._mrec_path, cv2.VideoWriter_fourcc(*"mp4v"),
-                        max(min(fps, 30.0), 1.0), (w, h))
-                self._mrec.write(frame)
+                    self._start_manual_record(frame, fps)
+                if self._mrec is not None:
+                    self._mrec.write(frame)
             elif self._mrec is not None:
                 self._mrec.release()
                 self._mrec = None
+                # remember the finished file so the phone can download it
+                if self._mrec_path:
+                    self.last_record = os.path.basename(self._mrec_path)
+                    self._log("INFO", "record", f"saved {os.path.abspath(self._mrec_path)}")
 
-            if armed:
+            if armed and time.time() >= _arm_grace_until:
                 aid = alerts.handle(frame, result, fps)
                 if aid is not None:
                     p = max(result["persons"], key=lambda x: x["tier"])
@@ -236,6 +236,28 @@ class Worker(threading.Thread):
         if cap is not None:
             cap.release()
         db.close()
+
+    def _start_manual_record(self, frame, fps):
+        """Open a VideoWriter, trying codecs until one actually opens.
+        mp4v often fails silently on Windows OpenCV, so we fall back to MJPG
+        (.avi), which is available almost everywhere."""
+        vdir = getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR)
+        os.makedirs(vdir, exist_ok=True)
+        h, w = frame.shape[:2]
+        wfps = max(min(fps, 30.0), 5.0)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # (fourcc, extension) candidates, in order of preference
+        for fourcc, ext in (("mp4v", "mp4"), ("avc1", "mp4"), ("MJPG", "avi"), ("XVID", "avi")):
+            path = os.path.join(vdir, f"manual_{stamp}_cam{self.cam_id}.{ext}")
+            writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*fourcc), wfps, (w, h))
+            if writer.isOpened():
+                self._mrec = writer
+                self._mrec_path = path
+                self._log("INFO", "record", f"recording -> {os.path.abspath(path)} ({fourcc})")
+                return
+            writer.release()
+        self._mrec = None
+        self._log("WARN", "record", "could not open any video codec - recording disabled")
 
     def _open_capture(self):
         """Open the video source. Returns a VideoCapture (possibly not opened)."""
@@ -628,12 +650,30 @@ def live():
             <div class="dr"><span>Factor 2 &middot; Person</span><span class="dot" id="dp" style="background:var(--dim)"></span></div>
             <div class="dd">Est. distance <span id="ddist">-</span> m</div>
           </div>
+          <!-- fullscreen: just the video. Only an Exit button, which auto-hides. -->
+          <button class="fsexit" id="fsexit" onclick="fsMain()">&#10005;&nbsp;Exit</button>
         </div>
-        <div class="controls">
+
+        <div class="statebar" id="statebar">
+          <span class="sb" id="sbArm">System &mdash;</span>
+          <span class="sb" id="sbCam">Camera &mdash;</span>
+          <span class="sb" id="sbNv">Night vision &mdash;</span>
+          <span class="sb" id="sbSiren">Siren &mdash;</span>
+          <span class="sb" id="sbEmg">Emergency &mdash;</span>
+        </div>
+
+        <div class="ctrlhead">
+          <span>Controls</span>
+          <button class="collapse" id="collapseBtn" onclick="toggleControls()">Hide &#9650;</button>
+        </div>
+        <div class="controls" id="controls">
+          <button class="ctrlbtn primary" id="armBtn" onclick="toggleArm()">Arm</button>
+          <button class="ctrlbtn" id="camBtn" onclick="toggleCam()">Camera Off</button>
           <button class="ctrlbtn" onclick="snap()">Snapshot</button>
           <button class="ctrlbtn" id="recBtn" onclick="toggleRec()">Record</button>
           <button class="ctrlbtn" id="nvBtn" onclick="toggleNV()">Night Vision</button>
           <button class="ctrlbtn siren" id="sirenBtn" onclick="siren()">Trigger Siren</button>
+          <button class="ctrlbtn emg" id="emgBtn" onclick="toggleEmg()">Emergency</button>
           <button class="ctrlbtn" onclick="fsMain()">Fullscreen</button>
         </div>
       </div>
@@ -663,7 +703,12 @@ def live():
       else if(el.requestFullscreen){ el.requestFullscreen(); }
       else if(el.webkitRequestFullscreen){ el.webkitRequestFullscreen(); }
     }
-    async function snap(){ try{ await fetch('/api/snapshot/'+sel,{method:'POST'}); }catch(e){} }
+    async function snap(){
+      try{ const r=await fetch('/api/snapshot/'+sel,{method:'POST'}); const j=await r.json();
+        if(j.ok){ toast('Snapshot saved'); window.open(j.url,'_blank'); }
+        else { toast('Snapshot failed - is the camera on?'); }
+      }catch(e){ toast('Snapshot failed'); }
+    }
     async function toggleNV(){
       try{ const r=await fetch('/api/nightvision/'+sel,{method:'POST'}); const j=await r.json();
         document.getElementById('nvBtn').classList.toggle('active', j.on); }catch(e){}
@@ -673,13 +718,81 @@ def live():
         document.getElementById('sirenBtn').textContent = j.on ? 'Stop Siren' : 'Trigger Siren'; }catch(e){}
     }
     let recOn=false;
-    function toggleRec(){ recOn=!recOn; document.getElementById('recBtn').classList.toggle('active', recOn); }
+    async function toggleRec(){
+      try{
+        const r=await fetch('/api/record/'+sel,{method:'POST'}); const j=await r.json();
+        recOn = j.recording;
+        const b=document.getElementById('recBtn');
+        b.classList.toggle('active', recOn);
+        b.textContent = recOn ? 'Stop Recording' : 'Record';
+        toast(recOn ? 'Recording started' : 'Recording saved to Videos/CAPHY');
+      }catch(e){}
+    }
+    function toast(msg){
+      let t=document.getElementById('webtoast');
+      if(!t){ t=document.createElement('div'); t.id='webtoast'; document.body.appendChild(t); }
+      t.textContent=msg; t.className='show';
+      clearTimeout(window._tt); window._tt=setTimeout(function(){ t.className=''; },2200);
+    }
+
+    // ---- state-aware controls ----
+    let ST = {};
+    function setPill(el, label, on, onText, offText){
+      el.textContent = label + ' ' + (on ? onText : offText);
+      el.classList.toggle('on', !!on);
+    }
+    async function refreshState(){
+      try{
+        const r = await fetch('/api/state'); ST = await r.json();
+        setPill(document.getElementById('sbArm'),   'System',       ST.armed,        'ARMED','DISARMED');
+        setPill(document.getElementById('sbCam'),   'Camera',       ST.camera_on,    'ON','OFF');
+        setPill(document.getElementById('sbNv'),    'Night vision', ST.night_vision, 'ON','OFF');
+        setPill(document.getElementById('sbSiren'), 'Siren',        ST.siren,        'ON','OFF');
+        setPill(document.getElementById('sbEmg'),   'Emergency',    ST.emergency,    'ACTIVE','OFF');
+
+        const armBtn=document.getElementById('armBtn');
+        armBtn.textContent = ST.armed ? 'Disarm' : 'Arm';
+        armBtn.classList.toggle('active', ST.armed);
+
+        const camBtn=document.getElementById('camBtn');
+        camBtn.textContent = ST.camera_on ? 'Camera Off' : 'Camera On';
+        camBtn.classList.toggle('active', !ST.camera_on);
+
+        document.getElementById('nvBtn').classList.toggle('active', ST.night_vision);
+        document.getElementById('sirenBtn').textContent = ST.siren ? 'Stop Siren' : 'Trigger Siren';
+
+        const emgBtn=document.getElementById('emgBtn');
+        emgBtn.textContent = ST.emergency ? 'Cancel Emergency' : 'Emergency';
+        emgBtn.classList.toggle('active', ST.emergency);
+      }catch(e){}
+    }
+    async function toggleArm(){
+      try{ await fetch('/api/arm',{method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({on: !ST.armed})}); }catch(e){}
+      refreshState();
+    }
+    async function toggleCam(){
+      try{ await fetch('/api/camera/power',{method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({on: !ST.camera_on})}); }catch(e){}
+      refreshState();
+    }
+    async function toggleEmg(){
+      if(!ST.emergency && !confirm('Activate EMERGENCY mode?\\n\\nThis forces the camera on, arms the system, sounds the siren and sends a push alert.')) return;
+      try{ await fetch('/api/emergency',{method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({on: !ST.emergency})}); }catch(e){}
+      refreshState();
+    }
+
     async function poll(){
       try{
         const r=await fetch('/api/stats'); const data=await r.json();
         data.forEach(function(s){
-          const cd=document.getElementById('cd'+s.cam); if(cd) cd.style.background = s.online?'var(--green)':'var(--dim)';
-          const cs=document.getElementById('cs'+s.cam); if(cs) cs.textContent = s.online?'online':'offline';
+          const camOn = (s.camera_on !== false);
+          const cd=document.getElementById('cd'+s.cam);
+          if(cd) cd.style.background = !camOn ? 'var(--orange)' : (s.online?'var(--green)':'var(--dim)');
+          const cs=document.getElementById('cs'+s.cam);
+          // "camera off" and "offline" are different problems - say which
+          if(cs) cs.textContent = !camOn ? 'camera off' : (s.online?'online':'offline');
           if(s.cam===sel){
             document.getElementById('dm').style.background = s.motion?'var(--green)':'var(--dim)';
             document.getElementById('dp').style.background = s.person?'var(--green)':'var(--dim)';
@@ -694,8 +807,75 @@ def live():
         }).join('');
       }catch(e){}
     }
+    // ---- collapse the control bar ----
+    function toggleControls(){
+      const c=document.getElementById('controls'); const b=document.getElementById('collapseBtn');
+      const hidden = c.classList.toggle('hidden');
+      b.innerHTML = hidden ? 'Show &#9660;' : 'Hide &#9650;';
+    }
+    // ---- fullscreen: only an Exit button that auto-hides; tap video to reveal ----
+    let fsHideTimer=null;
+    function showFsExit(){
+      const b=document.getElementById('fsexit'); b.classList.remove('gone');
+      clearTimeout(fsHideTimer);
+      if(document.fullscreenElement) fsHideTimer=setTimeout(function(){ b.classList.add('gone'); },3000);
+    }
+    document.getElementById('mainwrap').addEventListener('click', function(e){
+      if(document.fullscreenElement && e.target.id==='mainFeed') showFsExit();
+    });
+    document.addEventListener('fullscreenchange', function(){
+      const wrap=document.getElementById('mainwrap');
+      wrap.classList.toggle('isfs', !!document.fullscreenElement);
+      if(document.fullscreenElement){ showFsExit(); }
+      else { clearTimeout(fsHideTimer); document.getElementById('fsexit').classList.remove('gone'); }
+    });
+
     setInterval(poll,1500); poll();
+    setInterval(refreshState,2000); refreshState();
     </script>
+    <style>
+      .statebar{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}
+      .statebar .sb{font-size:11px;letter-spacing:.4px;padding:5px 11px;border-radius:20px;
+        border:1px solid var(--line);color:var(--dim);background:var(--panel);font-weight:600}
+      .statebar .sb.on{color:var(--teal2);border-color:var(--teal2);background:rgba(63,215,196,.08)}
+      #sbEmg.on{color:var(--red);border-color:var(--red);background:rgba(229,72,77,.1)}
+      #sbCam:not(.on){color:var(--orange);border-color:var(--orange)}
+
+      .ctrlhead{display:flex;justify-content:space-between;align-items:center;margin:8px 2px 8px}
+      .ctrlhead span{font-size:11px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase}
+      .collapse{background:none;border:none;color:var(--muted);font-size:11.5px;cursor:pointer}
+      .collapse:hover{color:var(--teal2)}
+
+      .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px;
+        overflow:hidden;transition:max-height .25s ease,opacity .2s;max-height:400px}
+      .controls.hidden{max-height:0;opacity:0;margin:0}
+      /* one consistent button style everywhere - no icons, just words */
+      .ctrlbtn{display:flex;align-items:center;justify-content:center;
+        background:var(--panel);border:1px solid var(--line);color:var(--text);
+        border-radius:10px;padding:12px 10px;font-size:13px;font-weight:600;
+        letter-spacing:.2px;cursor:pointer;transition:.15s;text-align:center}
+      .ctrlbtn:hover{border-color:var(--teal2);color:var(--teal2)}
+      .ctrlbtn.active{background:var(--teal);color:#04110e;border-color:var(--teal)}
+      .ctrlbtn.primary{border-color:var(--teal2);color:var(--teal2)}
+      .ctrlbtn.siren.active,.ctrlbtn.emg.active{background:var(--red);color:#fff;border-color:var(--red)}
+
+      /* fullscreen: only an Exit button, top-right, auto-hiding */
+      .fsexit{position:fixed;top:18px;right:18px;display:none;align-items:center;
+        gap:6px;padding:10px 16px;border-radius:24px;background:rgba(10,16,22,.78);
+        border:1px solid var(--line);color:#fff;cursor:pointer;font-size:13px;
+        font-weight:600;z-index:2147483647;transition:opacity .25s}
+      .fsexit.gone{opacity:0;pointer-events:none}
+      .fsexit:hover{background:var(--red);border-color:var(--red)}
+      .feedwrap.isfs .fsexit{display:inline-flex}
+      .feedwrap.isfs{background:#000}
+      .feedwrap.isfs .feed{object-fit:contain;height:100vh;width:100vw}
+
+      #webtoast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-20px);
+        background:var(--panel);border:1px solid var(--teal2);color:var(--text);
+        padding:11px 18px;border-radius:11px;font-size:13px;font-weight:600;z-index:9999;
+        opacity:0;transition:.25s;pointer-events:none;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+      #webtoast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    </style>
     """.replace("__CAM_ITEMS__", cam_items).replace("__MAIN_NAME__", main_name).replace("__MAIN_ID__", str(main_id))
     return page("Live Camera", "/live", body,
                 subtitle="two-factor validation active")
@@ -724,22 +904,34 @@ def api_logs():
 
 
 def _save_snapshot(cam):
-    """Save the current frame of a camera to captures/. Returns filename or None."""
-    if 0 <= cam < len(workers):
-        jpg = workers[cam].get_jpeg()
-        if jpg:
-            os.makedirs(config.CAPTURES_DIR, exist_ok=True)
-            name = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}_cam{cam}.jpg"
-            with open(os.path.join(config.CAPTURES_DIR, name), "wb") as f:
-                f.write(jpg)
-            return name
-    return None
+    """Save the current frame of a camera into Pictures/CAPHY.
+    Returns the filename on success, else None. Logs the full path so the
+    file is easy to find (and failures are visible in the console)."""
+    if not (0 <= cam < len(workers)):
+        return None
+    w = workers[cam]
+    jpg = w.get_jpeg()
+    if not jpg:
+        w._log("WARN", "snapshot", "no frame available yet - camera starting or off")
+        return None
+    try:
+        os.makedirs(config.CAPTURES_DIR, exist_ok=True)
+        name = f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}_cam{cam}.jpg"
+        full = os.path.abspath(os.path.join(config.CAPTURES_DIR, name))
+        with open(full, "wb") as f:
+            f.write(jpg)
+        w._log("INFO", "snapshot", f"saved {full}")
+        return name
+    except Exception as e:
+        w._log("WARN", "snapshot", f"save failed: {e}")
+        return None
 
 
 @app.route("/api/snapshot/<int:cam>", methods=["POST"])
 def api_snapshot(cam):
     name = _save_snapshot(cam)
-    return jsonify({"ok": bool(name), "name": name})
+    return jsonify({"ok": bool(name), "name": name,
+                    "url": (f"/snapshot/{name}" if name else None)})
 
 
 @app.route("/api/nightvision/<int:cam>", methods=["POST"])
@@ -776,9 +968,22 @@ def api_frame(cam):
 def api_record(cam):
     if 0 <= cam < len(workers):
         w = workers[cam]
+        was_recording = w.manual_record
         w.manual_record = not w.manual_record
         w._log("INFO", "record", "manual recording " + ("started" if w.manual_record else "stopped"))
-        return jsonify({"recording": w.manual_record})
+        resp = {"recording": w.manual_record}
+        # when STOPPING, return the finished file so the phone can save it to
+        # its gallery. The writer closes on the next frame, so poll briefly.
+        if was_recording and not w.manual_record:
+            for _ in range(20):                 # up to ~2s
+                if w.last_record:
+                    break
+                time.sleep(0.1)
+            if w.last_record:
+                resp["video"] = w.last_record
+                resp["video_url"] = f"/video/{w.last_record}"
+                w.last_record = None
+        return jsonify(resp)
     return jsonify({"recording": False})
 
 
@@ -857,7 +1062,15 @@ _emergency_on = False        # panic override; remembers the state it interrupte
 _emergency_prev = None
 
 
+_arm_grace_until = 0.0     # no alerts until this time (set when arming)
+
+
 def _set_armed(value):
+    global _arm_grace_until
+    if value:
+        # Arming grace: give the user a few seconds to leave the frame, so
+        # arming while standing in view does not instantly fire an alert.
+        _arm_grace_until = time.time() + getattr(config, "ARM_GRACE_SEC", 8)
     db = Database(config.DB_PATH)
     try:
         db.conn.execute("UPDATE settings SET armed=? WHERE setting_id=1", (1 if value else 0,))
@@ -915,7 +1128,6 @@ def _do_action(action):
     elif action == "night_vision_on":  _set_night_vision(True)
     elif action == "night_vision_off": _set_night_vision(False)
     elif action == "take_snapshot":   _save_snapshot(0)
-    elif action == "calibration":     pass          # calibrate.py is run separately
 
     elif action == "emergency_on":
         # remember what we interrupted so emergency_off can restore it
@@ -944,10 +1156,11 @@ def _do_action(action):
             _emergency_prev = None
 
     elif action == "clear_alerts":
+        # Dismiss, never delete. The rows stay in the database as evidence and
+        # as thesis data - "clear" only means "stop showing me these".
         db = Database(config.DB_PATH)
         try:
-            db.conn.execute("DELETE FROM alerts")
-            db.conn.commit()
+            db.dismiss_all_alerts()
         finally:
             db.close()
 
@@ -1015,6 +1228,119 @@ def _run_voice_command(cmd, lang="en"):
 
 
 
+def start_auto_arm_scheduler():
+    """Arm at night, disarm in the morning, if 'Auto-arm at night' is on.
+
+    Runs on a background thread and checks once a minute. It only acts on the
+    TRANSITION into arm/disarm time, so the user can still manually disarm at
+    23:00 and it will not immediately re-arm them.
+    """
+    def loop():
+        last_state = None
+        while True:
+            try:
+                if load_prefs().get("autoarm"):
+                    h = datetime.now().hour
+                    start = getattr(config, "AUTO_ARM_START_HOUR", 22)
+                    end = getattr(config, "AUTO_ARM_END_HOUR", 6)
+                    # night window wraps past midnight (22:00 -> 06:00)
+                    night = (h >= start or h < end) if start > end else (start <= h < end)
+                    if last_state is None:
+                        last_state = night          # don't act on first tick
+                    elif night != last_state:
+                        _set_armed(night)
+                        print(f"[CAPHY] Auto-arm: {'ARMED' if night else 'DISARMED'} "
+                              f"({datetime.now().strftime('%H:%M')})")
+                        last_state = night
+                else:
+                    last_state = None               # switch off - forget state
+            except Exception as e:
+                print(f"[CAPHY] Auto-arm error: {e}")
+            time.sleep(60)
+
+    t = threading.Thread(target=loop, name="caphy-autoarm", daemon=True)
+    t.start()
+    return t
+
+
+@app.route("/api/state")
+def api_state():
+    """Everything the UIs need to show what is currently ON or OFF."""
+    return jsonify({
+        "armed": _is_armed(),
+        "camera_on": any(not w.paused for w in workers) if workers else False,
+        "cameras": [{"cam": w.cam_id, "name": w.name, "on": not w.paused,
+                     "online": w.get_stats().get("online", False)} for w in workers],
+        "night_vision": any(getattr(w, "nv", None) and w.nv.enabled for w in workers),
+        "siren": bool(_siren_manual),
+        "emergency": bool(_emergency_on),
+        "auto_arm": bool(load_prefs().get("autoarm", False)),
+    })
+
+
+@app.route("/api/arm", methods=["POST"])
+def api_arm():
+    """Arm or disarm. Send {"on": true/false}, or omit to toggle."""
+    data = request.get_json(silent=True) or request.form
+    on = data.get("on")
+    on = (not _is_armed()) if on is None else (str(on).lower() in ("1", "true", "yes"))
+    _set_armed(on)
+    return jsonify({"ok": True, "armed": on})
+
+
+@app.route("/api/camera/power", methods=["POST"])
+def api_camera_power():
+    """Turn the camera device on or off. Off releases it and stops detection."""
+    data = request.get_json(silent=True) or request.form
+    on = data.get("on")
+    current = any(not w.paused for w in workers) if workers else False
+    on = (not current) if on is None else (str(on).lower() in ("1", "true", "yes"))
+    _set_camera(on)
+    return jsonify({"ok": True, "camera_on": on})
+
+
+@app.route("/api/emergency", methods=["POST"])
+def api_emergency():
+    """Panic override on/off."""
+    data = request.get_json(silent=True) or request.form
+    on = data.get("on")
+    on = (not _emergency_on) if on is None else (str(on).lower() in ("1", "true", "yes"))
+    _do_action("emergency_on" if on else "emergency_off")
+    return jsonify({"ok": True, "emergency": on})
+
+
+@app.route("/api/alert/<int:aid>/dismiss", methods=["POST"])
+def api_dismiss_alert(aid):
+    """Acknowledge one alert - hides it, keeps the row in the database."""
+    db = Database(config.DB_PATH)
+    try:
+        db.dismiss_alert(aid)
+        return jsonify({"ok": True, "alert_id": aid, "dismissed": True})
+    finally:
+        db.close()
+
+
+@app.route("/api/alert/<int:aid>/restore", methods=["POST"])
+def api_restore_alert(aid):
+    db = Database(config.DB_PATH)
+    try:
+        db.restore_alert(aid)
+        return jsonify({"ok": True, "alert_id": aid, "dismissed": False})
+    finally:
+        db.close()
+
+
+@app.route("/api/alerts/dismiss_all", methods=["POST"])
+def api_dismiss_all():
+    """'Clear alerts' - dismisses every visible alert. Deletes nothing."""
+    db = Database(config.DB_PATH)
+    try:
+        n = db.dismiss_all_alerts()
+        return jsonify({"ok": True, "dismissed": n})
+    finally:
+        db.close()
+
+
 @app.route("/api/intents")
 def api_intents():
     """The command list, straight from voice/intents.json.
@@ -1040,7 +1366,6 @@ def api_intents():
         "alert_status": ("Recent alerts", "Mga alert"),
         "clear_alerts": ("Clear alerts", "Burahin ang alerts"),
         "threat_level": ("Threat level", "Antas ng banta"),
-        "calibration": ("Start calibration", "Simulan ang calibration"),
         "greeting": ("Say hello", "Batiin si CAPHY"),
     }
     groups = {
@@ -1052,7 +1377,7 @@ def api_intents():
         "emergency_on": "Alarm", "emergency_off": "Alarm",
         "check_status": "Info", "alert_status": "Info",
         "threat_level": "Info", "clear_alerts": "Info",
-        "calibration": "Setup", "greeting": "Setup",
+        "greeting": "Setup",
     }
     out = []
     for intent in cfg["intents"]:
@@ -1086,39 +1411,121 @@ def api_voice():
 
 @app.route("/video/<name>")
 def video_file(name):
-    path = os.path.abspath(os.path.join(config.CAPTURES_DIR, os.path.basename(name)))
-    if os.path.exists(path):
-        return send_file(path)
+    name = os.path.basename(name)
+    # recordings live in VIDEOS_DIR now, older ones in CAPTURES_DIR - check both
+    for d in (getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR), config.CAPTURES_DIR):
+        path = os.path.abspath(os.path.join(d, name))
+        if os.path.exists(path):
+            return send_file(path)
     abort(404)
+
+
+@app.route("/api/alerts/feed")
+def api_alerts_feed():
+    """Visible (unacknowledged) alerts as JSON, for live polling."""
+    db = Database(config.DB_PATH)
+    try:
+        rows = db.recent_alerts(30)
+        out = [{"id": a["alert_id"], "tier": a["tier"] or 0,
+                "distance_m": a["distance_m"], "camera": a.get("camera"),
+                "timestamp": a["timestamp"]} for a in rows]
+        return jsonify({"alerts": out})
+    finally:
+        db.close()
 
 
 @app.route("/alerts")
 def alerts_page():
-    db = Database(config.DB_PATH)
-    rows = db.recent_alerts(25)
-    db.close()
-    if rows:
-        items = '<div class="alist">'
-        for a in rows:
-            t = a["tier"] or 1
-            event = "Person confirmed" if a["tier"] else "Movement (no person)"
-            items += (
-                f'<div class="arow t{t}">'
-                f'<div class="av"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/>'
-                f'<path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></div>'
-                f'<div class="txt"><div class="tt">{tier_pill(t)}</div>'
-                f'<div class="ss">{event} &middot; {a["distance_m"]} m</div></div>'
-                f'<div class="tm">{ago(a["timestamp"])}</div></div>')
-        items += "</div>"
-    else:
-        items = '<div style="color:var(--dim);font-size:13px">No alerts yet</div>'
-    body = f"""
+    body = """
     <div class="panel">
-      <div class="ph"><h2>Recent Alerts</h2><a class="link" href="/history">Full history &rarr;</a></div>
-      {items}
-    </div>"""
+      <div class="ph"><h2>Recent Alerts</h2>
+        <div class="phactions">
+          <span class="livedot" id="liveDot"></span>
+          <span class="livetxt" id="liveTxt">live</span>
+          <button class="btn btn-ghost" id="ackAllBtn" onclick="ackAll()">Acknowledge all</button>
+          <a class="btn btn-ghost" href="/history">History &rarr;</a>
+        </div>
+      </div>
+      <div id="alist" class="alist"></div>
+      <div id="empty" class="emptystate" style="display:none">
+        <svg viewBox="0 0 24 24" width="42" height="42"><path d="M20 6L9 17l-5-5"/></svg>
+        <div>No new alerts</div>
+      </div>
+    </div>
+    <script>
+    let known = new Set();
+    function tpill(t){
+      const cls = t>=3?'p3':(t===2?'p2':'p1');
+      const lbl = t? ('Tier '+t) : 'Motion';
+      return '<span class="pill '+cls+'">'+lbl+'</span>';
+    }
+    function rowHtml(a){
+      const event = a.tier ? 'Person confirmed' : 'Movement (no person)';
+      const cam = a.camera ? ' &middot; '+a.camera : '';
+      return '<div class="arow" id="ar'+a.id+'">'+
+        '<div class="av"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/>'+
+        '<path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></div>'+
+        '<div class="txt"><div class="tt">'+tpill(a.tier)+'</div>'+
+        '<div class="ss">'+event+cam+' &middot; '+(a.distance_m||'-')+' m</div></div>'+
+        '<div class="tm">'+a.timestamp.replace('T',' ').slice(5,16)+'</div>'+
+        '<button class="ackbtn" onclick="ack('+a.id+')">Acknowledge</button></div>';
+    }
+    async function refresh(){
+      try{
+        const r = await fetch('/api/alerts/feed'); const j = await r.json();
+        const dot=document.getElementById('liveDot'); dot.style.background='var(--green)';
+        const list=document.getElementById('alist'); const empty=document.getElementById('empty');
+        const ackAll=document.getElementById('ackAllBtn');
+        if(!j.alerts.length){ list.innerHTML=''; empty.style.display='flex'; ackAll.style.display='none'; return; }
+        empty.style.display='none'; ackAll.style.display='inline-flex';
+        list.innerHTML = j.alerts.map(rowHtml).join('');
+        // subtle highlight for alerts we haven't seen before
+        j.alerts.forEach(function(a){
+          if(!known.has(a.id)){ known.add(a.id);
+            const el=document.getElementById('ar'+a.id); if(el) el.classList.add('fresh'); }
+        });
+      }catch(e){
+        const dot=document.getElementById('liveDot'); if(dot) dot.style.background='var(--red)';
+      }
+    }
+    async function ack(id){
+      const el=document.getElementById('ar'+id);
+      if(el){ el.style.transition='opacity .2s,transform .2s'; el.style.opacity=0; el.style.transform='translateX(20px)'; }
+      try{ await fetch('/api/alert/'+id+'/dismiss',{method:'POST'}); }catch(e){}
+      setTimeout(refresh, 220);
+    }
+    async function ackAll(){
+      if(!confirm('Acknowledge all alerts?')) return;
+      try{ await fetch('/api/alerts/dismiss_all',{method:'POST'}); }catch(e){}
+      refresh();
+    }
+    refresh(); setInterval(refresh, 3000);
+    </script>
+    <style>
+      .phactions{display:flex;align-items:center;gap:10px}
+      .livedot{width:8px;height:8px;border-radius:50%;background:var(--dim);display:inline-block;
+        box-shadow:0 0 0 3px rgba(63,185,80,.12)}
+      .livetxt{font-size:11px;color:var(--muted);letter-spacing:.5px;margin-right:6px}
+      .btn{border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer;
+        text-decoration:none;display:inline-flex;align-items:center;border:1px solid var(--line);transition:.15s}
+      .btn-ghost{background:var(--panel);color:var(--muted)}
+      .btn-ghost:hover{color:var(--teal2);border-color:var(--teal2)}
+      .arow{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:9px;
+        background:var(--panel);border:1px solid var(--line);border-radius:12px}
+      .arow.fresh{animation:flashin .8s ease}
+      @keyframes flashin{from{background:rgba(63,215,196,.18)}to{background:var(--panel)}}
+      .arow .av svg{width:22px;height:22px;stroke:var(--muted);fill:none;stroke-width:2}
+      .arow .txt{flex:1}
+      .arow .ss{color:var(--muted);font-size:12.5px;margin-top:2px}
+      .arow .tm{color:var(--dim);font-size:11.5px;white-space:nowrap}
+      .ackbtn{background:transparent;border:1px solid var(--line);color:var(--muted);
+        border-radius:9px;padding:6px 13px;font-size:12px;cursor:pointer;transition:.15s;white-space:nowrap}
+      .ackbtn:hover{color:var(--teal2);border-color:var(--teal2);background:rgba(63,215,196,.08)}
+      .emptystate{flex-direction:column;align-items:center;gap:10px;color:var(--dim);padding:50px 0}
+      .emptystate svg{stroke:var(--dim);fill:none;stroke-width:2}
+    </style>"""
     return page("Alerts", "/alerts", body,
-                subtitle="Latest confirmed threats, newest first")
+                subtitle="Live &middot; updates automatically")
 
 
 PAGE_SIZE = 12
@@ -1136,10 +1543,14 @@ def history():
     except ValueError:
         page_no = 1
 
+    show = request.args.get("show", "")     # "all" also lists acknowledged ones
+
     where = "WHERE (?='all' OR tier=?) AND (?='' OR timestamp LIKE ?)"
     params = [tier, tier, q, "%" + q + "%"]
     if rng == "24h":
         where += " AND timestamp >= datetime('now','-1 day')"
+    if show != "all":
+        where += " AND COALESCE(dismissed,0)=0"
 
     db = Database(config.DB_PATH)
     total = db.conn.execute("SELECT COUNT(*) c FROM alerts " + where, params).fetchone()["c"]
@@ -1153,7 +1564,7 @@ def history():
 
     # ---- filter pills ----
     def qs(**kw):
-        d = {"tier": tier, "range": rng, "q": q}
+        d = {"tier": tier, "range": rng, "q": q, "show": show}
         d.update(kw)
         d = {k: v for k, v in d.items() if v}
         return "/history?" + urlencode(d)
@@ -1166,7 +1577,9 @@ def history():
         + pill("Tier 3", tier == "3", qs(tier="3", page=1))
         + pill("Tier 2", tier == "2", qs(tier="2", page=1))
         + pill("Tier 1", tier == "1", qs(tier="1", page=1))
-        + pill("Last 24h", rng == "24h", qs(range="" if rng == "24h" else "24h", page=1)))
+        + pill("Last 24h", rng == "24h", qs(range="" if rng == "24h" else "24h", page=1))
+        + pill("Include acknowledged", show == "all",
+               qs(show="" if show == "all" else "all", page=1)))
 
     # ---- table rows ----
     trows = ""
@@ -1472,7 +1885,7 @@ def settings():
         <div class="togglerow"><div><b>Software Night Vision (CLAHE)</b>
           <div class="fdesc" style="margin:2px 0 0">Auto-enhance low-light frames</div></div>{_sw("night", night_on)}</div>
         <div class="togglerow"><div><b>Auto-arm at night</b>
-          <div class="fdesc" style="margin:2px 0 0">Arm system on schedule &middot; 20:00&ndash;06:00</div></div>{_sw("autoarm", auto_on)}</div>
+          <div class="fdesc" style="margin:2px 0 0">Arm system on schedule &middot; {getattr(config,'AUTO_ARM_START_HOUR',22):02d}:00&ndash;{getattr(config,'AUTO_ARM_END_HOUR',6):02d}:00</div></div>{_sw("autoarm", auto_on)}</div>
         <div class="togglerow"><div><b>Highest Security</b>
           <div class="fdesc" style="margin:2px 0 0">Any confirmed person triggers a full Tier-3 response</div></div>{_sw("highest", highest_on)}</div>
         <div class="setfoot">
@@ -1531,14 +1944,9 @@ def settings():
     # panel documents the command set and confirms the API is serving it.
     try:
         from voice.commands import config as _icfg
-        _c = _icfg()
-        n_cmds = len(_c["intents"])
-        cmd_rows = "".join(
-            _irow(i["id"].replace("_", " ").title(),
-                  " &middot; ".join(f'"{p}"' for p in i["phrases"].get("en", [])[:3]))
-            for i in _c["intents"])
-    except Exception as e:
-        n_cmds, cmd_rows = 0, f'<div class="fdesc">Could not read intents.json ({e})</div>'
+        n_cmds = len(_icfg()["intents"])
+    except Exception:
+        n_cmds = 0
 
     sec_voice = f"""
       <div class="sechead">Voice Control</div>
@@ -1549,12 +1957,7 @@ def settings():
       {_irow("This console", "serves the commands, does not listen")}
       {_irow("Languages", "English + Tagalog")}
       {_irow("Commands available", f"{n_cmds}")}
-      {_irow("Source of truth", "voice/intents.json")}
-      {_irow("Served to the app by", "GET /api/intents")}
-      <div class="secheadsmall" style="margin-top:20px">COMMAND LIST</div>
-      <div class="fdesc" style="margin-bottom:10px">Say any of these in the app.
-        Edit voice/intents.json to change them - the app picks up changes on restart.</div>
-      {cmd_rows}"""
+      {_irow("Source of truth", "voice/intents.json")}"""
 
     # ---- Users ----
     pw = request.args.get("pw", "")

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'theme.dart';
+import 'widgets.dart';
 import 'alerts_tab.dart';
 
 class HomeTab extends StatefulWidget {
@@ -69,7 +70,10 @@ class _HomeTabState extends State<HomeTab> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: Column(children: [
+        const OfflineBanner(),
+        Expanded(
+          child: RefreshIndicator(
         onRefresh: _loadAll,
         color: cTeal,
         child: ListView(
@@ -122,7 +126,9 @@ class _HomeTabState extends State<HomeTab> {
             ..._alerts.map((a) => _alertRow(context, a)),
           ],
         ),
-      ),
+          ),
+        ),
+      ]),
     );
   }
 

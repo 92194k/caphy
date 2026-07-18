@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'api.dart';
 import 'theme.dart';
+import 'widgets.dart';
 import 'voice_screen.dart';
 
 class LiveTab extends StatefulWidget {
@@ -14,26 +15,28 @@ class LiveTab extends StatefulWidget {
 class _LiveTabState extends State<LiveTab> {
   List<dynamic> _cams = [];
   int _sel = 0;
-  int _frame = 0; // cache-buster for the live image
   Map<String, dynamic> _stat = {};
+  Map<String, dynamic> _state = {};   // armed / camera_on / emergency / ...
   bool _recording = false;
   bool _nv = false;
-  Timer? _frameTimer;
   Timer? _statTimer;
+
+  bool get _armed => _state['armed'] == true;
+  bool get _cameraOn => _state['camera_on'] != false;
+  bool get _emergency => _state['emergency'] == true;
 
   @override
   void initState() {
     super.initState();
     _loadCams();
-    _frameTimer = Timer.periodic(
-        const Duration(milliseconds: 250), (_) => setState(() => _frame++));
+    // No more per-frame image polling (that was the lag). The MJPEG stream
+    // widget renders frames continuously. We only poll lightweight status.
     _statTimer =
-        Timer.periodic(const Duration(seconds: 1), (_) => _loadStat());
+        Timer.periodic(const Duration(seconds: 2), (_) => _loadStat());
   }
 
   @override
   void dispose() {
-    _frameTimer?.cancel();
     _statTimer?.cancel();
     super.dispose();
   }
@@ -48,19 +51,126 @@ class _LiveTabState extends State<LiveTab> {
     for (final x in s) {
       if (x['cam'] == _sel && mounted) setState(() => _stat = x);
     }
+    final st = await Api.state();
+    if (st != null && mounted) {
+      setState(() {
+        _state = st;
+        _nv = st['night_vision'] == true;
+      });
+    }
   }
 
-  void _toast(String m) => ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(backgroundColor: cPanel, content: Text(m, style: const TextStyle(color: cText))));
+  Future<void> _toggleArm() async {
+    final r = await Api.setArmed(!_armed);
+    if (r == null) return _toast('Could not reach CAPHY');
+    _toast(r ? 'System armed' : 'System disarmed');
+    _loadStat();
+  }
+
+  Future<void> _toggleCamera() async {
+    final turningOff = _cameraOn;
+    final r = await Api.setCamera(!_cameraOn);
+    if (r == null) return _toast('Could not reach CAPHY');
+    _toast(turningOff
+        ? 'Camera off - detection paused'
+        : 'Camera on');
+    _loadStat();
+  }
+
+  Future<void> _toggleEmergency() async {
+    if (!_emergency) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: cPanel,
+          title: const Text('Activate emergency mode?',
+              style: TextStyle(color: cText)),
+          content: const Text(
+              'This forces the camera on, arms the system, sounds the siren '
+              'and sends a push alert.',
+              style: TextStyle(color: cMuted)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel', style: TextStyle(color: cMuted))),
+            TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Activate', style: TextStyle(color: cRed))),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    final r = await Api.setEmergency(!_emergency);
+    if (r == null) return _toast('Could not reach CAPHY');
+    _toast(r ? 'EMERGENCY MODE ACTIVE' : 'Emergency mode cancelled');
+    _loadStat();
+  }
+
+  void _toast(String m, {bool error = false}) =>
+      showTopToast(context, m, error: error);
 
   @override
   Widget build(BuildContext context) {
     final tier = (_stat['tier'] ?? 0) as int;
     return Scaffold(
       appBar: AppBar(backgroundColor: cPanel, title: const Text('Live')),
-      body: ListView(
+      body: Column(children: [
+        const OfflineBanner(),
+        Expanded(
+          child: ListView(
         padding: const EdgeInsets.all(14),
         children: [
+          // ---- system state at a glance ----
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              StateChip(
+                  label: 'System',
+                  on: _armed,
+                  onText: 'ARMED',
+                  offText: 'DISARMED',
+                  icon: Icons.shield),
+              StateChip(
+                  label: 'Camera',
+                  on: _cameraOn,
+                  onColor: cTeal2,
+                  icon: Icons.videocam),
+              StateChip(
+                  label: 'Night vision',
+                  on: _nv,
+                  icon: Icons.nightlight_round),
+              if (_emergency)
+                const StateChip(
+                    label: 'EMERGENCY',
+                    on: true,
+                    onText: 'ACTIVE',
+                    offText: '',
+                    onColor: cRed,
+                    icon: Icons.warning_amber),
+            ]),
+          ),
+          if (!_cameraOn)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cOrange.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: cOrange),
+              ),
+              child: Row(children: const [
+                Icon(Icons.videocam_off, color: cOrange, size: 18),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Camera is OFF. The device is released and detection is '
+                    'paused - this is not a fault.',
+                    style: TextStyle(color: cOrange, fontSize: 12),
+                  ),
+                ),
+              ]),
+            ),
           if (_cams.length > 1)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -85,21 +195,19 @@ class _LiveTabState extends State<LiveTab> {
                 }).toList(),
               ),
             ),
-          // live view
+          // live view - continuous MJPEG stream (smooth, no polling)
           Stack(children: [
             AspectRatio(
               aspectRatio: 4 / 3,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  '${Api.frameUrl(_sel)}&t=$_frame',
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: Colors.black,
-                    child: const Center(
-                        child: Text('connecting to camera...',
-                            style: TextStyle(color: cDim))),
+                child: Container(
+                  color: Colors.black,
+                  child: MjpegView(
+                    key: ValueKey('stream$_sel'),
+                    url: Api.streamUrl(_sel),
+                    active: _cameraOn,
+                    fit: BoxFit.cover,
                   ),
                 ),
               ),
@@ -135,13 +243,47 @@ class _LiveTabState extends State<LiveTab> {
           const SizedBox(height: 16),
           // controls
           Wrap(spacing: 10, runSpacing: 10, children: [
+            _ctrl(_armed ? Icons.shield : Icons.shield_outlined,
+                _armed ? 'Disarm' : 'Arm', _armed, _toggleArm),
+            _ctrl(_cameraOn ? Icons.videocam_off : Icons.videocam,
+                _cameraOn ? 'Camera Off' : 'Camera On', !_cameraOn,
+                _toggleCamera),
+            _ctrl(Icons.warning_amber,
+                _emergency ? 'Cancel Emg' : 'Emergency', _emergency,
+                _toggleEmergency),
             _ctrl(Icons.camera_alt, 'Snapshot', false, () async {
-              _toast(await Api.snapshot(_sel) ? 'Snapshot saved' : 'Failed');
+              final ok = await Api.snapshot(_sel);
+              if (!ok) {
+                _toast('Snapshot failed', error: true);
+                return;
+              }
+              // Also save the current frame into the phone's CAPHY album.
+              final saved = await saveImageToGallery(
+                  '${Api.frameUrl(_sel)}&t=${DateTime.now().millisecondsSinceEpoch}',
+                  prefix: 'snapshot');
+              _toast(saved
+                  ? 'Snapshot saved to gallery (CAPHY album)'
+                  : 'Snapshot saved on PC');
             }),
             _ctrl(Icons.fiber_manual_record, 'Record', _recording, () async {
-              final on = await Api.record(_sel);
+              final res = await Api.record(_sel);
+              final on = res['recording'] == true;
               setState(() => _recording = on);
-              _toast(on ? 'Recording started' : 'Recording stopped');
+              if (on) {
+                _toast('Recording started');
+              } else {
+                _toast('Saving recording...');
+                final url = res['video_url'];
+                if (url != null) {
+                  final saved =
+                      await saveVideoUrlToGallery('${Store.baseUrl}$url');
+                  _toast(saved
+                      ? 'Recording saved to gallery (CAPHY album)'
+                      : 'Recording saved on PC');
+                } else {
+                  _toast('Recording saved on PC');
+                }
+              }
             }),
             _ctrl(Icons.nightlight_round, 'Night Vision', _nv, () async {
               final on = await Api.nightVision(_sel);
@@ -156,7 +298,9 @@ class _LiveTabState extends State<LiveTab> {
             _ctrl(Icons.fullscreen, 'Fullscreen', false, _openFullscreen),
           ]),
         ],
-      ),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -209,9 +353,7 @@ class _FullscreenView extends StatefulWidget {
 }
 
 class _FullscreenViewState extends State<_FullscreenView> {
-  int _f = 0;
-  Timer? _t;
-  bool _showControls = true;
+  bool _showExit = true;
   Timer? _hideTimer;
 
   @override
@@ -229,14 +371,11 @@ class _FullscreenViewState extends State<_FullscreenView> {
       DeviceOrientation.landscapeRight,
     ]);
 
-    _t = Timer.periodic(
-        const Duration(milliseconds: 250), (_) => setState(() => _f++));
     _startHideTimer();
   }
 
   @override
   void dispose() {
-    _t?.cancel();
     _hideTimer?.cancel();
 
     // Put the phone back the way we found it, or the rest of the app stays
@@ -249,71 +388,56 @@ class _FullscreenViewState extends State<_FullscreenView> {
   void _startHideTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _showControls = false);
+      if (mounted) setState(() => _showExit = false);
     });
   }
 
-  void _tapScreen() {
-    setState(() => _showControls = !_showControls);
-    if (_showControls) _startHideTimer();
+  void _tap() {
+    setState(() => _showExit = !_showExit);
+    if (_showExit) _startHideTimer();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: Colors.black,
-        body: GestureDetector(
-          onTap: _tapScreen,
-          child: Stack(children: [
-            Positioned.fill(
-              child: Center(
-                child: Image.network('${Api.frameUrl(widget.cam)}&t=$_f',
-                    fit: BoxFit.contain, gaplessPlayback: true),
+        // Fullscreen is just the live video - no controls. Tap to reveal Exit.
+        body: Stack(children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _tap,
+              child: MjpegView(
+                key: ValueKey('fs${widget.cam}'),
+                url: Api.streamUrl(widget.cam),
+                fit: BoxFit.contain,
               ),
             ),
-            // Controls fade out so nothing covers the footage; tap to bring back.
-            AnimatedOpacity(
-              opacity: _showControls ? 1 : 0,
-              duration: const Duration(milliseconds: 250),
-              child: IgnorePointer(
-                ignoring: !_showControls,
-                child: Stack(children: [
-                  Positioned(
-                    top: 16,
-                    right: 16,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.close,
-                            color: Colors.white, size: 28),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ),
+          ),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: AnimatedOpacity(
+              opacity: _showExit ? 1 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: cLine),
                   ),
-                  Positioned(
-                    bottom: 16,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text('Tap to hide controls',
-                            style:
-                                TextStyle(color: Colors.white70, fontSize: 12)),
-                      ),
-                    ),
-                  ),
-                ]),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.close, color: Colors.white, size: 18),
+                    SizedBox(width: 6),
+                    Text('Exit',
+                        style: TextStyle(color: Colors.white, fontSize: 13)),
+                  ]),
+                ),
               ),
             ),
-          ]),
-        ),
+          ),
+        ]),
       );
 }

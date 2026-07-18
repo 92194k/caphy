@@ -14,7 +14,8 @@ This PC never listens and never talks - no microphone, no Vosk, no TTS.
 """
 import sys
 import config
-from web.server import app, start_workers, resolve_cameras
+from web.server import (app, start_workers, resolve_cameras,
+                        start_auto_arm_scheduler)
 
 
 def parse_args(argv):
@@ -33,6 +34,7 @@ if __name__ == "__main__":
     else:
         cameras = resolve_cameras()
     start_workers(cameras)
+    start_auto_arm_scheduler()
     # host="0.0.0.0" makes the console reachable from the phone over the LAN,
     # not just from this PC. Open http://<this-PC-IP>:5000 on the phone.
     print("[CAPHY] Console: http://127.0.0.1:5000 (this PC) or http://<your-LAN-IP>:5000 (phone)")

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -213,28 +214,131 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _i = 0;
+  Timer? _alertPoll;
+  int _lastSeenId = 0;      // highest alert id we've already popped
+  bool _popupOpen = false;  // don't stack popups
+  bool _primed = false;     // skip the first poll so old alerts don't pop
 
   @override
   void initState() {
     super.initState();
-    // foreground alert -> quick in-app banner, tap to open the alert
-    FirebaseMessaging.onMessage.listen((m) {
-      final n = m.notification;
-      if (n != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: cPanel,
-          content: Text('${n.title ?? "Alert"} — ${n.body ?? ""}',
-              style: const TextStyle(color: cText)),
-          action: SnackBarAction(
-            label: 'View',
-            textColor: cTeal2,
-            onPressed: () => _openAlert(m.data['alert_id']),
+    // Poll for new alerts and pop them up automatically - works over local
+    // Wi-Fi without needing Firebase. No manual refresh required.
+    _alertPoll = Timer.periodic(const Duration(seconds: 3), (_) => _checkAlerts());
+    _checkAlerts();
+
+    // If Firebase is set up, a tapped background notification still opens it.
+    FirebaseMessaging.onMessageOpenedApp
+        .listen((m) => _openAlert(m.data['alert_id']));
+  }
+
+  @override
+  void dispose() {
+    _alertPoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkAlerts() async {
+    final list = await Api.alerts(limit: 5);
+    if (!mounted || list.isEmpty) return;
+    final newest = list.first;
+    final id = asInt(newest['id']);
+    if (!_primed) {
+      // first run: remember the newest without popping, so we only pop alerts
+      // that arrive AFTER the app opened.
+      _primed = true;
+      _lastSeenId = id;
+      return;
+    }
+    if (id > _lastSeenId && !_popupOpen) {
+      _lastSeenId = id;
+      _showAlertBanner(newest);
+    }
+  }
+
+  /// Non-blocking banner at the TOP of the screen. The app stays fully usable
+  /// while it's up. Auto-dismisses; has Acknowledge and View.
+  void _showAlertBanner(dynamic a) {
+    final id = asInt(a['id']);
+    final tier = asInt(a['tier'], 1);
+    final overlay = Overlay.of(context);
+    _popupOpen = true;
+
+    late OverlayEntry entry;
+    Timer? auto;
+    void close() {
+      auto?.cancel();
+      if (entry.mounted) entry.remove();
+      _popupOpen = false;
+    }
+
+    entry = OverlayEntry(
+      builder: (ctx) => Positioned(
+        top: MediaQuery.of(ctx).padding.top + 10,
+        left: 12,
+        right: 12,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            decoration: BoxDecoration(
+              color: cPanel,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: tierColor(tier)),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.45),
+                    blurRadius: 16,
+                    offset: const Offset(0, 5))
+              ],
+            ),
+            child: Row(children: [
+              Icon(Icons.warning_amber, color: tierColor(tier), size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('New Alert · Tier $tier',
+                          style: const TextStyle(
+                              color: cText,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5)),
+                      Text(
+                        'Person detected'
+                        '${a['camera'] != null ? ' on ${a['camera']}' : ''}'
+                        '${a['distance_m'] != null ? ' · ${a['distance_m']} m' : ''}',
+                        style: const TextStyle(color: cMuted, fontSize: 12),
+                      ),
+                    ]),
+              ),
+              IconButton(
+                onPressed: close,
+                icon: const Icon(Icons.close, color: cMuted, size: 18),
+                tooltip: 'Dismiss',
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(6),
+              ),
+              const SizedBox(width: 2),
+              FilledButton(
+                onPressed: () {
+                  close();
+                  _openAlert(id);
+                },
+                style: FilledButton.styleFrom(
+                    backgroundColor: cTeal,
+                    minimumSize: const Size(0, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 16)),
+                child: const Text('View',
+                    style: TextStyle(color: Colors.black, fontSize: 12.5)),
+              ),
+            ]),
           ),
-        ));
-      }
-    });
-    // tapped a notification while the app was in the background
-    FirebaseMessaging.onMessageOpenedApp.listen((m) => _openAlert(m.data['alert_id']));
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    auto = Timer(const Duration(seconds: 6), close);
   }
 
   void _openAlert(dynamic id) {

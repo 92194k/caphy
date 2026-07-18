@@ -15,17 +15,34 @@ from datetime import datetime
 import cv2
 
 
+def open_video_writer(path_no_ext, fps, size):
+    """Open a VideoWriter trying several codecs. mp4v often fails silently on
+    Windows OpenCV, so fall back to MJPG (.avi). Returns (writer, full_path)
+    or (None, None) if nothing works."""
+    wfps = max(min(fps, 30.0), 5.0)
+    for fourcc, ext in (("mp4v", "mp4"), ("avc1", "mp4"), ("MJPG", "avi"), ("XVID", "avi")):
+        full = f"{path_no_ext}.{ext}"
+        writer = cv2.VideoWriter(full, cv2.VideoWriter_fourcc(*fourcc), wfps, size)
+        if writer.isOpened():
+            return writer, full
+        writer.release()
+    return None, None
+
+
 class AlertManager:
     def __init__(self, db, captures_dir, cooldown_sec,
-                 snapshot_tiers, record_tiers, presence_grace_sec, camera_name=None):
+                 snapshot_tiers, record_tiers, presence_grace_sec, camera_name=None,
+                 videos_dir=None):
         self.db = db
         self.dir = captures_dir
+        self.videos_dir = videos_dir or captures_dir
         self.camera_name = camera_name
         self.cooldown = cooldown_sec
         self.snapshot_tiers = set(snapshot_tiers)
         self.record_tiers = set(record_tiers)
         self.presence_grace = presence_grace_sec
         os.makedirs(captures_dir, exist_ok=True)
+        os.makedirs(self.videos_dir, exist_ok=True)
 
         self.last_alert_time = 0.0
         self._writer = None
@@ -63,10 +80,8 @@ class AlertManager:
 
         if person and tier in self.record_tiers and self._writer is None and not self._stop_requested:
             h, w = frame.shape[:2]
-            self._video_path = os.path.join(self.dir, f"alert_{self._stamp()}_t{tier}.mp4")
-            real_fps = max(min(fps, 30.0), 1.0)          # clamp to a sane range
-            self._writer = cv2.VideoWriter(
-                self._video_path, cv2.VideoWriter_fourcc(*"mp4v"), real_fps, (w, h))
+            base = os.path.join(self.videos_dir, f"alert_{self._stamp()}_t{tier}")
+            self._writer, self._video_path = open_video_writer(base, fps, (w, h))
             self._last_seen = now
 
         # ---------- alert row + snapshot (rate-limited) ----------

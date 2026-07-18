@@ -47,6 +47,16 @@ SIREN_TIERS      = [3]         # tiers that sound the siren
 PRESENCE_GRACE_SEC = 1.5       # keep recording this long after the person disappears
 HIGHEST_SECURITY = False       # if True, ANY confirmed person triggers the full Tier-3 response
 
+# ---- Auto-arm at night ----
+# Enable the switch in Settings -> Detection. The system arms itself at
+# AUTO_ARM_START_HOUR and disarms at AUTO_ARM_END_HOUR (24-hour clock).
+AUTO_ARM_START_HOUR = 22   # 10:00 PM
+AUTO_ARM_END_HOUR   = 6    # 6:00 AM
+
+# Seconds after arming during which no alert fires - lets you arm while still
+# in view without instantly triggering yourself.
+ARM_GRACE_SEC = 8
+
 # ---- Evaluation / data collection (thesis Chapter 4) ----
 # Turn ON while running a test scenario, OFF for normal use.
 # Every motion event is recorded - including the ones YOLO rejected, which is
@@ -58,7 +68,21 @@ EVAL_GROUND_TRUTH = ""   # what SHOULD happen: "person", "no_person", or ""
 
 # ---- Database & captures ----
 DB_PATH            = "caphy.db"
-CAPTURES_DIR       = "captures"
+
+# Snapshots and recordings save into the user's own Pictures/Videos so they
+# show up in the Windows gallery, inside a "CAPHY" album folder. Falls back to
+# a local ./captures folder if the home directory can't be resolved.
+def _gallery_dir(kind, default):
+    import os
+    base = os.path.join(os.path.expanduser("~"), kind, "CAPHY")
+    try:
+        os.makedirs(base, exist_ok=True)
+        return base
+    except Exception:
+        return default
+
+CAPTURES_DIR       = _gallery_dir("Pictures", "captures")   # snapshots + alert images
+VIDEOS_DIR         = _gallery_dir("Videos", "captures")     # recordings
 ALERT_COOLDOWN_SEC = 5.0
 
 # ---- Cloud sync ----
