@@ -191,19 +191,32 @@ class _AlertsTabState extends State<AlertsTab> {
           onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => AlertDetailScreen(id: id))),
           leading: CircleAvatar(
-            backgroundColor: tierColor(tier).withValues(alpha: 0.2),
-            child: Text('$tier',
-                style: TextStyle(
-                    color: tierColor(tier), fontWeight: FontWeight.bold)),
+            backgroundColor: cBg,
+            child: Icon(Icons.person, color: tierColor(tier)),
           ),
-          title: Text(event,
-              style:
-                  const TextStyle(color: cText, fontWeight: FontWeight.w600)),
+          title: Row(children: [
+            Flexible(
+              child: Text(event,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: cText, fontWeight: FontWeight.w600)),
+            ),
+            const SizedBox(width: 8),
+            _tierPill(tier),
+          ]),
           subtitle: Text(sub, style: const TextStyle(color: cMuted)),
-          trailing: IconButton(
-            tooltip: 'Acknowledge',
-            icon: const Icon(Icons.check_circle_outline, color: cDim),
+          trailing: OutlinedButton(
             onPressed: () => _ack(id),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: cTeal2,
+              backgroundColor: cPanel2,
+              side: const BorderSide(color: cLine),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              minimumSize: const Size(0, 34),
+            ),
+            child: const Text('Acknowledge', style: TextStyle(fontSize: 12)),
           ),
         ),
       ),
@@ -216,6 +229,25 @@ class _AlertsTabState extends State<AlertsTab> {
         color: cBg,
         child: const Icon(Icons.person, color: cOrange, size: 20),
       );
+
+  // Small "TIER N" pill, outlined in the tier colour (matches the web console).
+  Widget _tierPill(int tier) {
+    final c = tierColor(tier);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.withValues(alpha: 0.55)),
+      ),
+      child: Text('TIER $tier',
+          style: TextStyle(
+              color: c,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5)),
+    );
+  }
 
   String _time(dynamic ts) {
     if (ts == null) return '';

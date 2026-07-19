@@ -241,31 +241,40 @@ class _LiveTabState extends State<LiveTab> {
               Positioned(top: 10, right: 10, child: tierPill(tier)),
           ]),
           const SizedBox(height: 16),
-          // controls
-          Wrap(spacing: 10, runSpacing: 10, children: [
-            _ctrl(_armed ? Icons.shield : Icons.shield_outlined,
-                _armed ? 'Disarm' : 'Arm', _armed, _toggleArm),
-            _ctrl(_cameraOn ? Icons.videocam_off : Icons.videocam,
-                _cameraOn ? 'Camera Off' : 'Camera On', !_cameraOn,
-                _toggleCamera),
-            _ctrl(Icons.warning_amber,
-                _emergency ? 'Cancel Emg' : 'Emergency', _emergency,
-                _toggleEmergency),
-            _ctrl(Icons.camera_alt, 'Snapshot', false, () async {
+          // ---- controls (matches the web console) ----
+          Row(children: [
+            Expanded(
+              child: _primaryBtn(
+                  _armed ? Icons.shield : Icons.shield_outlined,
+                  _armed ? 'Disarm' : 'Arm', _toggleArm),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _dangerBtn(Icons.notifications_active, 'Trigger Siren',
+                  () async {
+                final on = await Api.siren();
+                _toast(on ? 'Siren ON' : 'Siren off');
+              }),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _iconBtn(_cameraOn ? Icons.videocam : Icons.videocam_off,
+                _cameraOn, _toggleCamera, tip: 'Camera'),
+            _iconBtn(Icons.camera_alt, false, () async {
               final ok = await Api.snapshot(_sel);
               if (!ok) {
                 _toast('Snapshot failed', error: true);
                 return;
               }
-              // Also save the current frame into the phone's CAPHY album.
               final saved = await saveImageToGallery(
                   '${Api.frameUrl(_sel)}&t=${DateTime.now().millisecondsSinceEpoch}',
                   prefix: 'snapshot');
               _toast(saved
                   ? 'Snapshot saved to gallery (CAPHY album)'
                   : 'Snapshot saved on PC');
-            }),
-            _ctrl(Icons.fiber_manual_record, 'Record', _recording, () async {
+            }, tip: 'Snapshot'),
+            _iconBtn(Icons.fiber_manual_record, _recording, () async {
               final res = await Api.record(_sel);
               final on = res['recording'] == true;
               setState(() => _recording = on);
@@ -284,18 +293,16 @@ class _LiveTabState extends State<LiveTab> {
                   _toast('Recording saved on PC');
                 }
               }
-            }),
-            _ctrl(Icons.nightlight_round, 'Night Vision', _nv, () async {
+            }, tip: 'Record'),
+            _iconBtn(Icons.nightlight_round, _nv, () async {
               final on = await Api.nightVision(_sel);
               setState(() => _nv = on);
               _toast('Night vision ${on ? "on" : "off"}');
-            }),
-            _ctrl(Icons.notifications_active, 'Alarm', false, () async {
-              final on = await Api.siren();
-              _toast(on ? 'Siren ON' : 'Siren off');
-            }),
-            _ctrl(Icons.mic, 'Speak', false, _openVoice),
-            _ctrl(Icons.fullscreen, 'Fullscreen', false, _openFullscreen),
+            }, tip: 'Night vision'),
+            _iconBtn(Icons.mic, false, _openVoice, tip: 'Speak'),
+            _iconBtn(Icons.fullscreen, false, _openFullscreen, tip: 'Fullscreen'),
+            _iconBtn(Icons.warning_amber, _emergency, _toggleEmergency,
+                danger: true, tip: 'Emergency'),
           ]),
         ],
           ),
@@ -313,23 +320,59 @@ class _LiveTabState extends State<LiveTab> {
         ]),
       );
 
-  Widget _ctrl(IconData icon, String label, bool active, VoidCallback onTap) {
-    return SizedBox(
-      width: 104,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          backgroundColor: active ? cTeal : cPanel,
-          side: BorderSide(color: active ? cTeal : cLine),
-          padding: const EdgeInsets.symmetric(vertical: 12),
+  // Filled-teal primary action (Arm / Disarm).
+  Widget _primaryBtn(IconData icon, String label, VoidCallback onTap) {
+    return FilledButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18, color: Colors.black),
+      label: Text(label,
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
+      style: FilledButton.styleFrom(
+        backgroundColor: cTeal,
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  // Red danger action (Trigger Siren).
+  Widget _dangerBtn(IconData icon, String label, VoidCallback onTap) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18, color: cRed),
+      label: Text(label,
+          style: const TextStyle(color: cRed, fontWeight: FontWeight.w700)),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: cRed.withValues(alpha: 0.12),
+        side: BorderSide(color: cRed.withValues(alpha: 0.6)),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  // Dark icon-only control (snapshot, record, night vision, etc.).
+  Widget _iconBtn(IconData icon, bool active, VoidCallback onTap,
+      {bool danger = false, String? tip}) {
+    final iconColor = danger ? cRed : (active ? cTeal2 : cMuted);
+    final borderColor = danger
+        ? cRed.withValues(alpha: 0.5)
+        : (active ? cTeal : cLine);
+    return Tooltip(
+      message: tip ?? '',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 50,
+          height: 46,
+          decoration: BoxDecoration(
+            color: active ? cTeal.withValues(alpha: 0.15) : cPanel2,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor),
+          ),
+          child: Icon(icon, size: 20, color: iconColor),
         ),
-        onPressed: onTap,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 20, color: active ? Colors.black : cText),
-          const SizedBox(height: 4),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11, color: active ? Colors.black : cText)),
-        ]),
       ),
     );
   }

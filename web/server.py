@@ -667,14 +667,29 @@ def live():
           <button class="collapse" id="collapseBtn" onclick="toggleControls()">Hide &#9650;</button>
         </div>
         <div class="controls" id="controls">
-          <button class="ctrlbtn primary" id="armBtn" onclick="toggleArm()">Arm</button>
-          <button class="ctrlbtn" id="camBtn" onclick="toggleCam()">Camera Off</button>
-          <button class="ctrlbtn" onclick="snap()">Snapshot</button>
-          <button class="ctrlbtn" id="recBtn" onclick="toggleRec()">Record</button>
-          <button class="ctrlbtn" id="nvBtn" onclick="toggleNV()">Night Vision</button>
+          <button class="ctrlbtn primary" id="armBtn" onclick="toggleArm()">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            <span id="armLabel">Arm</span></button>
+          <button class="ctrlbtn icon" id="camBtn" onclick="toggleCam()" title="Camera">
+            <svg viewBox="0 0 24 24"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+          <button class="ctrlbtn icon" onclick="snap()" title="Snapshot">
+            <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </button>
+          <button class="ctrlbtn icon" id="recBtn" onclick="toggleRec()" title="Record">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
+          </button>
+          <button class="ctrlbtn icon" id="nvBtn" onclick="toggleNV()" title="Night vision">
+            <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <button class="ctrlbtn icon" onclick="fsMain()" title="Fullscreen">
+            <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+          </button>
+          <div class="ctrlspacer"></div>
+          <button class="ctrlbtn icon emg" id="emgBtn" onclick="toggleEmg()" title="Emergency">
+            <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </button>
           <button class="ctrlbtn siren" id="sirenBtn" onclick="siren()">Trigger Siren</button>
-          <button class="ctrlbtn emg" id="emgBtn" onclick="toggleEmg()">Emergency</button>
-          <button class="ctrlbtn" onclick="fsMain()">Fullscreen</button>
         </div>
       </div>
       <div class="rightcol">
@@ -724,7 +739,7 @@ def live():
         recOn = j.recording;
         const b=document.getElementById('recBtn');
         b.classList.toggle('active', recOn);
-        b.textContent = recOn ? 'Stop Recording' : 'Record';
+        b.title = recOn ? 'Stop Recording' : 'Record';
         toast(recOn ? 'Recording started' : 'Recording saved to Videos/CAPHY');
       }catch(e){}
     }
@@ -751,18 +766,19 @@ def live():
         setPill(document.getElementById('sbEmg'),   'Emergency',    ST.emergency,    'ACTIVE','OFF');
 
         const armBtn=document.getElementById('armBtn');
-        armBtn.textContent = ST.armed ? 'Disarm' : 'Arm';
+        document.getElementById('armLabel').textContent = ST.armed ? 'Disarm' : 'Arm';
         armBtn.classList.toggle('active', ST.armed);
 
         const camBtn=document.getElementById('camBtn');
-        camBtn.textContent = ST.camera_on ? 'Camera Off' : 'Camera On';
+        camBtn.title = ST.camera_on ? 'Camera Off' : 'Camera On';
         camBtn.classList.toggle('active', !ST.camera_on);
 
         document.getElementById('nvBtn').classList.toggle('active', ST.night_vision);
         document.getElementById('sirenBtn').textContent = ST.siren ? 'Stop Siren' : 'Trigger Siren';
+        document.getElementById('sirenBtn').classList.toggle('active', ST.siren);
 
         const emgBtn=document.getElementById('emgBtn');
-        emgBtn.textContent = ST.emergency ? 'Cancel Emergency' : 'Emergency';
+        emgBtn.title = ST.emergency ? 'Cancel Emergency' : 'Emergency';
         emgBtn.classList.toggle('active', ST.emergency);
       }catch(e){}
     }
@@ -846,17 +862,22 @@ def live():
       .collapse{background:none;border:none;color:var(--muted);font-size:11.5px;cursor:pointer}
       .collapse:hover{color:var(--teal2)}
 
-      .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px;
+      .controls{display:flex;flex-wrap:wrap;align-items:center;gap:9px;
         overflow:hidden;transition:max-height .25s ease,opacity .2s;max-height:400px}
       .controls.hidden{max-height:0;opacity:0;margin:0}
-      /* one consistent button style everywhere - no icons, just words */
-      .ctrlbtn{display:flex;align-items:center;justify-content:center;
+      .ctrlspacer{flex:1 1 auto;min-width:8px}
+      .ctrlbtn{display:flex;align-items:center;justify-content:center;gap:8px;
         background:var(--panel);border:1px solid var(--line);color:var(--text);
-        border-radius:10px;padding:12px 10px;font-size:13px;font-weight:600;
+        border-radius:10px;padding:12px 16px;font-size:13px;font-weight:600;
         letter-spacing:.2px;cursor:pointer;transition:.15s;text-align:center}
+      .ctrlbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;flex-shrink:0}
+      .ctrlbtn.icon{padding:12px;width:46px;height:46px}
       .ctrlbtn:hover{border-color:var(--teal2);color:var(--teal2)}
       .ctrlbtn.active{background:var(--teal);color:#04110e;border-color:var(--teal)}
       .ctrlbtn.primary{border-color:var(--teal2);color:var(--teal2)}
+      .ctrlbtn.emg{border-color:var(--red);color:var(--red)}
+      .ctrlbtn.siren{background:var(--red);color:#fff;border-color:var(--red)}
+      .ctrlbtn.siren:hover{filter:brightness(1.1);color:#fff}
       .ctrlbtn.siren.active,.ctrlbtn.emg.active{background:var(--red);color:#fff;border-color:var(--red)}
 
       /* fullscreen: only an Exit button, top-right, auto-hiding */
@@ -1456,17 +1477,17 @@ def alerts_page():
     let known = new Set();
     function tpill(t){
       const cls = t>=3?'p3':(t===2?'p2':'p1');
-      const lbl = t? ('Tier '+t) : 'Motion';
+      const lbl = t? ('TIER '+t) : 'MOTION';
       return '<span class="pill '+cls+'">'+lbl+'</span>';
     }
     function rowHtml(a){
       const event = a.tier ? 'Person confirmed' : 'Movement (no person)';
-      const cam = a.camera ? ' &middot; '+a.camera : '';
+      const cam = a.camera || 'Unknown';
       return '<div class="arow" id="ar'+a.id+'">'+
         '<div class="av"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/>'+
         '<path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></div>'+
-        '<div class="txt"><div class="tt">'+tpill(a.tier)+'</div>'+
-        '<div class="ss">'+event+cam+' &middot; '+(a.distance_m||'-')+' m</div></div>'+
+        '<div class="txt"><div class="tt">'+event+' '+tpill(a.tier)+'</div>'+
+        '<div class="ss">'+cam+' &middot; est. distance '+(a.distance_m||'-')+' m</div></div>'+
         '<div class="tm">'+a.timestamp.replace('T',' ').slice(5,16)+'</div>'+
         '<button class="ackbtn" onclick="ack('+a.id+')">Acknowledge</button></div>';
     }
@@ -1514,12 +1535,16 @@ def alerts_page():
         background:var(--panel);border:1px solid var(--line);border-radius:12px}
       .arow.fresh{animation:flashin .8s ease}
       @keyframes flashin{from{background:rgba(63,215,196,.18)}to{background:var(--panel)}}
-      .arow .av svg{width:22px;height:22px;stroke:var(--muted);fill:none;stroke-width:2}
+      .arow .av{width:40px;height:40px;border-radius:8px;background:rgba(63,215,196,.15);
+        flex-shrink:0;display:flex;align-items:center;justify-content:center}
+      .arow .av svg{width:20px;height:20px;stroke:var(--teal2);fill:none;stroke-width:2}
       .arow .txt{flex:1}
-      .arow .ss{color:var(--muted);font-size:12.5px;margin-top:2px}
+      .arow .tt{font-size:14px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
+      .arow .tt .pill{padding:2px 8px;font-size:10px;border-radius:4px;font-weight:700;letter-spacing:.3px}
+      .arow .ss{color:var(--muted);font-size:12.5px;margin-top:4px}
       .arow .tm{color:var(--dim);font-size:11.5px;white-space:nowrap}
-      .ackbtn{background:transparent;border:1px solid var(--line);color:var(--muted);
-        border-radius:9px;padding:6px 13px;font-size:12px;cursor:pointer;transition:.15s;white-space:nowrap}
+      .ackbtn{background:transparent;border:1px solid var(--line);color:var(--text);
+        border-radius:7px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap}
       .ackbtn:hover{color:var(--teal2);border-color:var(--teal2);background:rgba(63,215,196,.08)}
       .emptystate{flex-direction:column;align-items:center;gap:10px;color:var(--dim);padding:50px 0}
       .emptystate svg{stroke:var(--dim);fill:none;stroke-width:2}
@@ -1582,27 +1607,32 @@ def history():
                qs(show="" if show == "all" else "all", page=1)))
 
     # ---- table rows ----
+    import html as _html
     trows = ""
     for a in rows:
         snap = a["snapshot_path"]
-        if snap:
-            thumb = "<img class='thumb' src='/snapshot/%s'>" % os.path.basename(snap)
-        else:
-            thumb = ("<div class='snapav'><svg viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/>"
-                     "<path d='M4 21v-1a6 6 0 0 1 12 0v1'/></svg></div>")
         has_person = a["confidence"] and a["confidence"] > 0
-        event = "Person detected" if has_person else "Movement (no person)"
-        conf = ("%.2f" % a["confidence"]) if has_person else "&mdash;"
-        view = ("/snapshot/%s" % os.path.basename(snap)) if snap else "#"
+        event = "Person confirmed" if has_person else "Movement (no person)"
+        sub = "two-factor &middot; motion + person" if has_person else "motion only &middot; no person confirmed"
         cam = (a["camera"] if "camera" in a.keys() and a["camera"] else "&mdash;")
+        ts = a["timestamp"][:19].replace("T", " ")
+        if snap:
+            view_url = "/snapshot/%s" % os.path.basename(snap)
+            title = _html.escape(f"{event} · {cam} · {ts}", quote=True)
+            thumb = "<img class='av thumb' src='%s'>" % view_url
+            view_btn = (f"<button class='viewbtn' onclick=\"openSnap('{view_url}','{title}')\">View</button>")
+        else:
+            thumb = ("<div class='av'><svg viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/>"
+                     "<path d='M4 21v-1a6 6 0 0 1 12 0v1'/></svg></div>")
+            view_btn = "<span class='viewbtn disabled'>View</span>"
         trows += (
-            "<tr><td>%s</td><td>%s</td><td>%s</td><td style='color:var(--muted)'>%s</td>"
-            "<td>%s m</td><td>%s</td><td style='color:var(--muted)'>%s</td>"
-            "<td><a class='link' href='%s'>View &rsaquo;</a></td></tr>"
-            % (thumb, tier_pill(a["tier"] or 1), event, cam, a["distance_m"], conf,
-               a["timestamp"][:16].replace("T", " "), view))
+            "<tr><td><div class='evrow'>%s"
+            "<div class='evtxt'><div class='evname'>%s</div><div class='evsub'>%s</div></div></div></td>"
+            "<td>%s</td><td>%s m</td><td style='color:var(--muted)'>%s</td>"
+            "<td>%s</td></tr>"
+            % (thumb, event, sub, cam, a["distance_m"], ts, view_btn))
     if not trows:
-        trows = "<tr><td colspan='8' style='color:var(--dim);padding:22px'>No alerts match this filter.</td></tr>"
+        trows = "<tr><td colspan='5' style='color:var(--dim);padding:22px'>No alerts match this filter.</td></tr>"
 
     # ---- pagination ----
     lo = offset + 1 if total else 0
@@ -1629,6 +1659,14 @@ def history():
     next_b = pgbtn(page_no + 1, label="&rsaquo;", href=qs(page=min(pages, page_no + 1)))
 
     body = f"""
+    <div class="panel">
+      <div class="ph"><h2>Alert History</h2>
+        <div class="phactions">
+          <a class="btn ghost" href="/export">Export CSV</a>
+          <button class="btn ghost danger" onclick="clearHist()">Clear history</button>
+        </div>
+      </div>
+    </div>
     <div class="panel toolbar">
       <form class="searchbox" method="get">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
@@ -1637,19 +1675,130 @@ def history():
         <input type="hidden" name="range" value="{rng}">
       </form>
       <div class="fpills">{pills}</div>
-      <a class="btn ghost" href="/export">Export CSV</a>
     </div>
     <div class="panel" style="padding:0;overflow:hidden">
-      <table>
-        <tr><th>Snapshot</th><th>Tier</th><th>Event</th><th>Camera</th><th>Distance</th>
-            <th>Conf.</th><th>Time</th><th></th></tr>
+      <table class="histtable">
+        <tr><th>Event</th><th>Camera</th><th>Distance</th><th>Time</th><th>Snapshot</th></tr>
         {trows}
       </table>
     </div>
     <div class="pager">
       <span class="muted">Showing {lo}&ndash;{hi} of {total}</span>
       <div class="pnums">{prev_b}{nums}{next_b}</div>
-    </div>"""
+    </div>
+
+    <div class="snapmodal" id="snapModal">
+      <div class="snapbar">
+        <div class="snaptitle" id="snapTitle"></div>
+        <div class="snapctrls">
+          <button class="snapbtn" onclick="snapZoom(-1)">&minus;</button>
+          <button class="snapbtn snappct" id="snapPct" onclick="snapZoomReset()">100%</button>
+          <button class="snapbtn" onclick="snapZoom(1)">+</button>
+          <button class="snapbtn snapexit" onclick="closeSnap()">&#10005; Exit</button>
+        </div>
+      </div>
+      <div class="snapstage" id="snapStage">
+        <img id="snapImg" src="" draggable="false">
+      </div>
+      <div class="snaphint">scroll to zoom &middot; drag to pan &middot; Esc to exit</div>
+    </div>
+
+    <script>
+    async function clearHist(){{
+      if(!confirm('Acknowledge and clear all history from this view?\\n\\nRecords stay saved for export - this only hides them here.')) return;
+      try{{ await fetch('/api/alerts/dismiss_all',{{method:'POST'}}); }}catch(e){{}}
+      location.reload();
+    }}
+
+    // ---- snapshot viewer: zoom + pan + esc-to-close ----
+    let snapScale = 1, snapX = 0, snapY = 0, snapDragging = false, snapDX = 0, snapDY = 0;
+    function snapApply(){{
+      document.getElementById('snapImg').style.transform =
+        'translate('+snapX+'px,'+snapY+'px) scale('+snapScale+')';
+      document.getElementById('snapPct').textContent = Math.round(snapScale*100)+'%';
+    }}
+    function openSnap(url, title){{
+      document.getElementById('snapImg').src = url;
+      document.getElementById('snapTitle').textContent = title;
+      snapScale = 1; snapX = 0; snapY = 0; snapApply();
+      document.getElementById('snapModal').classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }}
+    function closeSnap(){{
+      document.getElementById('snapModal').classList.remove('show');
+      document.body.style.overflow = '';
+    }}
+    function snapZoom(dir){{
+      snapScale = Math.min(6, Math.max(1, snapScale + dir*0.25));
+      if(snapScale === 1){{ snapX = 0; snapY = 0; }}
+      snapApply();
+    }}
+    function snapZoomReset(){{ snapScale = 1; snapX = 0; snapY = 0; snapApply(); }}
+    document.addEventListener('keydown', function(e){{
+      if(e.key === 'Escape') closeSnap();
+    }});
+    document.getElementById('snapStage').addEventListener('wheel', function(e){{
+      e.preventDefault();
+      snapZoom(e.deltaY < 0 ? 1 : -1);
+    }}, {{passive:false}});
+    document.getElementById('snapStage').addEventListener('mousedown', function(e){{
+      if(snapScale === 1) return;
+      snapDragging = true; snapDX = e.clientX - snapX; snapDY = e.clientY - snapY;
+    }});
+    window.addEventListener('mousemove', function(e){{
+      if(!snapDragging) return;
+      snapX = e.clientX - snapDX; snapY = e.clientY - snapDY;
+      snapApply();
+    }});
+    window.addEventListener('mouseup', function(){{ snapDragging = false; }});
+    document.getElementById('snapModal').addEventListener('click', function(e){{
+      if(e.target.id === 'snapModal' || e.target.id === 'snapStage') closeSnap();
+    }});
+    </script>
+    <style>
+      .phactions{{display:flex;align-items:center;gap:10px}}
+      .btn.ghost.danger{{color:var(--red);border-color:rgba(229,72,77,.4)}}
+      .btn.ghost.danger:hover{{background:rgba(229,72,77,.1);border-color:var(--red)}}
+      .histtable{{width:100%;border-collapse:collapse}}
+      .histtable th{{text-align:left;padding:12px 14px;font-size:11px;letter-spacing:.6px;
+        text-transform:uppercase;color:var(--teal2);border-bottom:1px solid var(--line2)}}
+      .histtable td{{padding:12px 14px;border-top:1px solid var(--line);font-size:13px;vertical-align:middle}}
+      .evrow{{display:flex;align-items:center;gap:12px}}
+      .evrow .av{{width:44px;height:32px;border-radius:6px;background:rgba(63,215,196,.15);
+        flex-shrink:0;display:flex;align-items:center;justify-content:center}}
+      .evrow .av svg{{width:18px;height:18px;stroke:var(--teal2);fill:none;stroke-width:2}}
+      .evrow img.av.thumb{{object-fit:cover;border:1px solid var(--line2);background:var(--bg)}}
+      .evname{{font-weight:600;color:var(--text)}}
+      .evsub{{font-size:11.5px;color:var(--muted);margin-top:2px}}
+      .viewbtn{{display:inline-flex;align-items:center;justify-content:center;
+        border:1px solid var(--teal2);color:var(--teal2);border-radius:7px;
+        padding:6px 16px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s;
+        text-decoration:none;white-space:nowrap;background:transparent}}
+      .viewbtn:hover{{background:rgba(63,215,196,.1)}}
+      .viewbtn.disabled{{color:var(--dim);border-color:var(--line);cursor:default;pointer-events:none}}
+
+      /* fullscreen snapshot viewer */
+      .snapmodal{{display:none;position:fixed;inset:0;z-index:9999;background:rgba(4,8,11,.92);
+        flex-direction:column}}
+      .snapmodal.show{{display:flex}}
+      .snapbar{{display:flex;justify-content:space-between;align-items:center;
+        padding:18px 26px;flex-shrink:0}}
+      .snaptitle{{font-size:14px;font-weight:600;color:var(--text)}}
+      .snapctrls{{display:flex;align-items:center;gap:8px}}
+      .snapbtn{{background:var(--panel2);border:1px solid var(--line2);color:var(--text);
+        border-radius:8px;height:38px;min-width:38px;padding:0 12px;font-size:15px;
+        font-weight:600;cursor:pointer;transition:.15s}}
+      .snapbtn:hover{{border-color:var(--teal2);color:var(--teal2)}}
+      .snappct{{min-width:56px;font-size:12.5px}}
+      .snapexit{{background:var(--red);border-color:var(--red);color:#fff;font-size:13px}}
+      .snapexit:hover{{filter:brightness(1.1);color:#fff}}
+      .snapstage{{flex:1;display:flex;align-items:center;justify-content:center;
+        overflow:hidden;cursor:grab;position:relative}}
+      .snapstage:active{{cursor:grabbing}}
+      #snapImg{{max-width:90%;max-height:82vh;border-radius:6px;
+        box-shadow:0 20px 60px rgba(0,0,0,.5);transition:transform .05s linear;user-select:none}}
+      .snaphint{{text-align:center;padding:16px;color:var(--muted);font-size:12.5px;flex-shrink:0}}
+    </style>"""
     return page("Alert History", "/history", body,
                 subtitle=f"{total} events &middot; filterable log of confirmed threats")
 
