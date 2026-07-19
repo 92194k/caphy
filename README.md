@@ -65,12 +65,194 @@ web/                 Flask dashboard (server.py)
 voice/               Vosk engine + command logic
 siren.py, power.py, calibrate.py
 caphy_app/           Flutter mobile app
-training/            custom YOLO training kit (collect → label → train)
+training/
+├── data.yaml
+├── dataset/
+│   ├── images/
+│   │   ├── train/
+│   │   └── val/
+│   ├── labels/
+│   │   ├── train/
+│   │   └── val/
+├── train.py
+└── runs/
 ```
 
-## Custom model (optional)
-See `training/README.md` to fine-tune YOLOv8 on your own images, then set
-`YOLO_MODEL` in `config.py` to your `best.pt`.
+## Project Status
+
+Current progress:
+
+- ✅ Motion Detection
+- ✅ YOLOv8 Person Detection
+- ✅ Custom Dataset Collection
+- ✅ Image Annotation
+- ✅ YOLOv8 Training Pipeline
+- ✅ Dataset Evaluation Plan
+- ✅ Web Dashboard
+- ✅ Mobile Notifications
+- ✅ Voice Commands
+- 🔄 Custom Model Optimization
+- 🔄 Additional Dataset Collection
+
+
+## AI Training Pipeline
+
+CAPHY uses a custom-trained YOLOv8 Nano model to improve person detection
+accuracy in real environments.
+
+### Training Workflow
+
+```
+Collect Images
+      ↓
+Label Images
+      ↓
+Train YOLOv8
+      ↓
+Generate best.pt
+      ↓
+Deploy Model
+```
+
+### Dataset Structure
+
+```
+training/
+└── dataset/
+    ├── images/
+    │   ├── train/
+    │   └── val/
+    │
+    └── labels/
+        ├── train/
+        └── val/
+```
+
+Each image has a corresponding `.txt` annotation file using YOLO format.
+
+Example:
+
+```
+0 0.512 0.483 0.211 0.654
+```
+
+where:
+
+- `0` = Person class
+- `x_center`
+- `y_center`
+- `width`
+- `height`
+
+(All values are normalized.)
+
+
+### Dataset Collection
+
+The dataset is collected using the laptop webcam in environments similar to the
+target deployment.
+
+Collected samples include:
+
+- different lighting conditions
+- multiple distances
+- various body poses
+- different camera angles
+- indoor backgrounds
+
+This improves the robustness and accuracy of the custom model.
+
+
+### Current Dataset Information
+
+- Object class: Person
+- Annotation format: YOLO format
+- Data source: Laptop webcam collection
+- Dataset type: Custom CAPHY dataset
+- Training framework: Ultralytics YOLOv8
+
+
+## Data Collection Guidelines
+
+Images should include:
+
+- standing person
+- walking person
+- different distances
+- different clothing
+- different lighting conditions
+- partial body visibility
+- side view
+- front view
+
+Avoid:
+
+- blurry images
+- duplicate frames
+- incorrect labels
+
+A larger and more diverse dataset generally improves model performance.
+
+
+## Image Labeling
+
+Images are labeled using YOLO-compatible annotation tools.
+
+Each image must have a corresponding label file with the same filename.
+
+Example:
+
+```
+person001.jpg
+person001.txt
+```
+
+Only one class is currently used:
+
+| Class ID | Class Name |
+|-----------|------------|
+| 0 | person |
+
+
+## Training
+
+Train the custom YOLOv8 model using:
+
+```bash
+python training/train.py
+```
+
+The best trained model will be saved to:
+
+```
+training/runs/detect/caphy_person/weights/best.pt
+```
+
+To use the custom model, update:
+
+```
+config.py
+
+YOLO_MODEL = "training/runs/detect/caphy_person/weights/best.pt"
+```
+
+
+## Model Evaluation
+
+The trained model is evaluated using real-world testing sessions.
+
+Evaluation scenarios include:
+
+| Scenario | Expected Result |
+|-----------|----------------|
+| Daylight Person | Detect person |
+| Daylight Non-human Motion | Ignore motion |
+| Night Person | Detect person |
+| Empty Scene | No detection |
+| Different Distances | Stable detection |
+
+Performance is monitored to reduce false positives while maintaining high person
+detection accuracy.git diff README.md
 
 ## Team
 Khemberly D. Alao · King Leonard V. Kidsolan · Mark Alphy R. Miasis · Aedrean Marl I. Nudalo
