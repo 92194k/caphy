@@ -30,6 +30,16 @@ DISTANCE_K      = 900.0
 TIER1_MIN_DIST  = 4.5     # farther than this -> Tier 1
 TIER3_MAX_DIST  = 2.5     # closer than this  -> Tier 3
 
+# Stability. A YOLO box jitters a few percent every frame even when the person
+# is standing still, which used to make the tier flicker (and fire the siren at
+# random near the Tier 2/3 line).
+TIER_SMOOTHING  = 0.35    # 0..1 - how much each new reading counts.
+                          # LOWER  = steadier tier, reacts slower
+                          # HIGHER = reacts faster, more flicker
+TIER_HYSTERESIS = 0.12    # a threshold must be crossed by this fraction before
+                          # the tier changes. RAISE if the tier still wobbles;
+                          # LOWER if Tier 3 / the siren triggers too late.
+
 # ---- Tier behavior (redesigned) ----
 SNAPSHOT_TIERS   = [1, 2, 3]   # tiers that save a snapshot (used as the app image)
 RECORD_TIERS     = [2, 3]      # tiers that record video until the person leaves
@@ -37,9 +47,42 @@ SIREN_TIERS      = [3]         # tiers that sound the siren
 PRESENCE_GRACE_SEC = 1.5       # keep recording this long after the person disappears
 HIGHEST_SECURITY = False       # if True, ANY confirmed person triggers the full Tier-3 response
 
+# ---- Auto-arm at night ----
+# Enable the switch in Settings -> Detection. The system arms itself at
+# AUTO_ARM_START_HOUR and disarms at AUTO_ARM_END_HOUR (24-hour clock).
+AUTO_ARM_START_HOUR = 22   # 10:00 PM
+AUTO_ARM_END_HOUR   = 6    # 6:00 AM
+
+# Seconds after arming during which no alert fires - lets you arm while still
+# in view without instantly triggering yourself.
+ARM_GRACE_SEC = 8
+
+# ---- Evaluation / data collection (thesis Chapter 4) ----
+# Turn ON while running a test scenario, OFF for normal use.
+# Every motion event is recorded - including the ones YOLO rejected, which is
+# the proof that two-factor validation cuts false alarms.
+EVAL_LOGGING      = False
+EVAL_SESSION      = ""   # label this run, e.g. "daylight-person" / "night-cat"
+EVAL_GROUND_TRUTH = ""   # what SHOULD happen: "person", "no_person", or ""
+                         # Set this and CAPHY can compute precision/recall.
+
 # ---- Database & captures ----
 DB_PATH            = "caphy.db"
-CAPTURES_DIR       = "captures"
+
+# Snapshots and recordings save into the user's own Pictures/Videos so they
+# show up in the Windows gallery, inside a "CAPHY" album folder. Falls back to
+# a local ./captures folder if the home directory can't be resolved.
+def _gallery_dir(kind, default):
+    import os
+    base = os.path.join(os.path.expanduser("~"), kind, "CAPHY")
+    try:
+        os.makedirs(base, exist_ok=True)
+        return base
+    except Exception:
+        return default
+
+CAPTURES_DIR       = _gallery_dir("Pictures", "captures")   # snapshots + alert images
+VIDEOS_DIR         = _gallery_dir("Videos", "captures")     # recordings
 ALERT_COOLDOWN_SEC = 5.0
 
 # ---- Cloud sync ----
@@ -55,9 +98,12 @@ CLAHE_CLIP        = 2.5
 CLAHE_TILE        = 8
 NIGHT_GAMMA       = 1.4
 
-# ---- Voice (Vosk) ----
-VOSK_MODEL_PATH   = "models/vosk-en"
-VOICE_SAMPLE_RATE = 16000
+# ---- Voice ----
+# Voice lives ONLY in the phone app. The app runs speech-to-text on the device,
+# POSTs the words to /api/voice, and speaks the reply with its own TTS.
+# This PC has no microphone loop and no text-to-speech - nothing to configure.
+# The phrases CAPHY understands are in voice/intents.json, served to the app
+# by GET /api/intents.
 
 # ---- Mobile push (Firebase) ----
 FIREBASE_KEY  = "firebase_key.json"
@@ -80,6 +126,3 @@ JPEG_QUALITY   = 55    # MJPEG stream quality 1-100 (low = lightest stream)
 # ---- Firebase Storage (real photos on phone) ----
 FIREBASE_BUCKET = "caphy-c6b77.firebasestorage.app"    # e.g. "caphy-xxxx.appspot.com"  (from Firebase Console -> Storage)
 
-# ---- Bilingual voice (English + Tagalog) ----
-VOSK_MODEL_EN = "models/vosk-en"   # small English model (you already have this)
-VOSK_MODEL_TL = "models/vosk-tl"   # unzip vosk-model-tl-ph-generic-0.6 here

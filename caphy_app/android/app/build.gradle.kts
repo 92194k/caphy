@@ -2,14 +2,13 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    // id("com.google.gms.google-services")  // re-enable when Firebase push is added back
+    id("com.google.gms.google-services")   // Firebase (push notifications)
 }
 
 android {
     namespace = "com.example.caphy_app"
-    
-    // UPDATED: Explicitly set to 34 for Firebase compatibility
-    compileSdk = 34 
+
+    compileSdk = 35            // Firebase messaging 15.x needs compileSdk 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -21,9 +20,8 @@ android {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.caphy.app"
         
-        // UPDATED: Explicitly set minSdk and targetSdk
-        minSdk = flutter.minSdkVersion 
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion                // Firebase needs at least 23
+        targetSdk = 35
         
         versionCode = flutter.versionCode
         versionName = flutter.versionName

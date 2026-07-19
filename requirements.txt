@@ -2,3 +2,14 @@ opencv-python>=4.8
 numpy>=1.24
 ultralytics>=8.1
 flask>=3.0
+sounddevice>=0.4.6     # siren.py generates the alarm tone (NOT speech)
+
+# ---- optional ----
+psutil>=5.9            # battery / power-save reporting
+firebase-admin>=6.5    # push notifications to the phone
+
+# NOTE: no speech packages here on purpose.
+# Voice lives entirely in the Flutter app (speech_to_text + flutter_tts, see
+# caphy_app/pubspec.yaml). The PC does not listen and does not speak, so vosk,
+# pyttsx3, gTTS and playsound are NOT needed.
+# sounddevice stays because the software siren uses it to make a tone.

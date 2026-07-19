@@ -3,16 +3,28 @@
 <head>
   <meta charset="utf-8">
   <title>CAPHY - {{ title }}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='24 24 72 72'%3E%3Crect x='24' y='24' width='72' height='72' rx='17' fill='%232A9D8F'/%3E%3Cellipse cx='60' cy='60' rx='21' ry='13' fill='%2308110f'/%3E%3Ccircle cx='60' cy='60' r='7' fill='%233dd7c4'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div class="side">
     <div class="brand">
       <div class="logo">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#08110f" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>
+        <svg class="caphy-logo" viewBox="24 24 72 72" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+          <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2A9D8F"></stop><stop offset="1" stop-color="#217C72"></stop>
+          </linearGradient>
+          <clipPath id="cc"><rect x="24" y="24" width="72" height="72" rx="17"></rect></clipPath></defs>
+          <rect x="24" y="24" width="72" height="72" rx="17" fill="url(#cg)"></rect>
+          <g clip-path="url(#cc)">
+            <ellipse class="eye" cx="60" cy="60" rx="21" ry="13" fill="#08110f"></ellipse>
+            <g class="pupil">
+              <circle cx="60" cy="60" r="8.5" fill="#3dd7c4"></circle>
+            </g>
+          </g>
+        </svg>
       </div>
-      <div><b>CAPHY</b><small>SECURITY CONSOLE</small></div>
+      <div><b>CAPHY</b><small>AI SECURITY</small></div>
     </div>
     <div class="nav">
     {% for href, label in nav %}
@@ -32,9 +44,6 @@
       <div class="st"><span class="dot {{ 'armed' if armed else 'off' }}"></span>
         System {{ 'ARMED' if armed else 'DISARMED' }}<small>{{ cam }}</small></div>
       <div class="fr">
-        <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-        Voice: listening</div>
-      <div class="fr">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
         {{ user }} &middot; Homeowner &nbsp;<a href="/logout" style="color:var(--teal2)">Log out</a></div>
     </div>
@@ -53,5 +62,12 @@
     </div>
     <div class="content">{{ body|safe }}</div>
   </div>
+  <script>
+    // resume the logo animation at the current wall-clock phase, so it doesn't
+    // restart from zero every time you switch pages
+    (function(){var d=-(Date.now()%4200)+'ms';
+      document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
+        .forEach(function(e){e.style.animationDelay=d;});})();
+  </script>
 </body>
 </html>

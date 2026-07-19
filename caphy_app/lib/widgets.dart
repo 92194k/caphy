@@ -1,0 +1,304 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'api.dart';
+import 'theme.dart';
+
+/// Smooth MJPEG live view without any extra package.
+///
+/// Opens the multipart MJPEG stream with the `http` client and splits it into
+/// JPEG frames (each starts with FF D8 and ends with FF D9). Each frame is
+/// shown with Image.memory(gaplessPlayback), so there is no flicker and no
+/// per-frame HTTP request - which is what caused the lag before.
+class MjpegView extends StatefulWidget {
+  final String url;
+  final BoxFit fit;
+  final bool active;
+  const MjpegView(
+      {super.key, required this.url, this.fit = BoxFit.cover, this.active = true});
+  @override
+  State<MjpegView> createState() => _MjpegViewState();
+}
+
+class _MjpegViewState extends State<MjpegView> {
+  http.Client? _client;
+  StreamSubscription? _sub;
+  Uint8List? _frame;
+  bool _error = false;
+  final List<int> _buf = [];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _connect();
+  }
+
+  @override
+  void didUpdateWidget(covariant MjpegView old) {
+    super.didUpdateWidget(old);
+    if (old.url != widget.url || old.active != widget.active) {
+      _stop();
+      _buf.clear();
+      if (widget.active) _connect();
+    }
+  }
+
+  Future<void> _connect() async {
+    try {
+      _client = http.Client();
+      final req = http.Request('GET', Uri.parse(widget.url));
+      final resp = await _client!.send(req);
+      if (resp.statusCode != 200) {
+        if (mounted) setState(() => _error = true);
+        return;
+      }
+      _error = false;
+      _sub = resp.stream.listen(_onBytes,
+          onError: (_) => _fail(), onDone: _fail, cancelOnError: true);
+    } catch (_) {
+      _fail();
+    }
+  }
+
+  void _onBytes(List<int> chunk) {
+    _buf.addAll(chunk);
+    // find a complete JPEG (FFD8 ... FFD9) in the buffer
+    int start = -1, end = -1;
+    for (int i = 0; i < _buf.length - 1; i++) {
+      if (_buf[i] == 0xFF && _buf[i + 1] == 0xD8) {
+        start = i;
+        break;
+      }
+    }
+    if (start < 0) {
+      if (_buf.length > 1 << 20) _buf.clear(); // guard runaway buffer
+      return;
+    }
+    for (int i = start + 2; i < _buf.length - 1; i++) {
+      if (_buf[i] == 0xFF && _buf[i + 1] == 0xD9) {
+        end = i + 2;
+        break;
+      }
+    }
+    if (end < 0) return;
+    final frame = Uint8List.fromList(_buf.sublist(start, end));
+    _buf.removeRange(0, end);
+    if (mounted) setState(() => _frame = frame);
+  }
+
+  void _fail() {
+    if (mounted) setState(() => _error = true);
+  }
+
+  void _stop() {
+    _sub?.cancel();
+    _sub = null;
+    _client?.close();
+    _client = null;
+  }
+
+  @override
+  void dispose() {
+    _stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) {
+      return const Center(
+          child: Text('Camera is off', style: TextStyle(color: cDim)));
+    }
+    if (_frame != null) {
+      return Image.memory(_frame!, fit: widget.fit, gaplessPlayback: true);
+    }
+    if (_error) {
+      return const Center(
+          child: Text('connecting to camera...',
+              style: TextStyle(color: cDim)));
+    }
+    return const Center(child: CircularProgressIndicator(color: cTeal));
+  }
+}
+
+/// Album name CAPHY creates in the phone gallery.
+const kCaphyAlbum = 'CAPHY';
+
+/// Save an image the server just produced into the phone gallery album.
+/// Downloads [url] bytes, writes a temp file, then hands it to Gal.
+/// Returns true on success; never throws.
+Future<bool> saveImageToGallery(String url, {String prefix = 'caphy'}) async {
+  try {
+    if (!await Gal.hasAccess()) {
+      if (!await Gal.requestAccess()) return false;
+    }
+    final r = await http.get(Uri.parse(url));
+    if (r.statusCode != 200) return false;
+    final dir = await getTemporaryDirectory();
+    final f = File(
+        '${dir.path}/${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await f.writeAsBytes(r.bodyBytes);
+    await Gal.putImage(f.path, album: kCaphyAlbum);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Download a recording from the server and save it into the CAPHY gallery
+/// album. [url] is the full http URL to the .mp4. Never throws.
+Future<bool> saveVideoUrlToGallery(String url) async {
+  try {
+    if (!await Gal.hasAccess()) {
+      if (!await Gal.requestAccess()) return false;
+    }
+    final r = await http.get(Uri.parse(url));
+    if (r.statusCode != 200) return false;
+    // keep the real extension (.mp4 or .avi) so the gallery recognises it
+    var ext = 'mp4';
+    final dot = url.lastIndexOf('.');
+    if (dot != -1 && url.length - dot <= 5) {
+      ext = url.substring(dot + 1).split('?').first.toLowerCase();
+    }
+    final dir = await getTemporaryDirectory();
+    final f = File(
+        '${dir.path}/caphy_${DateTime.now().millisecondsSinceEpoch}.$ext');
+    await f.writeAsBytes(r.bodyBytes);
+    await Gal.putVideo(f.path, album: kCaphyAlbum);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Brief message shown at the TOP of the screen (not the bottom), so it never
+/// covers the mic or the controls on the voice screen.
+void showTopToast(BuildContext context, String message, {bool error = false}) {
+  final overlay = Overlay.of(context);
+  final entry = OverlayEntry(
+    builder: (ctx) => Positioned(
+      top: MediaQuery.of(ctx).padding.top + 12,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: error ? cRed : cPanel,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: error ? cRed : cLine),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4))
+            ],
+          ),
+          child: Row(children: [
+            Icon(error ? Icons.error_outline : Icons.check_circle_outline,
+                color: error ? Colors.white : cTeal2, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(message,
+                  style: TextStyle(
+                      color: error ? Colors.white : cText, fontSize: 13.5)),
+            ),
+          ]),
+        ),
+      ),
+    ),
+  );
+  overlay.insert(entry);
+  Future.delayed(const Duration(seconds: 2), entry.remove);
+}
+
+/// Red bar shown whenever the app cannot reach the CAPHY system.
+///
+/// Without this, an unreachable server and a genuinely empty system look
+/// identical - both render an empty list - which is impossible to diagnose
+/// during a live demo.
+class OfflineBanner extends StatelessWidget {
+  const OfflineBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: Api.online,
+      builder: (context, online, _) {
+        if (online) return const SizedBox.shrink();
+        return Container(
+          width: double.infinity,
+          color: cRed.withOpacity(0.15),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          child: Row(children: [
+            const Icon(Icons.cloud_off, color: cRed, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Can\'t reach CAPHY',
+                        style: TextStyle(
+                            color: cRed,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13)),
+                    Text(
+                      'Check the PC is running app.py, that you are on the same '
+                      'Wi-Fi, and that the address is ${Store.baseUrl}',
+                      style: const TextStyle(color: cMuted, fontSize: 11.5),
+                    ),
+                  ]),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+}
+
+/// Small ON/OFF chip used to show system state at a glance.
+class StateChip extends StatelessWidget {
+  final String label;
+  final bool on;
+  final String onText;
+  final String offText;
+  final Color? onColor;
+  final IconData? icon;
+
+  const StateChip({
+    super.key,
+    required this.label,
+    required this.on,
+    this.onText = 'ON',
+    this.offText = 'OFF',
+    this.onColor,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = on ? (onColor ?? cTeal2) : cDim;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: cPanel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: on ? c : cLine),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (icon != null) ...[
+          Icon(icon, size: 13, color: c),
+          const SizedBox(width: 5),
+        ],
+        Text('$label ${on ? onText : offText}',
+            style: TextStyle(
+                color: c, fontSize: 11.5, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+}
