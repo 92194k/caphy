@@ -244,8 +244,15 @@ class _VoiceScreenState extends State<VoiceScreen> {
                         child: ActionChip(
                           backgroundColor: cPanel,
                           side: const BorderSide(color: cLine),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
                           label: Text(_label(c, _lang),
-                              style: const TextStyle(color: cTeal2)),
+                              style: const TextStyle(
+                                  color: cTeal2,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13)),
                           onPressed: () {
                             final says = _says(c, _lang);
                             if (says.isNotEmpty) _send(says.first);
