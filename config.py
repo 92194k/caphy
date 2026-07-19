@@ -12,7 +12,7 @@ MOG2_VAR_THRESHOLD = 40
 MOTION_BLUR        = 5
 
 # ---- Factor 2: Person (YOLOv8) ----
-YOLO_MODEL      = "yolov8n.pt"
+YOLO_MODEL = "runs/detect/caphy_person-6/weights/best.pt"
 PERSON_CLASS_ID = 0
 PERSON_CONF     = 0.50
 
