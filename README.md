@@ -43,14 +43,15 @@ Firebase key: Firebase Console → Project settings → Service accounts → Gen
 Then set your Storage bucket in `config.py`:  `FIREBASE_BUCKET = "your-bucket.appspot.com"`
 
 ## How to run
+Run all commands **from the project root**.
 ```
 python main.py        # camera window: detection + tiers + siren + voice + push
 python app.py         # web dashboard at http://127.0.0.1:5000  (login: admin / admin)
-python run_sync.py    # cloud sync loop (offline-safe)
-python run_voice.py   # voice control only (standalone)
-python self-test.py   # camera-free proof the detection logic works
-python calibrate.py --distance 3.0   # calibrate real-metre distances
-python battery_status.py              # check battery / power-save
+python tools/run_sync.py    # cloud sync loop (offline-safe)
+python tools/run_voice.py   # voice control only (standalone)
+python tools/self-test.py   # camera-free proof the detection logic works
+python tools/calibrate.py --distance 3.0   # calibrate real-metre distances
+python tools/battery_status.py             # check battery / power-save
 ```
 > Note: `main.py` and `app.py` both use the camera, so run only one at a time.
 
@@ -59,12 +60,14 @@ python battery_status.py              # check battery / power-save
 config.py            all settings
 main.py              integrated system (camera window)
 app.py               web dashboard entry
-detection/           motion, person (YOLO), two-factor gate, tiers, night vision
-storage/             database, alerts, cloud sync, push
-web/                 Flask dashboard (server.py)
-voice/               Vosk engine + command logic
-siren.py, power.py, calibrate.py
-caphy_app/           Flutter mobile app
+detection/           BACKEND — motion, person (YOLO), two-factor gate, tiers, night vision
+storage/             DATABASE — database, alerts, cloud sync, push
+web/                 API + FRONTEND — Flask dashboard (server.py), templates, static
+voice/               BACKEND — Vosk engine + command logic
+siren.py, power.py   siren + battery/power (shared, imported at root)
+caphy_app/           FRONTEND — Flutter mobile app
+cloud_sim/, models/  INFRASTRUCTURE — cloud simulator + AI/voice models
+
 training/
 ├── data.yaml
 ├── dataset/
@@ -76,7 +79,12 @@ training/
 │   │   └── val/
 ├── train.py
 └── runs/
+
+tools/               standalone diagnostics & runners (run from project root)
+docs/                ARCHITECTURE.md — how the folders map to system layers
 ```
+See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full layer breakdown
+(frontend / backend / database / API / infrastructure) and a diagram.
 
 ## Project Status
 

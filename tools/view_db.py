@@ -1,3 +1,8 @@
+# --- path bootstrap: run from tools/ but import project modules at repo root ---
+import sys, os as _bootos
+sys.path.insert(0, _bootos.path.dirname(_bootos.path.dirname(_bootos.path.abspath(__file__))))
+# --- end bootstrap ---
+
 """Quick look at what CAPHY has saved.  Run:  python view_db.py"""
 import config
 from storage.database import Database

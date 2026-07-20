@@ -1,3 +1,8 @@
+# --- path bootstrap: run from tools/ but import project modules at repo root ---
+import sys, os as _bootos
+sys.path.insert(0, _bootos.path.dirname(_bootos.path.dirname(_bootos.path.abspath(__file__))))
+# --- end bootstrap ---
+
 """Quick check of CAPHY's power monitor.  Run:  python battery_status.py"""
 import config
 from power import PowerMonitor

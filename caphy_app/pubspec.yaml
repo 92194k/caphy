@@ -34,8 +34,16 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  firebase_core: ^4.11.0
-  firebase_messaging: ^16.4.1
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
+  speech_to_text: ^7.0.0    # push-to-talk microphone (device speech-to-text)
+  flutter_tts: ^4.2.0       # CAPHY speaks its replies (device text-to-speech)
+  gal: ^2.3.0               # save snapshots/videos into the phone photo gallery
+  path_provider: ^2.1.4     # temp dir for downloading before saving to gallery
+  # (MJPEG live view is implemented inline in widgets.dart using `http`, so no
+  #  extra streaming package is needed - avoids an http version conflict.)
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,8 @@
+# --- path bootstrap: run from tools/ but import project modules at repo root ---
+import sys, os as _bootos
+sys.path.insert(0, _bootos.path.dirname(_bootos.path.dirname(_bootos.path.abspath(__file__))))
+# --- end bootstrap ---
+
 """Camera-free check of the detection engine (Phase 2 gate + Phase 3 tiers).
 YOLO is replaced by a stub so this runs without ultralytics.
 

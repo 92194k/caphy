@@ -2,3 +2,20 @@ opencv-python>=4.8
 numpy>=1.24
 ultralytics>=8.1
 flask>=3.0
+sounddevice>=0.4.6     # siren.py fallback tone generator (NOT speech)
+# pygame-ce, NOT plain "pygame" - vanilla pygame's Windows build still needs
+# distutils, which was removed from Python 3.12+, so `pip install pygame` on
+# a modern Python fails trying to compile from source. pygame-ce is the
+# maintained fork with prebuilt wheels for current Python, and it's a
+# drop-in replacement (still `import pygame` in code - nothing else changes).
+pygame-ce>=2.5           # siren.py plays assets/siren.mp3 with smooth fade in/out
+
+# ---- optional ----
+psutil>=5.9            # battery / power-save reporting
+firebase-admin>=6.5    # push notifications to the phone
+
+# NOTE: no speech packages here on purpose.
+# Voice lives entirely in the Flutter app (speech_to_text + flutter_tts, see
+# caphy_app/pubspec.yaml). The PC does not listen and does not speak, so vosk,
+# pyttsx3, gTTS and playsound are NOT needed.
+# sounddevice stays because the software siren uses it to make a tone.

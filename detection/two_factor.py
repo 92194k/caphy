@@ -34,13 +34,16 @@ class TwoFactorDetector:
 
         if not moved:
             self._last_persons = []          # threat cleared
+            if self.tier is not None:
+                self.tier.reset()            # next person starts from scratch
             return result
         if self.person is None:
             return result
 
         # frame-skip: run YOLO every Nth frame, reuse the last boxes otherwise
         self._frame_i += 1
-        if self._frame_i % self.person_every_n == 0 or not self._last_persons:
+        ran = (self._frame_i % self.person_every_n == 0) or not self._last_persons
+        if ran:
             persons = self.person.detect(frame)
             if self.tier is not None:
                 for p in persons:
@@ -49,7 +52,9 @@ class TwoFactorDetector:
         else:
             persons = self._last_persons
 
-        result["ran_yolo"] = True
+        # only True when YOLO actually ran this frame - the logs and the
+        # "motion, no person" message depend on this being honest
+        result["ran_yolo"] = ran
         result["persons"] = persons
         result["threat"] = len(persons) > 0
         if result["threat"] and self.tier is not None:

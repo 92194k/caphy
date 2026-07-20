@@ -1,3 +1,8 @@
+# --- path bootstrap: run from tools/ but import project modules at repo root ---
+import sys, os as _bootos
+sys.path.insert(0, _bootos.path.dirname(_bootos.path.dirname(_bootos.path.abspath(__file__))))
+# --- end bootstrap ---
+
 """CAPHY Phase 6 - Storage Manager / cloud sync.  Run:  python run_sync.py
 
 Uploads snapshots/videos of any alert not yet synced. Works offline (queues

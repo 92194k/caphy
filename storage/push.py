@@ -4,6 +4,12 @@ Uploads the alert snapshot to Firebase Storage, gets a shareable URL, and
 includes it in the push so the phone shows the real photo. The storage bucket
 name is read from config.FIREBASE_BUCKET. Safe no-op if key/library/bucket missing.
 """
+import threading
+
+# One Firebase app is shared by every camera worker. This lock makes the
+# "check if initialized, else initialize" step atomic so multiple worker
+# threads starting at once don't race and trip "default app already exists".
+_INIT_LOCK = threading.Lock()
 
 
 class PushSender:
@@ -21,9 +27,10 @@ class PushSender:
             if not os.path.exists(key_path):
                 print(f"[CAPHY] Push off (no key at {key_path}).")
                 return
-            if not firebase_admin._apps:
-                opts = {"storageBucket": bucket} if bucket else None
-                firebase_admin.initialize_app(credentials.Certificate(key_path), opts)
+            with _INIT_LOCK:
+                if not firebase_admin._apps:
+                    opts = {"storageBucket": bucket} if bucket else None
+                    firebase_admin.initialize_app(credentials.Certificate(key_path), opts)
             self._messaging = messaging
             if bucket:
                 try:
@@ -49,22 +56,45 @@ class PushSender:
             print(f"[CAPHY] Snapshot upload failed ({e}).")
             return None
 
-    def send(self, tier, distance, snapshot_path=None, camera="Front Gate"):
+    def send_async(self, tier, distance, snapshot_path=None, camera="Front Gate", alert_id=None):
+        """Fire-and-forget so the detection loop never blocks on the network."""
+        if not self.enabled:
+            return
+        threading.Thread(target=self.send,
+                         args=(tier, distance, snapshot_path, camera, alert_id),
+                         daemon=True).start()
+
+    def send(self, tier, distance, snapshot_path=None, camera="Front Gate", alert_id=None):
         if not self.enabled:
             return
         m = self._messaging
-        image_url = self._upload(snapshot_path)
-        title = f"TIER {tier} - Threat detected"
+        title = f"CAPHY - Tier {tier} alert"
         body = f"Person detected {distance} m from {camera}"
-        data = {"tier": str(tier), "distance": str(distance), "camera": camera}
-        if image_url:
-            data["image_url"] = image_url
+        data = {"tier": str(tier), "distance": str(distance), "camera": str(camera)}
+        if alert_id is not None:
+            data["alert_id"] = str(alert_id)
+        # 1) fire the TEXT notification immediately - this is the real-time part
+        #    (no waiting on the photo upload). The app shows the photo when opened.
         try:
-            msg = m.Message(
-                topic=self.topic,
-                notification=m.Notification(title=title, body=body, image=image_url),
-                data=data)
-            m.send(msg)
-            print("[CAPHY] Push sent -> phone" + (" (with photo)" if image_url else ""))
+            m.send(m.Message(topic=self.topic,
+                             notification=m.Notification(title=title, body=body),
+                             data=data))
+            print("[CAPHY] Push sent -> phone (instant).")
         except Exception as e:
             print(f"[CAPHY] Push failed ({e}).")
+            return
+        # 2) upload the snapshot + send a silent follow-up with the photo URL
+        #    (background, non-critical - never delays the alert)
+        if self._bucket and snapshot_path:
+            threading.Thread(target=self._photo_followup,
+                             args=(snapshot_path, dict(data)), daemon=True).start()
+
+    def _photo_followup(self, snapshot_path, data):
+        url = self._upload(snapshot_path)
+        if not url:
+            return
+        try:
+            data["image_url"] = url
+            self._messaging.send(self._messaging.Message(topic=self.topic, data=data))
+        except Exception:
+            pass

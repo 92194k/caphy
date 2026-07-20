@@ -1,4 +1,23 @@
-"""Threat Level Engine - bounding-box height -> distance -> tier."""
+"""Threat Level Engine - bounding-box height -> distance -> tier.
+
+WHY THIS IS NOT A PLAIN IF/ELSE
+-------------------------------
+A YOLO box jitters a few percent every frame even when the person is standing
+perfectly still. Feeding that raw number straight into fixed thresholds makes
+the tier flicker - measured at 13 tier changes in 20 frames for a motionless
+person standing near the 4.5 m line. Worse, at the Tier 2/3 boundary the
+flicker reaches Tier 3, which fires the siren at random.
+
+Two things fix it:
+
+  1. SMOOTHING - the distance is an exponential moving average, so one bad box
+     cannot move the tier on its own.
+  2. HYSTERESIS - the threshold to move UP a tier is not the same as the one to
+     move back DOWN. A person must cross a threshold by a clear margin before
+     the tier changes, so a reading sitting exactly on the line stays put.
+
+Call reset() when the person leaves, so the next person starts clean.
+"""
 
 TIER_ACTIONS = {
     1: ["snapshot", "alert"],
@@ -9,23 +28,65 @@ TIER_LABEL = {1: "Tier 1 - Far", 2: "Tier 2 - Medium", 3: "Tier 3 - Close"}
 
 
 class TierEngine:
-    def __init__(self, distance_k, tier1_min_distance, tier3_max_distance):
+    def __init__(self, distance_k, tier1_min_distance, tier3_max_distance,
+                 smoothing=0.35, hysteresis=0.12):
         self.k = distance_k
         self.tier1_min = tier1_min_distance
         self.tier3_max = tier3_max_distance
+        # 0..1 - how much a new reading counts. Lower = steadier, slower.
+        self.smoothing = smoothing
+        # fraction a threshold must be crossed by before the tier changes
+        self.hysteresis = hysteresis
+
+        self._smoothed = None
+        self._tier = 0
+
+    def reset(self):
+        """Forget the current person. Call when motion clears."""
+        self._smoothed = None
+        self._tier = 0
 
     def estimate_distance(self, box):
         x1, y1, x2, y2 = box
         h = max(y2 - y1, 1)
         return self.k / h
 
+    def _tier_for(self, d):
+        """Tier for a smoothed distance, respecting the current tier."""
+        h = self.hysteresis
+        t1, t3 = self.tier1_min, self.tier3_max
+        cur = self._tier
+
+        if cur == 0:                       # first reading - no bias
+            return 1 if d >= t1 else (3 if d <= t3 else 2)
+
+        if cur == 1:                       # far: needs a clear move closer
+            if d < t1 * (1 - h):
+                return 3 if d <= t3 * (1 - h) else 2
+            return 1
+
+        if cur == 3:                       # close: needs a clear move away
+            if d > t3 * (1 + h):
+                return 1 if d >= t1 * (1 + h) else 2
+            return 3
+
+        # cur == 2 (medium): needs a clear move either way
+        if d >= t1 * (1 + h):
+            return 1
+        if d <= t3 * (1 - h):
+            return 3
+        return 2
+
     def classify(self, box):
-        dist = self.estimate_distance(box)
-        if dist >= self.tier1_min:
-            tier = 1
-        elif dist <= self.tier3_max:
-            tier = 3
-        else:
-            tier = 2
-        return {"tier": tier, "distance_m": round(dist, 1),
-                "actions": TIER_ACTIONS[tier], "label": TIER_LABEL[tier]}
+        raw = self.estimate_distance(box)
+
+        self._smoothed = raw if self._smoothed is None else (
+            self.smoothing * raw + (1 - self.smoothing) * self._smoothed)
+        d = self._smoothed
+
+        self._tier = self._tier_for(d)
+        return {"tier": self._tier,
+                "distance_m": round(d, 1),
+                "distance_raw_m": round(raw, 1),
+                "actions": TIER_ACTIONS[self._tier],
+                "label": TIER_LABEL[self._tier]}

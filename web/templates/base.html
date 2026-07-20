@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CAPHY - {{ title }}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='24 24 72 72'%3E%3Crect x='24' y='24' width='72' height='72' rx='17' fill='%232A9D8F'/%3E%3Cellipse cx='60' cy='60' rx='21' ry='13' fill='%2308110f'/%3E%3Ccircle cx='60' cy='60' r='7' fill='%233dd7c4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="side">
+    <div class="brand">
+      <div class="logo">
+        <svg class="caphy-logo" viewBox="24 24 72 72" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+          <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2A9D8F"></stop><stop offset="1" stop-color="#217C72"></stop>
+          </linearGradient>
+          <clipPath id="cc"><rect x="24" y="24" width="72" height="72" rx="17"></rect></clipPath></defs>
+          <rect x="24" y="24" width="72" height="72" rx="17" fill="url(#cg)"></rect>
+          <g clip-path="url(#cc)">
+            <ellipse class="eye" cx="60" cy="60" rx="21" ry="13" fill="#08110f"></ellipse>
+            <g class="pupil">
+              <circle cx="60" cy="60" r="8.5" fill="#3dd7c4"></circle>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div><b>CAPHY</b><small>AI SECURITY</small></div>
+    </div>
+    <div class="nav">
+    {% for href, label in nav %}
+      <a href="{{ href }}" class="{{ 'active' if page == href else '' }}">
+        {% if href == '/' %}<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        {% elif href == '/live' %}<svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>
+        {% elif href == '/alerts' %}<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        {% elif href == '/history' %}<svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        {% elif href == '/logs' %}<svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        {% elif href == '/settings' %}<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        {% endif %}
+        {{ label }}
+      </a>
+    {% endfor %}
+    </div>
+    <div class="sidefoot">
+      <div class="st"><span class="dot {{ 'armed' if armed else 'off' }}"></span>
+        System {{ 'ARMED' if armed else 'DISARMED' }}<small>{{ cam }}</small></div>
+      <div class="fr">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
+        {{ user }} &middot; Homeowner &nbsp;<a href="/logout" style="color:var(--teal2)">Log out</a></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="header">
+      <div class="ht"><h1>{{ title }}</h1>{% if subtitle %}<div class="sub">{{ subtitle }}</div>{% endif %}</div>
+      <div class="hr">
+        <span class="pill pg dotb">LIVE &middot; {{ ncam }} CAM</span>
+        <div class="iconbtn"><span class="badge"></span>
+          <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+        <div class="iconbtn">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></div>
+      </div>
+    </div>
+    <div class="content">{{ body|safe }}</div>
+  </div>
+  <script>
+    // resume the logo animation at the current wall-clock phase, so it doesn't
+    // restart from zero every time you switch pages
+    (function(){var d=-(Date.now()%4200)+'ms';
+      document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
+        .forEach(function(e){e.style.animationDelay=d;});})();
+  </script>
+</body>
+</html>
