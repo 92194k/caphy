@@ -135,8 +135,11 @@ def main():
                           config.SNAPSHOT_TIERS, config.RECORD_TIERS, config.PRESENCE_GRACE_SEC,
                           videos_dir=getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR))
     push = PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC)
-    row = db.conn.execute("SELECT armed FROM settings WHERE setting_id=1").fetchone()
-    state = SystemState(armed=bool(row["armed"]) if row else True, highest=config.HIGHEST_SECURITY)
+    # the system always starts up ARMED, regardless of what was saved from
+    # the last session - security should default to "on"
+    db.conn.execute("UPDATE settings SET armed=1 WHERE setting_id=1")
+    db.conn.commit()
+    state = SystemState(armed=True, highest=config.HIGHEST_SECURITY)
     siren = Siren()
     print(f"[CAPHY] Ready. Alerts: {db.count_alerts()}. Armed: {state.armed}. Highest-Security: {state.highest}")
 

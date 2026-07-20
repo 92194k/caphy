@@ -54,20 +54,77 @@
       <div class="ht"><h1>{{ title }}</h1>{% if subtitle %}<div class="sub">{{ subtitle }}</div>{% endif %}</div>
       <div class="hr">
         <span class="pill pg dotb">LIVE &middot; {{ ncam }} CAM</span>
-        <div class="iconbtn"><span class="badge"></span>
-          <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
-        <div class="iconbtn">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></div>
+        <a class="iconbtn" href="/alerts" title="Alerts">
+          {% if nalerts and nalerts > 0 %}<span class="badge">{{ nalerts if nalerts < 100 else '99+' }}</span>{% endif %}
+          <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        </a>
+        <div class="profilewrap">
+          <div class="iconbtn" id="profileBtn" onclick="toggleProfile(event)" title="Account">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
+          </div>
+          <div class="profilemenu" id="profileMenu">
+            <div class="pmname">{{ user }}</div>
+            <div class="pmrole">Homeowner</div>
+            <a href="/settings">Settings</a>
+            <a href="/logout" class="pmlogout">Log out</a>
+          </div>
+        </div>
       </div>
     </div>
     <div class="content">{{ body|safe }}</div>
   </div>
+
+  <div class="modalbg" id="appModal" onclick="if(event.target===this) closeModal(false)">
+    <div class="modalcard">
+      <div class="modalicon" id="modalIcon"></div>
+      <div class="modaltitle" id="modalTitle"></div>
+      <div class="modalmsg" id="modalMsg"></div>
+      <div class="modalbtns">
+        <button class="btn ghost" onclick="closeModal(false)">Cancel</button>
+        <button class="btn" id="modalConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // resume the logo animation at the current wall-clock phase, so it doesn't
     // restart from zero every time you switch pages
     (function(){var d=-(Date.now()%4200)+'ms';
       document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
         .forEach(function(e){e.style.animationDelay=d;});})();
+
+    // ---- header profile dropdown ----
+    function toggleProfile(e){
+      if(e) e.stopPropagation();
+      document.getElementById('profileMenu').classList.toggle('show');
+    }
+    document.addEventListener('click', function(){
+      document.getElementById('profileMenu').classList.remove('show');
+    });
+
+    // ---- shared confirm modal (replaces browser confirm() everywhere) ----
+    let _modalResolve = null;
+    function openModal(opts){
+      opts = opts || {};
+      const icon = document.getElementById('modalIcon');
+      icon.innerHTML = opts.icon || '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+      icon.className = 'modalicon' + (opts.danger === false ? '' : ' danger');
+      document.getElementById('modalTitle').textContent = opts.title || 'Are you sure?';
+      document.getElementById('modalMsg').innerHTML = opts.message || '';
+      const btn = document.getElementById('modalConfirmBtn');
+      btn.textContent = opts.confirmText || 'Confirm';
+      btn.className = 'btn' + (opts.danger === false ? '' : ' danger');
+      btn.onclick = function(){ closeModal(true); };
+      document.getElementById('appModal').classList.add('show');
+      return new Promise(function(res){ _modalResolve = res; });
+    }
+    function closeModal(ok){
+      document.getElementById('appModal').classList.remove('show');
+      if(_modalResolve){ _modalResolve(!!ok); _modalResolve = null; }
+    }
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'Escape') closeModal(false);
+    });
   </script>
 </body>
 </html>

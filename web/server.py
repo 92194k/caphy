@@ -50,6 +50,56 @@ app.permanent_session_lifetime = timedelta(days=30)   # "remember this device"
 
 TIER_BGR = {1: (80, 200, 120), 2: (60, 160, 240), 3: (60, 60, 230)}
 
+# ==================== persistent log file (caphy.log) ====================
+# The System Logs page shows real totals ("18,742 events today", "last
+# event", "alerts (24h)") - those need to survive a restart and cover the
+# whole day, not just whatever's still in the last-200 in-memory buffer per
+# camera. Every _log() call also appends one line here.
+LOG_FILE_PATH = getattr(config, "LOG_FILE_PATH", "caphy.log")
+_log_file_lock = threading.Lock()
+
+
+def _append_log_file(level, mod, msg):
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\t{level}\t{mod}\t{msg}\n"
+    try:
+        with _log_file_lock:
+            with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
+                f.write(line)
+    except Exception:
+        pass   # a logging failure should never take detection down
+
+
+def _log_file_stats():
+    """(events_today, last_event_hhmmss, alerts_last_24h) from caphy.log.
+    Cheap line scan - fine at thesis/demo scale; never raises."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    cutoff = datetime.now() - timedelta(hours=24)
+    events_today = 0
+    alerts_24h = 0
+    last_event = "-"
+    try:
+        with _log_file_lock:
+            if not os.path.exists(LOG_FILE_PATH):
+                return 0, "-", 0
+            with open(LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    parts = line.rstrip("\n").split("\t", 3)
+                    if len(parts) < 3:
+                        continue
+                    ts, level = parts[0], parts[1]
+                    if ts.startswith(today):
+                        events_today += 1
+                        last_event = ts[11:19]
+                    if level == "ALERT":
+                        try:
+                            if datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") >= cutoff:
+                                alerts_24h += 1
+                        except ValueError:
+                            pass
+    except Exception:
+        return 0, "-", 0
+    return events_today, last_event, alerts_24h
+
 
 # ==================== camera / detection worker ====================
 class Worker(threading.Thread):
@@ -95,6 +145,7 @@ class Worker(threading.Thread):
     def _log(self, level, mod, msg):
         self.logs.appendleft({"t": datetime.now().strftime("%H:%M:%S"), "cam": self.cam_id,
                               "level": level, "mod": mod, "msg": msg})
+        _append_log_file(level, f"{mod}({self.name})", msg)
 
     def update_settings(self, sensitivity, person_conf, t1, t3, night, highest):
         self.motion.min_area = float(sensitivity)
@@ -437,6 +488,10 @@ def resolve_cameras():
 
 
 def start_workers(sources):
+    # the system always starts up ARMED, regardless of what was saved from
+    # the last session - security should default to "on", not to whatever
+    # state it happened to be left in
+    _set_armed(True)
     # split CPU cores across the cameras so two YOLO models don't oversubscribe
     try:
         import torch, os as _os
@@ -523,9 +578,15 @@ def page(title, href, body, subtitle=""):
     st = workers[0].get_stats() if workers else {"armed": True, "online": False}
     online = sum(1 for w in workers if w.get_stats().get("online"))
     cam = f"{online} of {len(workers)} cameras online" if workers else "no cameras"
+    try:
+        db = Database(config.DB_PATH)
+        unread = db.count_alerts(include_dismissed=False)
+        db.close()
+    except Exception:
+        unread = 0
     return render_template("base.html", title=title, page=href, nav=NAV, body=body,
                            subtitle=subtitle, ncam=online, user=session.get("user", "admin"),
-                           armed=st.get("armed", True), cam=cam)
+                           armed=st.get("armed", True), cam=cam, nalerts=unread)
 
 
 def tier_pill(t):
@@ -661,7 +722,7 @@ def dashboard():
         {feed}
       </div>
       <div class="panel">
-        <div class="ph"><h2>Recent Alerts</h2><a class="link" href="/history">View all</a></div>
+        <div class="ph"><h2>Recent Alerts</h2><a class="link" href="/history">View All</a></div>
         {alerts_html}
       </div>
     </div>
@@ -685,7 +746,7 @@ def live():
             f'<div class="camitem{active}" id="ci{w.cam_id}" onclick="selectCam({w.cam_id})">'
             f'<img class="camthumb" src="/video_feed/{w.cam_id}">'
             f'<div class="cimeta"><div><div class="cn">{w.name}</div>'
-            f'<div class="cs" id="cs{w.cam_id}">online</div></div>'
+            f'<div class="cs" id="cs{w.cam_id}">Online</div></div>'
             f'<span class="dot" id="cd{w.cam_id}" style="background:var(--green)"></span></div></div>')
     if not cam_items:
         cam_items = '<div style="color:var(--dim);font-size:13px">No cameras running</div>'
@@ -845,10 +906,20 @@ def live():
       refreshState();
     }
     async function toggleEmg(){
-      if(!ST.emergency && !confirm('Activate EMERGENCY mode?\\n\\nThis forces the camera on, arms the system, sounds the siren and sends a push alert.')) return;
+      if(!ST.emergency){
+        const ok = await openModal({
+          title: 'Activate Emergency Mode?',
+          message: 'This forces the camera on, arms the system, sounds the siren, and sends a push alert immediately to everyone on the account.',
+          confirmText: 'Activate Emergency',
+          danger: true,
+          icon: '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        });
+        if(!ok) return;
+      }
       try{ await fetch('/api/emergency',{method:'POST',headers:{'Content-Type':'application/json'},
         body: JSON.stringify({on: !ST.emergency})}); }catch(e){}
-      refreshState();
+      await refreshState();
+      toast(ST.emergency ? 'Emergency mode activated' : 'Emergency mode cancelled');
     }
 
     async function poll(){
@@ -859,8 +930,8 @@ def live():
           const cd=document.getElementById('cd'+s.cam);
           if(cd) cd.style.background = !camOn ? 'var(--orange)' : (s.online?'var(--green)':'var(--dim)');
           const cs=document.getElementById('cs'+s.cam);
-          // "camera off" and "offline" are different problems - say which
-          if(cs) cs.textContent = !camOn ? 'camera off' : (s.online?'online':'offline');
+          // "Camera Off" and "Offline" are different problems - say which
+          if(cs) cs.textContent = !camOn ? 'Camera Off' : (s.online?'Online':'Offline');
           if(s.cam===sel){
             document.getElementById('dm').style.background = s.motion?'var(--green)':'var(--dim)';
             document.getElementById('dp').style.background = s.person?'var(--green)':'var(--dim)';
@@ -951,7 +1022,7 @@ def live():
     </style>
     """.replace("__CAM_ITEMS__", cam_items).replace("__MAIN_NAME__", main_name).replace("__MAIN_ID__", str(main_id))
     return page("Live Camera", "/live", body,
-                subtitle="two-factor validation active")
+                subtitle="Two-factor validation active")
 
 
 @app.route("/api/stats")
@@ -1561,7 +1632,7 @@ def alerts_page():
         <div class="phactions">
           <span class="livedot" id="liveDot"></span>
           <span class="livetxt" id="liveTxt">live</span>
-          <button class="btn btn-ghost" id="ackAllBtn" onclick="ackAll()">Acknowledge all</button>
+          <button class="btn btn-ghost" id="ackAllBtn" onclick="ackAll()">Acknowledge All</button>
           <a class="btn btn-ghost" href="/history">History &rarr;</a>
         </div>
       </div>
@@ -1614,7 +1685,14 @@ def alerts_page():
       setTimeout(refresh, 220);
     }
     async function ackAll(){
-      if(!confirm('Acknowledge all alerts?')) return;
+      const ok = await openModal({
+        title: 'Acknowledge All Alerts?',
+        message: 'This clears every alert from this list. Records stay saved in Alert History.',
+        confirmText: 'Acknowledge All',
+        danger: false,
+        icon: '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>'
+      });
+      if(!ok) return;
       try{ await fetch('/api/alerts/dismiss_all',{method:'POST'}); }catch(e){}
       refresh();
     }
@@ -1777,7 +1855,7 @@ def history():
       <div class="ph"><h2>Alert History</h2>
         <div class="phactions">
           <a class="btn ghost" href="/export">Export CSV</a>
-          <button class="btn ghost danger" onclick="clearHist()">Clear history</button>
+          <button class="btn ghost danger" onclick="clearHist()">Clear History</button>
         </div>
       </div>
     </div>
@@ -1819,7 +1897,14 @@ def history():
 
     <script>
     async function clearHist(){{
-      if(!confirm('Acknowledge and clear all history from this view?\\n\\nRecords stay saved for export - this only hides them here.')) return;
+      const ok = await openModal({{
+        title: 'Clear History?',
+        message: 'Acknowledge and clear all history from this view.<br><br>Records stay saved for export &mdash; this only hides them here.',
+        confirmText: 'Clear History',
+        danger: true,
+        icon: '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+      }});
+      if(!ok) return;
       try{{ await fetch('/api/alerts/dismiss_all',{{method:'POST'}}); }}catch(e){{}}
       location.reload();
     }}
@@ -1962,6 +2047,8 @@ def logs():
     if not initial:
         initial = '<div style="color:var(--dim)">waiting for log events...</div>'
 
+    events_today, last_event, alerts_24h = _log_file_stats()
+
     if psutil:
         cpu = psutil.cpu_percent()
         vm = psutil.virtual_memory()
@@ -2000,12 +2087,28 @@ def logs():
             ("Firebase FCM", "connected" if fcm_on else "off", T if fcm_on else M)]
     modrows = "".join(
         f'<div class="modrow"><span><span class="dot" style="background:{c}"></span>{n}</span>'
-        f'<span style="color:{c}">{s}</span></div>' for n, s, c in mods)
+        f'<span class="modtag" style="color:{c};border-color:{c}">{s}</span></div>' for n, s, c in mods)
 
+    alert_color = "var(--red)" if alerts_24h else "var(--muted)"
     body = f"""
     <div class="grid2">
       <div class="panel logpanel">
-        <div class="ph"><h2>caphy.log &mdash; live tail</h2><span class="pill pg dotb">STREAMING</span></div>
+        <div class="ph">
+          <h2>caphy.log <span class="livetag">live tail</span></h2>
+          <div class="logfilters">
+            <button class="fbtn active" onclick="setFilter('ALL',this)">ALL</button>
+            <button class="fbtn" onclick="setFilter('DETECT',this)">DETECT</button>
+            <button class="fbtn" onclick="setFilter('ALERT',this)">ALERT</button>
+            <button class="fbtn" onclick="setFilter('SYNC',this)">SYNC</button>
+          </div>
+        </div>
+        <div class="logstats">
+          <span><b>{events_today:,}</b> events today</span>
+          <span class="sep">&middot;</span>
+          <span><b>{last_event}</b> last event</span>
+          <span class="sep">&middot;</span>
+          <span><b style="color:{alert_color}">{alerts_24h}</b> alerts (24h)</span>
+        </div>
         <div class="log" id="logtail">{initial}</div>
       </div>
       <div class="rightcol">
@@ -2016,20 +2119,75 @@ def logs():
     <script>
     const LC={{INFO:'var(--muted)',DETECT:'var(--teal2)',TIER:'var(--teal2)',ALERT:'var(--green)',
               DB:'var(--muted)',SYNC:'var(--teal2)',WARN:'var(--orange)'}};
+    let filterLevel='ALL', expandAll=false;
+    function setFilter(lvl, btn){{
+      filterLevel = lvl; expandAll = false;
+      document.querySelectorAll('.fbtn').forEach(function(b){{ b.classList.remove('active'); }});
+      btn.classList.add('active');
+      tail();
+    }}
+    function toggleExpand(){{ expandAll = true; tail(); }}
+    function renderLine(l){{
+      const c=LC[l.level]||'var(--muted)';
+      const mc=(['DETECT','ALERT','WARN','SYNC','TIER'].indexOf(l.level)>=0)?c:'var(--text)';
+      return '<div class="logline"><span class="lt">'+l.t+'</span>'+
+        '<span class="lvl" style="background:color-mix(in srgb,'+c+' 20%,transparent);color:'+c+'">'+l.level+'</span>'+
+        '<span class="lm">'+l.mod+'</span><span style="color:'+mc+'">'+l.msg+'</span></div>';
+    }}
     async function tail(){{
       try{{
-        const r=await fetch('/api/logs?n=40'); const logs=await r.json();
-        document.getElementById('logtail').innerHTML = logs.map(function(l){{
-          const c=LC[l.level]||'var(--muted)';
-          const mc=(['DETECT','ALERT','WARN','SYNC','TIER'].indexOf(l.level)>=0)?c:'var(--text)';
-          return '<div class="logline"><span class="lt">'+l.t+'</span>'+
-            '<span class="lvl" style="background:color-mix(in srgb,'+c+' 20%,transparent);color:'+c+'">'+l.level+'</span>'+
-            '<span class="lm">'+l.mod+'</span><span style="color:'+mc+'">'+l.msg+'</span></div>';
-        }}).join('');
+        const r=await fetch('/api/logs?n=150'); let logs=await r.json();
+        if(filterLevel!=='ALL') logs = logs.filter(function(l){{ return l.level===filterLevel; }});
+        const box=document.getElementById('logtail');
+        if(!logs.length){{ box.innerHTML='<div style="color:var(--dim)">No matching events</div>'; return; }}
+        const RAW=15;
+        let html = logs.slice(0,RAW).map(renderLine).join('');
+        const rest = logs.slice(RAW);
+        if(rest.length && !expandAll){{
+          // collapse long runs of an identical repeated line - "96 identical
+          // DETECT/yolo lines collapsed above - Show all" instead of a huge
+          // wall of the same "motion, no person" line over and over
+          let i=0;
+          while(i<rest.length){{
+            let j=i;
+            while(j<rest.length && rest[j].level===rest[i].level &&
+                  rest[j].mod===rest[i].mod && rest[j].msg===rest[i].msg) j++;
+            const n=j-i;
+            if(n>=3){{
+              html += '<div class="logcollapsed">&#8635; '+n+' identical '+rest[i].level+'/'+rest[i].mod+
+                ' lines collapsed above &mdash; <a href="#" onclick="toggleExpand();return false;">Show all</a></div>';
+            }} else {{
+              for(let k=i;k<j;k++) html += renderLine(rest[k]);
+            }}
+            i=j;
+          }}
+        }} else if(rest.length){{
+          html += rest.map(renderLine).join('');
+        }}
+        box.innerHTML = html;
       }}catch(e){{}}
     }}
     setInterval(tail,1500); tail();
-    </script>"""
+    </script>
+    <style>
+      .ph{{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px}}
+      .livetag{{color:var(--muted);font-weight:400;font-size:11.5px;margin-left:8px}}
+      .logfilters{{display:flex;gap:8px}}
+      .fbtn{{background:var(--panel);border:1px solid var(--line2);color:var(--muted);
+        border-radius:8px;padding:6px 13px;font-size:11.5px;font-weight:700;letter-spacing:.4px;
+        cursor:pointer;transition:.15s}}
+      .fbtn:hover{{color:var(--text);border-color:var(--teal2)}}
+      .fbtn.active{{color:var(--teal2);border-color:var(--teal2);background:rgba(63,215,196,.08)}}
+      .logstats{{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12.5px;
+        margin:12px 0 14px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);
+        border-radius:10px}}
+      .logstats b{{color:var(--text);font-weight:700}}
+      .logstats .sep{{color:var(--line2)}}
+      .logcollapsed{{color:var(--muted);font-size:12px;padding:8px 4px;font-style:italic}}
+      .logcollapsed a{{color:var(--teal2);font-style:normal;cursor:pointer}}
+      .logcollapsed a:hover{{text-decoration:underline}}
+      .modtag{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:7px;border:1px solid}}
+    </style>"""
     return page("System Logs", "/logs", body,
                 subtitle="Diagnostics &middot; detection pipeline &amp; sync events")
 
@@ -2147,12 +2305,12 @@ def settings():
         </div>
         <div class="togglerow"><div><b>Software Night Vision (CLAHE)</b>
           <div class="fdesc" style="margin:2px 0 0">Auto-enhance low-light frames</div></div>{_sw("night", night_on)}</div>
-        <div class="togglerow"><div><b>Auto-arm at night</b>
+        <div class="togglerow"><div><b>Auto-Arm at Night</b>
           <div class="fdesc" style="margin:2px 0 0">Arm system on schedule &middot; {getattr(config,'AUTO_ARM_START_HOUR',22):02d}:00&ndash;{getattr(config,'AUTO_ARM_END_HOUR',6):02d}:00</div></div>{_sw("autoarm", auto_on)}</div>
         <div class="togglerow"><div><b>Highest Security</b>
           <div class="fdesc" style="margin:2px 0 0">Any confirmed person triggers a full Tier-3 response</div></div>{_sw("highest", highest_on)}</div>
         <div class="setfoot">
-          <button class="btn ghost" name="action" value="reset">Reset defaults</button>
+          <button class="btn ghost" name="action" value="reset">Reset Defaults</button>
           <button class="btn" name="action" value="save">Save Changes</button>
         </div>
       </form>"""

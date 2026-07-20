@@ -49,11 +49,47 @@ a{text-decoration:none;color:inherit}
 .header .hr{display:flex;align-items:center;gap:14px}
 .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line2);
   background:var(--panel);display:flex;align-items:center;justify-content:center;
-  color:var(--muted);position:relative;cursor:pointer}
+  color:var(--muted);position:relative;cursor:pointer;transition:.15s}
+.iconbtn:hover{color:var(--teal2);border-color:var(--teal2)}
 .iconbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
-.iconbtn .badge{position:absolute;top:-3px;right:-3px;width:9px;height:9px;
-  border-radius:50%;background:var(--red);border:2px solid var(--bg2)}
+.iconbtn .badge{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;
+  padding:0 4px;border-radius:9px;background:var(--red);border:2px solid var(--bg2);
+  color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  line-height:1}
 .content{padding:24px 30px;flex:1}
+
+/* ---------------- header profile dropdown ---------------- */
+.profilewrap{position:relative}
+.profilemenu{position:absolute;top:48px;right:0;background:var(--panel2);
+  border:1px solid var(--line2);border-radius:12px;padding:10px;min-width:170px;
+  display:none;z-index:80;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+.profilemenu.show{display:block}
+.profilemenu .pmname{font-weight:700;font-size:13.5px}
+.profilemenu .pmrole{color:var(--muted);font-size:11.5px;margin-bottom:8px;
+  padding-bottom:8px;border-bottom:1px solid var(--line)}
+.profilemenu a{display:block;padding:8px 6px;color:var(--muted);font-size:13px;
+  border-radius:7px;transition:.15s}
+.profilemenu a:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.profilemenu a.pmlogout{color:var(--red)}
+.profilemenu a.pmlogout:hover{background:rgba(229,72,77,.1)}
+
+/* ---------------- shared confirm modal ---------------- */
+.modalbg{position:fixed;inset:0;background:rgba(6,10,14,.65);backdrop-filter:blur(2px);
+  display:none;align-items:center;justify-content:center;z-index:200}
+.modalbg.show{display:flex}
+.modalcard{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;
+  padding:26px 28px;width:380px;max-width:92vw;text-align:center;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);animation:modalpop .16s ease-out}
+@keyframes modalpop{from{transform:scale(.94);opacity:0}to{transform:scale(1);opacity:1}}
+.modalicon{width:52px;height:52px;border-radius:50%;margin:0 auto 14px;
+  display:flex;align-items:center;justify-content:center;background:rgba(42,157,143,.14);color:var(--teal2)}
+.modalicon svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.8}
+.modalicon.danger{background:rgba(229,72,77,.14);color:var(--red)}
+.modaltitle{font-size:16px;font-weight:700;margin-bottom:8px}
+.modalmsg{color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:22px}
+.modalbtns{display:flex;gap:10px;justify-content:center}
+.modalbtns .btn{flex:1;padding:11px 16px}
+.modalbtns .btn.danger{background:var(--red);color:#fff}
 
 /* ---------------- pills / badges ---------------- */
 .pill{padding:4px 13px;border-radius:20px;font-size:12px;font-weight:700;
