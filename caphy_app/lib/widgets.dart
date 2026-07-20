@@ -128,52 +128,113 @@ class _MjpegViewState extends State<MjpegView> {
 /// Album name CAPHY creates in the phone gallery.
 const kCaphyAlbum = 'CAPHY';
 
+/// Why a gallery save failed, so the caller can show something more useful
+/// than a generic "could not save" (and so it's diagnosable at all - the
+/// old version swallowed every error silently, which is why this needed a
+/// second look when it actually failed on-device).
+enum SaveOutcome { ok, permissionDenied, downloadFailed, galleryWriteFailed }
+
 /// Save an image the server just produced into the phone gallery album.
 /// Downloads [url] bytes, writes a temp file, then hands it to Gal.
-/// Returns true on success; never throws.
-Future<bool> saveImageToGallery(String url, {String prefix = 'caphy'}) async {
+Future<SaveOutcome> saveImageToGalleryEx(String url,
+    {String prefix = 'caphy'}) async {
   try {
     if (!await Gal.hasAccess()) {
-      if (!await Gal.requestAccess()) return false;
+      if (!await Gal.requestAccess()) {
+        debugPrint('[CAPHY] gallery: photo permission denied by the user/OS');
+        return SaveOutcome.permissionDenied;
+      }
     }
-    final r = await http.get(Uri.parse(url));
-    if (r.statusCode != 200) return false;
+  } catch (e) {
+    debugPrint('[CAPHY] gallery: permission check failed: $e');
+    return SaveOutcome.permissionDenied;
+  }
+  Uint8List bytes;
+  try {
+    final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
+    if (r.statusCode != 200) {
+      debugPrint('[CAPHY] gallery: download failed, HTTP ${r.statusCode}');
+      return SaveOutcome.downloadFailed;
+    }
+    bytes = r.bodyBytes;
+  } catch (e) {
+    debugPrint('[CAPHY] gallery: download failed: $e');
+    return SaveOutcome.downloadFailed;
+  }
+  try {
     final dir = await getTemporaryDirectory();
     final f = File(
         '${dir.path}/${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await f.writeAsBytes(r.bodyBytes);
+    await f.writeAsBytes(bytes);
     await Gal.putImage(f.path, album: kCaphyAlbum);
-    return true;
-  } catch (_) {
-    return false;
+    return SaveOutcome.ok;
+  } catch (e) {
+    debugPrint('[CAPHY] gallery: writing image to gallery failed: $e');
+    return SaveOutcome.galleryWriteFailed;
   }
 }
 
+/// Back-compat bool wrapper for call sites that only need yes/no.
+Future<bool> saveImageToGallery(String url, {String prefix = 'caphy'}) async =>
+    (await saveImageToGalleryEx(url, prefix: prefix)) == SaveOutcome.ok;
+
 /// Download a recording from the server and save it into the CAPHY gallery
-/// album. [url] is the full http URL to the .mp4. Never throws.
-Future<bool> saveVideoUrlToGallery(String url) async {
+/// album. [url] is the full http URL to the video file.
+Future<SaveOutcome> saveVideoUrlToGalleryEx(String url,
+    {String prefix = 'caphy'}) async {
   try {
     if (!await Gal.hasAccess()) {
-      if (!await Gal.requestAccess()) return false;
+      if (!await Gal.requestAccess()) {
+        debugPrint('[CAPHY] gallery: video permission denied by the user/OS');
+        return SaveOutcome.permissionDenied;
+      }
     }
-    final r = await http.get(Uri.parse(url));
-    if (r.statusCode != 200) return false;
-    // keep the real extension (.mp4 or .avi) so the gallery recognises it
-    var ext = 'mp4';
-    final dot = url.lastIndexOf('.');
-    if (dot != -1 && url.length - dot <= 5) {
-      ext = url.substring(dot + 1).split('?').first.toLowerCase();
+  } catch (e) {
+    debugPrint('[CAPHY] gallery: permission check failed: $e');
+    return SaveOutcome.permissionDenied;
+  }
+  // keep the real extension so the gallery recognises the container.
+  var ext = 'mp4';
+  final dot = url.lastIndexOf('.');
+  if (dot != -1 && url.length - dot <= 5) {
+    ext = url.substring(dot + 1).split('?').first.toLowerCase();
+  }
+  if (ext != 'mp4' && ext != 'mov') {
+    // The PC only falls back to this (.avi/MJPG) when its H.264 encoder
+    // isn't available - Android's gallery/MediaStore does not reliably
+    // accept .avi, so this is the #1 cause of "could not save to gallery".
+    debugPrint('[CAPHY] gallery: server sent a .$ext recording, not mp4 - '
+        'the PC likely fell back to a codec Android cannot import. '
+        'This save will probably fail.');
+  }
+  Uint8List bytes;
+  try {
+    final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 60));
+    if (r.statusCode != 200) {
+      debugPrint('[CAPHY] gallery: download failed, HTTP ${r.statusCode}');
+      return SaveOutcome.downloadFailed;
     }
+    bytes = r.bodyBytes;
+  } catch (e) {
+    debugPrint('[CAPHY] gallery: download failed: $e');
+    return SaveOutcome.downloadFailed;
+  }
+  try {
     final dir = await getTemporaryDirectory();
     final f = File(
-        '${dir.path}/caphy_${DateTime.now().millisecondsSinceEpoch}.$ext');
-    await f.writeAsBytes(r.bodyBytes);
+        '${dir.path}/${prefix}_${DateTime.now().millisecondsSinceEpoch}.$ext');
+    await f.writeAsBytes(bytes);
     await Gal.putVideo(f.path, album: kCaphyAlbum);
-    return true;
-  } catch (_) {
-    return false;
+    return SaveOutcome.ok;
+  } catch (e) {
+    debugPrint('[CAPHY] gallery: writing video to gallery failed ($ext): $e');
+    return SaveOutcome.galleryWriteFailed;
   }
 }
+
+/// Back-compat bool wrapper for call sites that only need yes/no.
+Future<bool> saveVideoUrlToGallery(String url, {String prefix = 'caphy'}) async =>
+    (await saveVideoUrlToGalleryEx(url, prefix: prefix)) == SaveOutcome.ok;
 
 /// Brief message shown at the TOP of the screen (not the bottom), so it never
 /// covers the mic or the controls on the voice screen.
@@ -194,7 +255,7 @@ void showTopToast(BuildContext context, String message, {bool error = false}) {
             border: Border.all(color: error ? cRed : cLine),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.4),
+                  color: Colors.black.withValues(alpha: 0.4),
                   blurRadius: 12,
                   offset: const Offset(0, 4))
             ],
@@ -233,7 +294,7 @@ class OfflineBanner extends StatelessWidget {
         if (online) return const SizedBox.shrink();
         return Container(
           width: double.infinity,
-          color: cRed.withOpacity(0.15),
+          color: cRed.withValues(alpha: 0.15),
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
           child: Row(children: [
             const Icon(Icons.cloud_off, color: cRed, size: 18),

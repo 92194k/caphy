@@ -15,6 +15,7 @@ import io
 import os
 import csv
 import json
+import queue
 import secrets
 import hashlib
 import threading
@@ -25,7 +26,8 @@ from datetime import datetime, timedelta
 import cv2
 import numpy as np
 from flask import (Flask, Response, request, redirect, url_for, session,
-                   render_template, render_template_string, send_file, abort, jsonify)
+                   render_template, render_template_string, send_file, abort, jsonify,
+                   stream_with_context)
 
 import config
 from detection.motion_detector import MotionDetector
@@ -112,7 +114,16 @@ class Worker(threading.Thread):
             lbl = f"{p.get('label','person')} {p['conf']:.2f} {p.get('distance_m','?')}m"
             cv2.rectangle(frame, (x1, y1 - 18), (x1 + 230, y1), c, -1)
             cv2.putText(frame, lbl, (x1 + 4, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (20, 20, 20), 1)
-        cv2.putText(frame, self.name, (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (240, 240, 240), 2)
+
+        # ---- CCTV-style caption bar: camera name + date/time, burned into
+        # every frame so it's ALSO in every snapshot/recording taken from it,
+        # on both the PC and the phone (they both read this same frame). ----
+        caption = f"{self.name}  |  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        (tw, th), _ = cv2.getTextSize(caption, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+        cv2.rectangle(frame, (0, 0), (tw + 20, th + 18), (0, 0, 0), -1)
+        cv2.putText(frame, caption, (10, th + 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                    (255, 255, 255), 1, cv2.LINE_AA)
+
         if result.get("threat"):
             c = TIER_BGR[result["tier"]]
             cv2.rectangle(frame, (0, frame.shape[0] - 28), (frame.shape[1], frame.shape[0]), c, -1)
@@ -220,6 +231,15 @@ class Worker(threading.Thread):
                 if aid is not None:
                     p = max(result["persons"], key=lambda x: x["tier"])
                     self._log("ALERT", "db", f"alert #{aid} Tier {result['tier']} saved")
+                    # push the new alert to every connected /alerts page or
+                    # phone app the instant it's saved - no polling delay.
+                    try:
+                        arow = db.conn.execute(
+                            "SELECT * FROM alerts WHERE alert_id=?", (aid,)).fetchone()
+                        if arow:
+                            _broadcast_alert(_alert_json(arow))
+                    except Exception as e:
+                        self._log("WARN", "alerts", f"broadcast failed: {e}")
                     if result["tier"] >= config.PUSH_MIN_TIER:
                         srow = db.conn.execute("SELECT snapshot_path FROM alerts WHERE alert_id=?", (aid,)).fetchone()
                         push.send_async(result["tier"], p["distance_m"],
@@ -246,9 +266,10 @@ class Worker(threading.Thread):
         h, w = frame.shape[:2]
         wfps = max(min(fps, 30.0), 5.0)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        cam_label = "".join(c for c in self.name if c.isalnum()) or f"Cam{self.cam_id}"
         # (fourcc, extension) candidates, in order of preference
         for fourcc, ext in (("mp4v", "mp4"), ("avc1", "mp4"), ("MJPG", "avi"), ("XVID", "avi")):
-            path = os.path.join(vdir, f"manual_{stamp}_cam{self.cam_id}.{ext}")
+            path = os.path.join(vdir, f"CAPHY_{cam_label}_manual_{stamp}.{ext}")
             writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*fourcc), wfps, (w, h))
             if writer.isOpened():
                 self._mrec = writer
@@ -315,6 +336,37 @@ class Worker(threading.Thread):
 
 
 workers = []
+
+# ---- real-time alert push (Server-Sent Events) ----
+# Every connected /alerts page or phone app registers a Queue here. The
+# instant a new alert is confirmed in a Worker's detection loop, we push it
+# into every queue - no polling delay, no manual refresh needed.
+_alert_subs = []
+_alert_subs_lock = threading.Lock()
+
+
+def _alert_subscribe():
+    q = queue.Queue()
+    with _alert_subs_lock:
+        _alert_subs.append(q)
+    return q
+
+
+def _alert_unsubscribe(q):
+    with _alert_subs_lock:
+        if q in _alert_subs:
+            _alert_subs.remove(q)
+
+
+def _broadcast_alert(payload):
+    with _alert_subs_lock:
+        subs = list(_alert_subs)
+    for q in subs:
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            pass
+
 
 # ---- lightweight UI preferences (camera names, etc.) persisted to a JSON file ----
 UI_PREFS_PATH = "ui_prefs.json"
@@ -1441,9 +1493,32 @@ def video_file(name):
     abort(404)
 
 
+@app.route("/api/media/delete", methods=["POST"])
+def api_media_delete():
+    """Delete a snapshot/recording that a client (the phone app) has already
+    saved locally. Used so a recording started from the phone ends up living
+    ONLY on the phone, instead of also sitting in Videos/CAPHY on the PC -
+    each device keeps what it actually captured, not a duplicate copy."""
+    data = request.get_json(silent=True) or {}
+    name = os.path.basename((data.get("name") or "").strip())
+    if not name:
+        return jsonify({"ok": False, "error": "missing name"}), 400
+    removed = False
+    for d in (getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR), config.CAPTURES_DIR):
+        path = os.path.abspath(os.path.join(d, name))
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                removed = True
+            except Exception:
+                pass
+    return jsonify({"ok": removed})
+
+
 @app.route("/api/alerts/feed")
 def api_alerts_feed():
-    """Visible (unacknowledged) alerts as JSON, for live polling."""
+    """Visible (unacknowledged) alerts as JSON. Used for the first load and
+    as a slow fallback poll - real-time updates come from /api/alerts/stream."""
     db = Database(config.DB_PATH)
     try:
         rows = db.recent_alerts(30)
@@ -1453,6 +1528,29 @@ def api_alerts_feed():
         return jsonify({"alerts": out})
     finally:
         db.close()
+
+
+@app.route("/api/alerts/stream")
+def api_alerts_stream():
+    """Server-Sent Events: the instant a new alert is confirmed in a Worker's
+    detection loop, it's pushed here to every connected /alerts page or phone
+    app. No polling delay, no manual refresh needed."""
+    q = _alert_subscribe()
+
+    def gen():
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    payload = q.get(timeout=20)
+                    yield f"data: {json.dumps(payload)}\n\n"
+                except queue.Empty:
+                    yield ": ping\n\n"   # keep the connection alive through proxies
+        finally:
+            _alert_unsubscribe(q)
+
+    return Response(stream_with_context(gen()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.route("/alerts")
@@ -1520,7 +1618,23 @@ def alerts_page():
       try{ await fetch('/api/alerts/dismiss_all',{method:'POST'}); }catch(e){}
       refresh();
     }
-    refresh(); setInterval(refresh, 3000);
+    refresh();
+    // ---- real-time: push, not poll. A new alert triggers refresh() the
+    // instant it's confirmed, with no delay. A slow fallback poll below
+    // covers the rare case the stream connection drops silently. ----
+    let es;
+    function connectStream(){
+      es = new EventSource('/api/alerts/stream');
+      es.onmessage = function(){ refresh(); };
+      es.onopen = function(){
+        const dot=document.getElementById('liveDot'); if(dot) dot.style.background='var(--green)';
+      };
+      es.onerror = function(){
+        const dot=document.getElementById('liveDot'); if(dot) dot.style.background='var(--red)';
+      };
+    }
+    connectStream();
+    setInterval(refresh, 20000);
     </script>
     <style>
       .phactions{display:flex;align-items:center;gap:10px}

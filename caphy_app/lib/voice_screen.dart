@@ -111,9 +111,11 @@ class _VoiceScreenState extends State<VoiceScreen> {
           _send(r.recognizedWords);
         }
       },
-      localeId: _lang == 'tl' ? 'fil_PH' : 'en_US',
-      listenFor: const Duration(seconds: 20),
-      pauseFor: const Duration(seconds: 3),
+      listenOptions: SpeechListenOptions(
+        localeId: _lang == 'tl' ? 'fil_PH' : 'en_US',
+        listenFor: const Duration(seconds: 20),
+        pauseFor: const Duration(seconds: 3),
+      ),
     );
   }
 
@@ -344,7 +346,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
                     color: _listening ? cRed : cTeal,
                     boxShadow: [
                       BoxShadow(
-                        color: (_listening ? cRed : cTeal).withOpacity(0.35),
+                        color: (_listening ? cRed : cTeal).withValues(alpha: 0.35),
                         blurRadius: _listening ? 22 : 10,
                         spreadRadius: _listening ? 4 : 0,
                       )

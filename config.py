@@ -69,21 +69,79 @@ EVAL_GROUND_TRUTH = ""   # what SHOULD happen: "person", "no_person", or ""
 # ---- Database & captures ----
 DB_PATH            = "caphy.db"
 
-# Snapshots and recordings save into the user's own Pictures/Videos so they
-# show up in the Windows gallery, inside a "CAPHY" album folder. Falls back to
-# a local ./captures folder if the home directory can't be resolved.
+# Registry value names for the REAL target of the "Pictures"/"Videos" Windows
+# libraries. Just guessing "~/Pictures" is wrong if OneDrive has redirected
+# the library (Known Folder Move) or the user customized it in Explorer -
+# this reads the actual configured location so files really land in
+# Libraries > Pictures / Libraries > Videos, wherever that currently points.
+_SHELL_FOLDER_KEY = {"Pictures": "My Pictures", "Videos": "My Video"}
+
+
+def _library_target(kind):
+    """The real, current folder behind Libraries > Pictures/Videos on
+    Windows (accounts for OneDrive redirection). Returns None off-Windows
+    or if the registry lookup fails for any reason."""
+    import os
+    value_name = _SHELL_FOLDER_KEY.get(kind)
+    if not value_name:
+        return None
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+        raw, _ = winreg.QueryValueEx(key, value_name)
+        return os.path.expandvars(raw)
+    except Exception:
+        return None
+
+
+# Snapshots and recordings save into the user's real Pictures/Videos library
+# so they show up in Libraries > Pictures/Videos, inside a "CAPHY" folder.
+# Falls back to ~/Pictures (or ~/Videos), then to a local ./captures folder,
+# ONLY if each option truly can't be created/written to - and always prints
+# exactly which path was picked, so a silent fallback is never a mystery
+# ("why isn't there a CAPHY folder in my Pictures?").
 def _gallery_dir(kind, default):
     import os
-    base = os.path.join(os.path.expanduser("~"), kind, "CAPHY")
-    try:
-        os.makedirs(base, exist_ok=True)
-        return base
-    except Exception:
-        return default
+    candidates = []
+    lib_target = _library_target(kind)
+    if lib_target:
+        candidates.append(os.path.join(lib_target, "CAPHY"))
+    candidates.append(os.path.join(os.path.expanduser("~"), kind, "CAPHY"))
+
+    for base in candidates:
+        try:
+            os.makedirs(base, exist_ok=True)
+            probe = os.path.join(base, ".caphy_write_test")
+            with open(probe, "w") as f:
+                f.write("ok")
+            os.remove(probe)
+            print(f"[CAPHY] {kind} folder: {base}")
+            return base
+        except Exception as e:
+            print(f"[CAPHY] could not use {base} ({e}) - trying next option")
+
+    fallback = os.path.abspath(default)
+    os.makedirs(fallback, exist_ok=True)
+    print(f"[CAPHY] WARNING: no {kind} library location was writable - "
+          f"falling back to {fallback}")
+    return fallback
 
 CAPTURES_DIR       = _gallery_dir("Pictures", "captures")   # snapshots + alert images
 VIDEOS_DIR         = _gallery_dir("Videos", "captures")     # recordings
 ALERT_COOLDOWN_SEC = 5.0
+
+# ---- Siren ----
+# A real alarm sound (looped, with a smooth fade in/out - no click, no
+# startle). Put the .mp3 at assets/siren.mp3 next to this file. If it's
+# missing, siren.py automatically falls back to a synthesized tone so the
+# system still has a siren either way.
+import os as _os
+SIREN_SOUND_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                  "assets", "siren.mp3")
+SIREN_FADE_MS     = 300     # fade in/out time - smooth, not startling
+SIREN_VOLUME       = 0.9    # 0.0 - 1.0
 
 # ---- Cloud sync ----
 CLOUD_DIR         = "cloud_sim"

@@ -1,30 +1,32 @@
-// This is a basic Flutter widget test.
+// Smoke test for the CAPHY app shell.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// The previous version of this file was still the default Flutter counter-app
+// template and referenced a `MyApp` class that doesn't exist in this project
+// (the real root widget is `CaphyApp`), so `flutter analyze`/`flutter test`
+// failed outright. This replaces it with a minimal test that actually
+// exercises the real app: it boots `CaphyApp` with a mocked, empty
+// SharedPreferences store (so there's no saved login token) and checks that
+// it lands on the login screen.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:caphy_app/api.dart';
 import 'package:caphy_app/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('CaphyApp shows the login screen when logged out',
+      (WidgetTester tester) async {
+    // Store.init() reads SharedPreferences; mock it so the test doesn't
+    // touch platform channels or a real device.
+    SharedPreferences.setMockInitialValues({});
+    await Store.init();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpWidget(const CaphyApp());
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // No saved token -> LoginScreen, which always shows the CAPHY branding.
+    expect(find.text('CAPHY'), findsOneWidget);
+    expect(find.text('AI SECURITY'), findsOneWidget);
   });
 }

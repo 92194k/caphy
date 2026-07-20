@@ -33,10 +33,12 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _loadAll() async {
     await _loadStats();
     final a = await Api.alerts(limit: 5);
-    if (mounted) setState(() {
-          _alerts = a;
-          _loading = false;
-        });
+    if (mounted) {
+      setState(() {
+        _alerts = a;
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _loadStats() async {
