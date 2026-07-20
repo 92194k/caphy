@@ -28,3 +28,6 @@ ui_prefs.json
 
 # ---- API keys (never commit) ----
 caphy_keys.json
+
+# ---- Device identity (per-machine, never commit) ----
+device.json
