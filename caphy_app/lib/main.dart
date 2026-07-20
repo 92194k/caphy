@@ -287,7 +287,7 @@ class _HomeShellState extends State<HomeShell> {
               border: Border.all(color: tierColor(tier)),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.45),
+                    color: Colors.black.withValues(alpha: 0.45),
                     blurRadius: 16,
                     offset: const Offset(0, 5))
               ],

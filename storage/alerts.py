@@ -57,6 +57,11 @@ class AlertManager:
     def _stamp(self):
         return datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    def _cam_label(self):
+        """Filesystem-safe camera name for filenames, e.g. 'Cam Phone' -> 'CamPhone'."""
+        name = (self.camera_name or "Cam").strip()
+        return "".join(c for c in name if c.isalnum()) or "Cam"
+
     def _finalize_video(self):
         if self._writer is not None:
             self._writer.release()
@@ -80,7 +85,8 @@ class AlertManager:
 
         if person and tier in self.record_tiers and self._writer is None and not self._stop_requested:
             h, w = frame.shape[:2]
-            base = os.path.join(self.videos_dir, f"alert_{self._stamp()}_t{tier}")
+            base = os.path.join(
+                self.videos_dir, f"CAPHY_{self._cam_label()}_{self._stamp()}_t{tier}")
             self._writer, self._video_path = open_video_writer(base, fps, (w, h))
             self._last_seen = now
 
@@ -94,7 +100,8 @@ class AlertManager:
         p = max(result["persons"], key=lambda x: x["tier"])
         snapshot_path = None
         if tier in self.snapshot_tiers:
-            snapshot_path = os.path.join(self.dir, f"alert_{self._stamp()}_t{tier}.jpg")
+            snapshot_path = os.path.join(
+                self.dir, f"CAPHY_{self._cam_label()}_{self._stamp()}_t{tier}.jpg")
             cv2.imwrite(snapshot_path, frame)
         video_path = self._video_path if tier in self.record_tiers else None
         alert_id = self.db.add_alert(tier, p["distance_m"], p["conf"], snapshot_path,

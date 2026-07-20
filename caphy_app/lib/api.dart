@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -213,6 +214,18 @@ class Api {
   static String mediaUrl(String path) =>
       '${Store.baseUrl}$path?token=${Store.token}';
 
+  /// Delete a recording/snapshot on the PC after the phone has its own copy,
+  /// so a phone-triggered capture ends up saved only on the phone.
+  static Future<bool> deleteMedia(String name) async {
+    try {
+      final r = await http.post(_u('/api/media/delete'),
+          headers: _h, body: jsonEncode({'name': name}));
+      return r.statusCode == 200 && jsonDecode(r.body)['ok'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ------------------------------------------------------------- state
 
   /// Everything the UI needs to show what is ON or OFF right now.
@@ -299,5 +312,48 @@ class Api {
       _unreachable(e);
       return false;
     }
+  }
+
+  /// Real-time alert push (Server-Sent Events). Emits an event the instant a
+  /// new alert is confirmed on the system - no polling delay. Reconnects
+  /// automatically if the connection drops (Wi-Fi hiccup, server restart,
+  /// app backgrounded). Callers should still keep a slow fallback poll.
+  static Stream<void> watchAlerts() {
+    late final StreamController<void> controller;
+    var active = true;
+
+    Future<void> loop() async {
+      while (active) {
+        http.Client? client;
+        try {
+          client = http.Client();
+          final req = http.Request('GET', _u('/api/alerts/stream'));
+          req.headers.addAll(_h);
+          final res = await client.send(req).timeout(const Duration(seconds: 10));
+          if (res.statusCode == 200) {
+            _reachable();
+            await for (final chunk in res.stream.transform(utf8.decoder)) {
+              if (!active) break;
+              for (final line in const LineSplitter().convert(chunk)) {
+                if (line.startsWith('data:') && !controller.isClosed) {
+                  controller.add(null);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          _unreachable(e);
+        } finally {
+          client?.close();
+        }
+        if (active) await Future.delayed(const Duration(seconds: 3));
+      }
+    }
+
+    controller = StreamController<void>.broadcast(
+      onListen: () => loop(),
+      onCancel: () => active = false,
+    );
+    return controller.stream;
   }
 }

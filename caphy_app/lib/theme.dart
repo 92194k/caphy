@@ -107,7 +107,7 @@ class _CaphyLogoState extends State<CaphyLogo>
     if (_c == null) return _tile(1.0, 0.0);
     return AnimatedBuilder(
       animation: _c!,
-      builder: (_, __) {
+      builder: (_, _) {
         // phase from the shared wall clock, so the eye continues seamlessly
         // across screens instead of restarting each time the logo mounts.
         final t = (DateTime.now().millisecondsSinceEpoch % 4200) / 4200.0;

@@ -121,41 +121,48 @@ class _LiveTabState extends State<LiveTab> {
           child: ListView(
         padding: const EdgeInsets.all(14),
         children: [
-          // ---- system state at a glance ----
+          // ---- system state at a glance: one scrollable line, no wrap ----
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: Wrap(spacing: 8, runSpacing: 8, children: [
-              StateChip(
-                  label: 'System',
-                  on: _armed,
-                  onText: 'ARMED',
-                  offText: 'DISARMED',
-                  icon: Icons.shield),
-              StateChip(
-                  label: 'Camera',
-                  on: _cameraOn,
-                  onColor: cTeal2,
-                  icon: Icons.videocam),
-              StateChip(
-                  label: 'Night vision',
-                  on: _nv,
-                  icon: Icons.nightlight_round),
-              if (_emergency)
-                const StateChip(
-                    label: 'EMERGENCY',
-                    on: true,
-                    onText: 'ACTIVE',
-                    offText: '',
-                    onColor: cRed,
-                    icon: Icons.warning_amber),
-            ]),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: [
+                StateChip(
+                    label: 'System',
+                    on: _armed,
+                    onText: 'ARMED',
+                    offText: 'DISARMED',
+                    icon: Icons.shield),
+                const SizedBox(width: 8),
+                StateChip(
+                    label: 'Camera',
+                    on: _cameraOn,
+                    onColor: cTeal2,
+                    icon: Icons.videocam),
+                const SizedBox(width: 8),
+                StateChip(
+                    label: 'Night vision',
+                    on: _nv,
+                    icon: Icons.nightlight_round),
+                if (_emergency) ...[
+                  const SizedBox(width: 8),
+                  const StateChip(
+                      label: 'EMERGENCY',
+                      on: true,
+                      onText: 'ACTIVE',
+                      offText: '',
+                      onColor: cRed,
+                      icon: Icons.warning_amber),
+                ],
+              ]),
+            ),
           ),
           if (!_cameraOn)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: cOrange.withOpacity(0.12),
+                color: cOrange.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: cOrange),
               ),
@@ -241,67 +248,123 @@ class _LiveTabState extends State<LiveTab> {
               Positioned(top: 10, right: 10, child: tierPill(tier)),
           ]),
           const SizedBox(height: 16),
-          // controls
-          Wrap(spacing: 10, runSpacing: 10, children: [
-            _ctrl(_armed ? Icons.shield : Icons.shield_outlined,
-                _armed ? 'Disarm' : 'Arm', _armed, _toggleArm),
-            _ctrl(_cameraOn ? Icons.videocam_off : Icons.videocam,
-                _cameraOn ? 'Camera Off' : 'Camera On', !_cameraOn,
-                _toggleCamera),
-            _ctrl(Icons.warning_amber,
-                _emergency ? 'Cancel Emg' : 'Emergency', _emergency,
-                _toggleEmergency),
-            _ctrl(Icons.camera_alt, 'Snapshot', false, () async {
-              final ok = await Api.snapshot(_sel);
-              if (!ok) {
-                _toast('Snapshot failed', error: true);
-                return;
-              }
-              // Also save the current frame into the phone's CAPHY album.
-              final saved = await saveImageToGallery(
-                  '${Api.frameUrl(_sel)}&t=${DateTime.now().millisecondsSinceEpoch}',
-                  prefix: 'snapshot');
-              _toast(saved
-                  ? 'Snapshot saved to gallery (CAPHY album)'
-                  : 'Snapshot saved on PC');
-            }),
-            _ctrl(Icons.fiber_manual_record, 'Record', _recording, () async {
-              final res = await Api.record(_sel);
-              final on = res['recording'] == true;
-              setState(() => _recording = on);
-              if (on) {
-                _toast('Recording started');
-              } else {
-                _toast('Saving recording...');
-                final url = res['video_url'];
-                if (url != null) {
-                  final saved =
-                      await saveVideoUrlToGallery('${Store.baseUrl}$url');
-                  _toast(saved
-                      ? 'Recording saved to gallery (CAPHY album)'
-                      : 'Recording saved on PC');
-                } else {
-                  _toast('Recording saved on PC');
-                }
-              }
-            }),
-            _ctrl(Icons.nightlight_round, 'Night Vision', _nv, () async {
-              final on = await Api.nightVision(_sel);
-              setState(() => _nv = on);
-              _toast('Night vision ${on ? "on" : "off"}');
-            }),
-            _ctrl(Icons.notifications_active, 'Alarm', false, () async {
-              final on = await Api.siren();
-              _toast(on ? 'Siren ON' : 'Siren off');
-            }),
-            _ctrl(Icons.mic, 'Speak', false, _openVoice),
-            _ctrl(Icons.fullscreen, 'Fullscreen', false, _openFullscreen),
+          // ---- controls (matches the web console) ----
+          Row(children: [
+            Expanded(
+              child: _primaryBtn(
+                  _armed ? Icons.shield : Icons.shield_outlined,
+                  _armed ? 'Disarm' : 'Arm', _toggleArm),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _dangerBtn(Icons.notifications_active, 'Trigger Siren',
+                  () async {
+                final on = await Api.siren();
+                _toast(on ? 'Siren ON' : 'Siren off');
+              }),
+            ),
           ]),
+          const SizedBox(height: 10),
+          // ---- utility icons: one scrollable line, no wrap ----
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              _iconBtn(_cameraOn ? Icons.videocam : Icons.videocam_off,
+                  _cameraOn, _toggleCamera, tip: 'Camera'),
+              const SizedBox(width: 8),
+              _iconBtn(Icons.camera_alt, false, () async {
+                // Triggered from the phone -> saves on the phone only. (The
+                // web console's own Snapshot button still saves on the PC -
+                // this never asks the PC to write a file at all.)
+                final r = await saveImageToGalleryEx(
+                    '${Api.frameUrl(_sel)}&t=${DateTime.now().millisecondsSinceEpoch}',
+                    prefix: _mediaLabel());
+                _toast(_saveMessage(r, 'Snapshot'), error: r != SaveOutcome.ok);
+              }, tip: 'Snapshot'),
+              const SizedBox(width: 8),
+              _iconBtn(Icons.fiber_manual_record, _recording, () async {
+                final res = await Api.record(_sel);
+                final on = res['recording'] == true;
+                setState(() => _recording = on);
+                if (on) {
+                  _toast('Recording started');
+                } else {
+                  _toast('Saving recording...');
+                  final url = res['video_url'];
+                  final name = res['video'];
+                  if (url != null) {
+                    // must include the auth token, or the server's /video
+                    // route 401s and the download always "fails" - Api.mediaUrl
+                    // appends it the same way frameUrl/streamUrl already do.
+                    final r = await saveVideoUrlToGalleryEx(
+                        Api.mediaUrl(url),
+                        prefix: _mediaLabel());
+                    if (r == SaveOutcome.ok) {
+                      // now on the phone - remove the PC's temporary copy so
+                      // a phone-triggered recording lives only on the phone.
+                      if (name != null) Api.deleteMedia(name);
+                    }
+                    _toast(_saveMessage(r, 'Recording'), error: r != SaveOutcome.ok);
+                  } else {
+                    _toast('Recording saved on PC');
+                  }
+                }
+              }, tip: 'Record'),
+              const SizedBox(width: 8),
+              _iconBtn(Icons.nightlight_round, _nv, () async {
+                final on = await Api.nightVision(_sel);
+                setState(() => _nv = on);
+                _toast('Night vision ${on ? "on" : "off"}');
+              }, tip: 'Night vision'),
+              const SizedBox(width: 8),
+              _iconBtn(Icons.mic, false, _openVoice, tip: 'Speak'),
+              const SizedBox(width: 8),
+              _iconBtn(Icons.fullscreen, false, _openFullscreen,
+                  tip: 'Fullscreen'),
+              const SizedBox(width: 8),
+              _iconBtn(Icons.warning_amber, _emergency, _toggleEmergency,
+                  danger: true, tip: 'Emergency'),
+            ]),
+          ),
         ],
           ),
         ),
       ]),
     );
+  }
+
+  /// Filename label for a manual snapshot/recording so it's obvious which
+  /// camera it came from just by the file name in the gallery, e.g.
+  /// "CAPHY_CamPhone_1737384930000.jpg" - the save helpers append their own
+  /// timestamp after this label. The camera name is also burned into the
+  /// image/video itself by the system, so the label carries through either
+  /// way even if the file gets renamed.
+  String _mediaLabel() {
+    String name = 'Cam$_sel';
+    for (final c in _cams) {
+      if (c['cam'] == _sel) {
+        name = (c['name'] ?? name).toString();
+        break;
+      }
+    }
+    final safe = name.trim().replaceAll(RegExp(r'[^A-Za-z0-9]+'), '');
+    return 'CAPHY_${safe.isEmpty ? 'Cam$_sel' : safe}';
+  }
+
+  /// Turn a gallery-save result into a message that actually tells the user
+  /// what to do next, instead of a generic "failed".
+  String _saveMessage(SaveOutcome r, String kind) {
+    switch (r) {
+      case SaveOutcome.ok:
+        return '$kind saved to gallery (CAPHY album)';
+      case SaveOutcome.permissionDenied:
+        return '$kind not saved - allow Photos & videos access for CAPHY '
+            'in your phone Settings > Apps > CAPHY > Permissions';
+      case SaveOutcome.downloadFailed:
+        return '$kind not saved - could not reach the system to download it';
+      case SaveOutcome.galleryWriteFailed:
+        return '$kind not saved - the phone gallery rejected the file';
+    }
   }
 
   Widget _dot(String label, bool on) => Padding(
@@ -313,23 +376,59 @@ class _LiveTabState extends State<LiveTab> {
         ]),
       );
 
-  Widget _ctrl(IconData icon, String label, bool active, VoidCallback onTap) {
-    return SizedBox(
-      width: 104,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          backgroundColor: active ? cTeal : cPanel,
-          side: BorderSide(color: active ? cTeal : cLine),
-          padding: const EdgeInsets.symmetric(vertical: 12),
+  // Filled-teal primary action (Arm / Disarm).
+  Widget _primaryBtn(IconData icon, String label, VoidCallback onTap) {
+    return FilledButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18, color: Colors.black),
+      label: Text(label,
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
+      style: FilledButton.styleFrom(
+        backgroundColor: cTeal,
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  // Red danger action (Trigger Siren).
+  Widget _dangerBtn(IconData icon, String label, VoidCallback onTap) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18, color: cRed),
+      label: Text(label,
+          style: const TextStyle(color: cRed, fontWeight: FontWeight.w700)),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: cRed.withValues(alpha: 0.12),
+        side: BorderSide(color: cRed.withValues(alpha: 0.6)),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  // Dark icon-only control (snapshot, record, night vision, etc.).
+  Widget _iconBtn(IconData icon, bool active, VoidCallback onTap,
+      {bool danger = false, String? tip}) {
+    final iconColor = danger ? cRed : (active ? cTeal2 : cMuted);
+    final borderColor = danger
+        ? cRed.withValues(alpha: 0.5)
+        : (active ? cTeal : cLine);
+    return Tooltip(
+      message: tip ?? '',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 50,
+          height: 46,
+          decoration: BoxDecoration(
+            color: active ? cTeal.withValues(alpha: 0.15) : cPanel2,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor),
+          ),
+          child: Icon(icon, size: 20, color: iconColor),
         ),
-        onPressed: onTap,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 20, color: active ? Colors.black : cText),
-          const SizedBox(height: 4),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11, color: active ? Colors.black : cText)),
-        ]),
       ),
     );
   }
@@ -424,7 +523,7 @@ class _FullscreenViewState extends State<_FullscreenView> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
+                    color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: cLine),
                   ),

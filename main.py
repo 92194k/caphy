@@ -207,7 +207,7 @@ def main():
             state.highest = not state.highest
             print(f"[CAPHY] Highest-Security {'ON' if state.highest else 'OFF'}")
 
-    siren.stop(); cap.release(); cv2.destroyAllWindows(); db.close()
+    siren.shutdown(); cap.release(); cv2.destroyAllWindows(); db.close()
     print("[CAPHY] Stopped.")
 
 
