@@ -11,6 +11,17 @@ class PersonDetector:
         # imported here (not at top) so the motion half of the system can still
         # run for testing even if ultralytics is not installed yet.
         from ultralytics import YOLO
+        # Resolve the weights path so it works when packaged into the .exe
+        # (the .pt is bundled and unpacked to a temp dir, not the cwd).
+        import os as _os
+        if not _os.path.exists(model_path):
+            try:
+                from resource_path import resource_path
+                _b = resource_path(_os.path.basename(model_path))
+                if _os.path.exists(_b):
+                    model_path = _b
+            except Exception:
+                pass
         self.model = YOLO(model_path)
         self.person_class = person_class
         self.conf = conf

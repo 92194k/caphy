@@ -3,8 +3,12 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links
+  cloud_firestore
+  firebase_auth
   firebase_core
   flutter_tts
+  flutter_webrtc
   gal
   speech_to_text_windows
 )

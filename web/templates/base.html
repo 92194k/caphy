@@ -45,11 +45,16 @@
         System {{ 'ARMED' if armed else 'DISARMED' }}<small>{{ cam }}</small></div>
       <div class="fr">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
-        {{ user }} &middot; Homeowner &nbsp;<a href="/logout" style="color:var(--teal2)">Log out</a></div>
+        <span class="frname" title="{{ user }}">{{ user }}</span> &middot; Homeowner &nbsp;<a href="/logout" style="color:var(--teal2)">Log out</a></div>
     </div>
   </div>
 
   <div class="main">
+    <div id="offlineBar" class="offlinebar" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M1 1l22 22"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      <div><b>You're offline</b> &mdash; CAPHY is running in Local Mode. Only devices on the same Wi&#8209;Fi as this laptop can connect right now.
+        <a href="/settings?tab=offline">How to connect &rarr;</a></div>
+    </div>
     <div class="header">
       <div class="ht"><h1>{{ title }}</h1>{% if subtitle %}<div class="sub">{{ subtitle }}</div>{% endif %}</div>
       <div class="hr">
@@ -92,6 +97,48 @@
     (function(){var d=-(Date.now()%4200)+'ms';
       document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
         .forEach(function(e){e.style.animationDelay=d;});})();
+
+    // ---- auto-shrink a long email so it stays on ONE line ----
+    // Instead of wrapping/truncating, scale the font down until it fits its
+    // container's width (mirrors the phone app's FittedBox behaviour).
+    function fitText(el, maxPx, minPx){
+      if(!el) return;
+      var size = maxPx;
+      el.style.fontSize = size + 'px';
+      // shrink until it fits (or we hit the minimum readable size)
+      var guard = 0;
+      while(el.scrollWidth > el.clientWidth && size > minPx && guard < 40){
+        size -= 0.5; guard++;
+        el.style.fontSize = size + 'px';
+      }
+    }
+    function fitAccountText(){
+      fitText(document.querySelector('.sidefoot .frname'), 12, 8);
+      fitText(document.querySelector('.profilemenu .pmname'), 13.5, 9);
+    }
+    window.addEventListener('load', fitAccountText);
+    window.addEventListener('resize', fitAccountText);
+
+    // ---- laptop-side offline detection ----
+    // Auto-detect when THIS laptop has no internet and show a banner that
+    // explains Local Mode + links to the step-by-step guide. Uses a tiny
+    // no-content request to a reliable host; if it can't be reached, we're
+    // offline (the LAN can still be up - that's exactly what Local Mode is).
+    async function caphyCheckOnline(){
+      var online = false;
+      try{
+        await fetch('https://www.gstatic.com/generate_204',
+                    {mode:'no-cors', cache:'no-store'});
+        online = true;
+      }catch(e){ online = false; }
+      var bar = document.getElementById('offlineBar');
+      if(bar) bar.style.display = online ? 'none' : 'flex';
+    }
+    caphyCheckOnline();
+    setInterval(caphyCheckOnline, 8000);
+    // the profile menu is hidden at load (clientWidth 0), so re-fit when opened
+    (function(){var b=document.getElementById('profileBtn');
+      if(b) b.addEventListener('click', function(){ setTimeout(fitAccountText, 0); });})();
 
     // ---- header profile dropdown ----
     function toggleProfile(e){

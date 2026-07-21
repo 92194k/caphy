@@ -278,6 +278,58 @@ void showTopToast(BuildContext context, String message, {bool error = false}) {
   Future.delayed(const Duration(seconds: 2), entry.remove);
 }
 
+/// Auto-switching connectivity banner. Watches Api.connectivityMode and:
+///   - shows nothing when online (cloud features available),
+///   - shows an amber "Offline · Local Wi-Fi" bar when there's no internet
+///     but the laptop is reachable on the LAN (live view + controls still
+///     work, just not the from-anywhere features),
+///   - shows a red "No connection" bar when nothing is reachable.
+/// This is what makes the app auto-detect a dropped internet connection and
+/// fall back to the local network without the user doing anything.
+class ModeBanner extends StatelessWidget {
+  const ModeBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<String>(
+      valueListenable: Api.connectivityMode,
+      builder: (context, mode, _) {
+        if (mode == 'online') return const SizedBox.shrink();
+        final lan = mode == 'lan';
+        final color = lan ? cOrange : cRed;
+        return Container(
+          width: double.infinity,
+          color: color.withValues(alpha: 0.14),
+          padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
+          child: Row(children: [
+            Icon(lan ? Icons.wifi_tethering : Icons.cloud_off,
+                color: color, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(lan ? 'Offline mode · Local Wi‑Fi' : 'No connection',
+                      style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5)),
+                  Text(
+                    lan
+                        ? 'No internet detected — connected directly to your laptop over local Wi‑Fi. Live view and controls work; from‑anywhere features are paused.'
+                        : 'Can\'t reach CAPHY. Make sure the laptop is on, and that you have internet or are on the same Wi‑Fi as the laptop.',
+                    style: const TextStyle(color: cMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+}
+
 /// Red bar shown whenever the app cannot reach the CAPHY system.
 ///
 /// Without this, an unreachable server and a genuinely empty system look
@@ -309,8 +361,13 @@ class OfflineBanner extends StatelessWidget {
                             fontWeight: FontWeight.w700,
                             fontSize: 13)),
                     Text(
-                      'Check the PC is running app.py, that you are on the same '
-                      'Wi-Fi, and that the address is ${Store.baseUrl}',
+                      Store.hasServerAddress
+                          ? 'Not reachable on this Wi-Fi and no recent '
+                              'check-in from the laptop over the internet - '
+                              'make sure it\'s powered on and connected.'
+                          : 'No recent check-in from the laptop over the '
+                              'internet - make sure it\'s powered on and '
+                              'connected.',
                       style: const TextStyle(color: cMuted, fontSize: 11.5),
                     ),
                   ]),

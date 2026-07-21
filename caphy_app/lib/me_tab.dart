@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'api.dart';
 import 'theme.dart';
 
@@ -11,12 +12,14 @@ class MeTab extends StatefulWidget {
 
 class _MeTabState extends State<MeTab> {
   List<dynamic> _cams = [];
+  List<Map<String, dynamic>> _devices = [];
   final Map<int, TextEditingController> _ctl = {};
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadDevices();
   }
 
   Future<void> _load() async {
@@ -30,6 +33,11 @@ class _MeTabState extends State<MeTab> {
         }
       });
     }
+  }
+
+  Future<void> _loadDevices() async {
+    final d = await Api.myDevices();
+    if (mounted) setState(() => _devices = d);
   }
 
   @override
@@ -56,20 +64,122 @@ class _MeTabState extends State<MeTab> {
                   backgroundColor: cBg,
                   child: Icon(Icons.person, color: cTeal2)),
               const SizedBox(width: 14),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(Store.user,
-                      style: const TextStyle(
-                          color: cText,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold)),
-                  const Text('Homeowner',
-                      style: TextStyle(color: cMuted, fontSize: 12)),
-                ],
+              // Expanded so a long email/username can't push past the row -
+              // it wraps to a second line (up to 2) and then ellipsises,
+              // instead of overflowing (the "RenderFlex overflowed" error).
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Auto-shrink so a long email stays on ONE line: the text
+                    // scales itself down to fit the available width instead of
+                    // wrapping or overflowing.
+                    SizedBox(
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(Store.user,
+                            maxLines: 1,
+                            style: const TextStyle(
+                                color: cText,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const Text('Homeowner',
+                        style: TextStyle(color: cMuted, fontSize: 12)),
+                  ],
+                ),
               ),
             ]),
           ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('MY LAPTOPS',
+                  style: TextStyle(
+                      color: cDim, fontSize: 11, letterSpacing: 1.5)),
+              GestureDetector(
+                onTap: _loadDevices,
+                child: const Icon(Icons.refresh, color: cMuted, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_devices.isEmpty)
+            panel(
+                child: const Text('No laptops connected yet',
+                    style: TextStyle(color: cDim)))
+          else
+            ..._devices.map((d) {
+              final isActive = d['device_id']?.toString() == Store.lastDeviceId;
+              final online = d['online'] == true;
+              final name = (d['hostname']?.toString().isNotEmpty ?? false)
+                  ? d['hostname'].toString()
+                  : 'CAPHY Laptop';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: panel(
+                  child: Row(children: [
+                    Icon(Icons.laptop,
+                        color: isActive ? cTeal : cMuted, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: TextStyle(
+                                  color: cText,
+                                  fontSize: 14,
+                                  fontWeight: isActive
+                                      ? FontWeight.bold
+                                      : FontWeight.w500)),
+                          const SizedBox(height: 2),
+                          Row(children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                  color: online ? cTeal : cDim,
+                                  shape: BoxShape.circle),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(online ? 'Online' : 'Offline',
+                                style: TextStyle(
+                                    color: online ? cTeal2 : cDim,
+                                    fontSize: 11.5)),
+                          ]),
+                        ],
+                      ),
+                    ),
+                    if (isActive)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Text('Active',
+                            style: TextStyle(color: cTeal, fontSize: 12)),
+                      )
+                    else
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                            backgroundColor: cPanel2,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8)),
+                        onPressed: () {
+                          Api.selectDevice(d);
+                          setState(() {});
+                          _load();
+                          _toast('Switched to $name');
+                        },
+                        child: const Text('Use',
+                            style: TextStyle(color: cTeal, fontSize: 12.5)),
+                      ),
+                  ]),
+                ),
+              );
+            }),
           const SizedBox(height: 20),
           const Text('CAMERA NAMES',
               style: TextStyle(
@@ -123,10 +233,36 @@ class _MeTabState extends State<MeTab> {
               const Icon(Icons.dns_outlined, color: cMuted, size: 20),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(Store.baseUrl,
-                    style: const TextStyle(color: cText)),
+                child: Text(
+                    Store.hasServerAddress
+                        ? Store.baseUrl
+                        : 'No laptop connected yet',
+                    style: TextStyle(
+                        color: Store.hasServerAddress ? cText : cDim)),
               ),
             ]),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                  backgroundColor: cTeal,
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: () async {
+                final ok = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(builder: (_) => const ConnectDeviceScreen()));
+                if (ok == true && mounted) {
+                  setState(() {});
+                  _toast('Connected to laptop');
+                }
+              },
+              icon: const Icon(Icons.qr_code_scanner, color: Colors.black),
+              label: Text(
+                  Store.hasServerAddress ? 'Reconnect Device' : 'Connect Device',
+                  style: const TextStyle(
+                      color: Colors.black, fontWeight: FontWeight.bold)),
+            ),
           ),
           const SizedBox(height: 26),
           FilledButton.tonal(
@@ -137,6 +273,119 @@ class _MeTabState extends State<MeTab> {
             child: const Text('Log out',
                 style: TextStyle(color: cRed, fontWeight: FontWeight.bold)),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Connect Device": scans the QR code shown on the laptop's web dashboard
+/// (Settings > Connect Device) and pairs this phone to it. This is the
+/// answer to "we don't have dedicated camera hardware" - the laptop's own
+/// webcam is the camera, so the phone needs a guided way to find *which*
+/// laptop is its household's system instead of typing an IP by hand.
+class ConnectDeviceScreen extends StatefulWidget {
+  const ConnectDeviceScreen({super.key});
+  @override
+  State<ConnectDeviceScreen> createState() => _ConnectDeviceScreenState();
+}
+
+class _ConnectDeviceScreenState extends State<ConnectDeviceScreen> {
+  final MobileScannerController _ctl = MobileScannerController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onDetect(BarcodeCapture capture) async {
+    if (_busy) return;
+    final raw = capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
+    if (raw == null) return;
+
+    // New scan-to-connect QR (v2) carries a one-time sign-in token. Older
+    // v1 pairing QRs (code/ip/port) are still accepted as a fallback.
+    final linkPayload = Api.parseLinkQr(raw);
+    final payload = linkPayload ?? Api.parsePairingQr(raw);
+    if (payload == null) {
+      setState(() => _error = 'That QR code isn\'t a CAPHY connect code.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    await _ctl.stop();
+
+    final err = linkPayload != null
+        ? await Api.signInWithScannedToken(linkPayload)
+        : await Api.confirmPairing(payload);
+    if (!mounted) return;
+
+    if (err != null) {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+      await _ctl.start();
+      return;
+    }
+
+    Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(backgroundColor: cPanel, title: const Text('Connect Device')),
+      backgroundColor: cBg,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Open CAPHY on your laptop → Settings → Connect Device, '
+              'then point your camera at the QR code shown there.',
+              style: const TextStyle(color: cMuted, fontSize: 13, height: 1.5),
+            ),
+          ),
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                MobileScanner(controller: _ctl, onDetect: _onDetect),
+                Center(
+                  child: Container(
+                    width: 240,
+                    height: 240,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                          color: _error != null ? cRed : cTeal, width: 3),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+                if (_busy)
+                  Container(
+                    color: Colors.black54,
+                    child: const Center(
+                      child: CircularProgressIndicator(color: cTeal),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(_error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: cRed, fontSize: 13)),
+            ),
         ],
       ),
     );

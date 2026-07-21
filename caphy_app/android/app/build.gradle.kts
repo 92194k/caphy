@@ -8,7 +8,13 @@ plugins {
 android {
     namespace = "com.example.caphy_app"
 
-    compileSdk = 35            // Firebase messaging 15.x needs compileSdk 35
+    // compileSdk 36 - several plugins (app_links, flutter_tts, gal,
+    // google_sign_in_android, mobile_scanner, shared_preferences_android,
+    // speech_to_text) now require it. compileSdk is backward compatible,
+    // so this doesn't change the minimum Android version CAPHY runs on
+    // (that's minSdk below) - it only changes what SDK the app is BUILT
+    // against.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

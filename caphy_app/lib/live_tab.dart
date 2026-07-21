@@ -5,6 +5,7 @@ import 'api.dart';
 import 'theme.dart';
 import 'widgets.dart';
 import 'voice_screen.dart';
+import 'webrtc_view.dart';
 
 class LiveTab extends StatefulWidget {
   const LiveTab({super.key});
@@ -21,6 +22,13 @@ class _LiveTabState extends State<LiveTab> {
   bool _nv = false;
   Timer? _statTimer;
 
+  // Whether the phone can reach the laptop directly on this WiFi right
+  // now. true -> use the existing MJPEG stream (simple, instant). false
+  // -> fall back to a real WebRTC call (webrtc_view.dart) so "live view"
+  // still means LIVE video even when away from home, not just snapshots.
+  bool _lanReachable = true;
+  bool _lanChecked = false;
+
   bool get _armed => _state['armed'] == true;
   bool get _cameraOn => _state['camera_on'] != false;
   bool get _emergency => _state['emergency'] == true;
@@ -29,10 +37,21 @@ class _LiveTabState extends State<LiveTab> {
   void initState() {
     super.initState();
     _loadCams();
+    _checkLan();
     // No more per-frame image polling (that was the lag). The MJPEG stream
     // widget renders frames continuously. We only poll lightweight status.
     _statTimer =
         Timer.periodic(const Duration(seconds: 2), (_) => _loadStat());
+  }
+
+  Future<void> _checkLan() async {
+    final reachable = await Api.isLanReachable();
+    if (mounted) {
+      setState(() {
+        _lanReachable = reachable;
+        _lanChecked = true;
+      });
+    }
   }
 
   @override
@@ -202,7 +221,10 @@ class _LiveTabState extends State<LiveTab> {
                 }).toList(),
               ),
             ),
-          // live view - continuous MJPEG stream (smooth, no polling)
+          // Live view: MJPEG on the laptop's own LAN (instant, simple);
+          // true WebRTC live video when off that network (see
+          // webrtc_view.dart) - either way this is REAL live footage,
+          // never a static snapshot.
           Stack(children: [
             AspectRatio(
               aspectRatio: 4 / 3,
@@ -210,12 +232,26 @@ class _LiveTabState extends State<LiveTab> {
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   color: Colors.black,
-                  child: MjpegView(
-                    key: ValueKey('stream$_sel'),
-                    url: Api.streamUrl(_sel),
-                    active: _cameraOn,
-                    fit: BoxFit.cover,
-                  ),
+                  child: !_lanChecked
+                      ? const Center(
+                          child: CircularProgressIndicator(color: cTeal))
+                      : _lanReachable
+                          ? MjpegView(
+                              key: ValueKey('stream$_sel'),
+                              url: Api.streamUrl(_sel),
+                              active: _cameraOn,
+                              fit: BoxFit.cover,
+                            )
+                          : (Store.lastDeviceId != null
+                              ? WebRtcView(
+                                  key: ValueKey('webrtc$_sel'),
+                                  deviceId: Store.lastDeviceId!,
+                                  cam: _sel,
+                                  fit: BoxFit.cover,
+                                )
+                              : const Center(
+                                  child: Text('No paired device',
+                                      style: TextStyle(color: cMuted)))),
                 ),
               ),
             ),
@@ -440,13 +476,14 @@ class _LiveTabState extends State<LiveTab> {
 
   void _openFullscreen() {
     Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => _FullscreenView(cam: _sel)));
+        builder: (_) => _FullscreenView(cam: _sel, lanReachable: _lanReachable)));
   }
 }
 
 class _FullscreenView extends StatefulWidget {
   final int cam;
-  const _FullscreenView({required this.cam});
+  final bool lanReachable;
+  const _FullscreenView({required this.cam, required this.lanReachable});
   @override
   State<_FullscreenView> createState() => _FullscreenViewState();
 }
@@ -504,11 +541,22 @@ class _FullscreenViewState extends State<_FullscreenView> {
           Positioned.fill(
             child: GestureDetector(
               onTap: _tap,
-              child: MjpegView(
-                key: ValueKey('fs${widget.cam}'),
-                url: Api.streamUrl(widget.cam),
-                fit: BoxFit.contain,
-              ),
+              child: widget.lanReachable
+                  ? MjpegView(
+                      key: ValueKey('fs${widget.cam}'),
+                      url: Api.streamUrl(widget.cam),
+                      fit: BoxFit.contain,
+                    )
+                  : (Store.lastDeviceId != null
+                      ? WebRtcView(
+                          key: ValueKey('fswebrtc${widget.cam}'),
+                          deviceId: Store.lastDeviceId!,
+                          cam: widget.cam,
+                          fit: BoxFit.contain,
+                        )
+                      : const Center(
+                          child: Text('No paired device',
+                              style: TextStyle(color: cMuted)))),
             ),
           ),
           Positioned(

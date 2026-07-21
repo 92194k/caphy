@@ -1,38 +1,65 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec file for CAPHY Desktop App.
-# Usage: pyinstaller CAPHY.spec
-# Output: dist/CAPHY.exe
+#
+# PyInstaller spec for CAPHY Desktop (.exe).
+#   Build:   pyinstaller CAPHY.spec
+#   Output:  dist/CAPHY/CAPHY.exe   (a one-FOLDER build - ship the whole
+#            dist/CAPHY folder, or wrap it in an installer)
+#
+# One-folder (not one-file) on purpose: CAPHY pulls in PyTorch, OpenCV,
+# ultralytics and aiortc, which are large and unreliable to cram into a
+# single self-extracting .exe. One-folder builds start faster and are far
+# less flaky. See BUILD_EXE.md for the full walkthrough + caveats.
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_data_files
+
+datas = []
+binaries = []
+hiddenimports = []
+
+# Heavy packages: pull in their code, data files and dynamic libs wholesale
+# so nothing is missed at runtime.
+for pkg in ["ultralytics", "torch", "torchvision", "cv2", "av", "aiortc",
+            "firebase_admin", "google.cloud.firestore", "google.cloud.storage",
+            "grpc", "pygame"]:
+    try:
+        d, b, h = collect_all(pkg)
+        datas += d
+        binaries += b
+        hiddenimports += h
+    except Exception:
+        pass
+
+# CAPHY's own bundled read-only files (model weights, web UI, sounds,
+# voice intents, and the credentials the app reads at startup).
+datas += [
+    ('yolov8n.pt', '.'),
+    ('web/templates', 'web/templates'),
+    ('web/static', 'web/static'),
+    ('assets', 'assets'),
+    ('voice/intents.json', 'voice'),
+    ('firebase_key.json', '.'),
+    ('caphy_keys.json', '.'),
+]
+
+hiddenimports += [
+    'flask', 'jinja2', 'webview',
+    'firebase_admin.messaging', 'firebase_admin.auth',
+    'firebase_admin.firestore', 'firebase_admin.storage',
+    'engineio.async_drivers.threading',
+]
 
 block_cipher = None
 
 a = Analysis(
-    ['desktop_launcher.py'],
+    ['caphy_desktop.py'],
     pathex=[],
-    binaries=[],
-    datas=[
-        # Include YOLOv8 model
-        ('yolov8n.pt', '.'),
-        # Include Vosk models (English + Tagalog)
-        ('models/vosk-en', 'models/vosk-en'),
-        ('models/vosk-tl', 'models/vosk-tl'),
-        # Include web templates and static files
-        ('web/templates', 'web/templates'),
-        ('web/static', 'web/static'),
-    ],
-    hiddenimports=[
-        'flask',
-        'pywebview',
-        'cv2',
-        'ultralytics',
-        'vosk',
-        'firebase_admin',
-    ],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=[],
+    excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -44,23 +71,20 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='CAPHY',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,  # No console window (GUI app only)
+    upx=False,                 # UPX often breaks torch/opencv DLLs - keep off
+    console=True,              # keep a console while testing so errors show;
+                               # flip to False once it runs cleanly
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/caphy_icon.ico',  # If you have an icon file, put it in assets/
+    icon='assets/caphy_icon.ico' if __import__('os').path.exists('assets/caphy_icon.ico') else None,
 )
 
 coll = COLLECT(
@@ -69,7 +93,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
-    name='CAPHY'
+    name='CAPHY',
 )

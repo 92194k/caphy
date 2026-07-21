@@ -13,6 +13,7 @@ class AlertsTab extends StatefulWidget {
 class _AlertsTabState extends State<AlertsTab> {
   List<dynamic> _alerts = [];
   bool _loading = true;
+  bool _showLower = false;   // is the Tier 1/2 "lower priority" group expanded
   Timer? _fallbackPoll;
   StreamSubscription<void>? _liveSub;
 
@@ -106,16 +107,84 @@ class _AlertsTabState extends State<AlertsTab> {
                           ]),
                         )
                       ])
-                    : ListView.builder(
+                    : ListView(
                         padding: const EdgeInsets.all(14),
-                        itemCount: _alerts.length,
-                        itemBuilder: (_, i) => _row(context, _alerts[i]),
+                        children: _buildGroupedAlerts(context),
                       ),
           ),
         ),
       ]),
     );
   }
+
+  /// Builds the alert list grouped by priority: Tier 3 (high priority) shown
+  /// first and always, then a collapsible "Lower priority" group holding
+  /// Tier 1 & 2. This is the alert-fatigue layout - the alerts that matter
+  /// most are up top and never buried, while the routine ones are tucked
+  /// away (still saved, still with snapshots, just one tap to reveal).
+  List<Widget> _buildGroupedAlerts(BuildContext context) {
+    final high = _alerts.where((a) => asInt(a['tier'], 1) >= 3).toList();
+    final lower = _alerts.where((a) => asInt(a['tier'], 1) < 3).toList();
+
+    final children = <Widget>[];
+
+    if (high.isNotEmpty) {
+      children.add(_groupLabel('HIGH PRIORITY · TIER 3', cRed));
+      children.addAll(high.map((a) => _row(context, a)));
+    } else {
+      children.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Center(
+          child: Text('No high-priority (Tier 3) alerts',
+              style: TextStyle(color: cDim, fontSize: 13)),
+        ),
+      ));
+    }
+
+    if (lower.isNotEmpty) {
+      children.add(const SizedBox(height: 8));
+      children.add(
+        InkWell(
+          onTap: () => setState(() => _showLower = !_showLower),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: cPanel,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: cLine),
+            ),
+            child: Row(children: [
+              Icon(_showLower ? Icons.expand_less : Icons.expand_more,
+                  color: cMuted, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Lower priority · Tier 1 & 2  (${lower.length})',
+                    style: const TextStyle(
+                        color: cText, fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
+              Text(_showLower ? 'Hide' : 'Show',
+                  style: const TextStyle(color: cTeal2, fontSize: 12)),
+            ]),
+          ),
+        ),
+      );
+      if (_showLower) {
+        children.add(const SizedBox(height: 10));
+        children.addAll(lower.map((a) => _row(context, a)));
+      }
+    }
+
+    return children;
+  }
+
+  Widget _groupLabel(String text, Color color) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, top: 2),
+        child: Text(text,
+            style: TextStyle(
+                color: color, fontSize: 11, letterSpacing: 1.2,
+                fontWeight: FontWeight.w700)),
+      );
 
   /// Acknowledge one alert. It disappears from the list but the row stays.
   /// Confirmation shows at the TOP so it matches the rest of the app.

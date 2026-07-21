@@ -37,11 +37,23 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.3.2
   firebase_core: ^3.8.0
+  firebase_auth: ^5.3.3     # login/signup talk directly to Firebase - works from
+                            # anywhere, no laptop IP needed (unlike the old /api/login)
+  cloud_firestore: ^5.5.0   # reads the account's paired-device list directly from
+                            # the cloud device registry - onboarding must know
+                            # "do I own a CAPHY desktop" before ever reaching a laptop
   firebase_messaging: ^15.1.5
+  google_sign_in: ^6.2.2    # "Sign in with Google" - matches the web dashboard's login
+  app_links: ^6.3.2         # catches the magic-link deep link for passwordless email sign-in
   speech_to_text: ^7.0.0    # push-to-talk microphone (device speech-to-text)
   flutter_tts: ^4.2.0       # CAPHY speaks its replies (device text-to-speech)
   gal: ^2.3.0               # save snapshots/videos into the phone photo gallery
   path_provider: ^2.1.4     # temp dir for downloading before saving to gallery
+  mobile_scanner: ^6.0.2    # QR scanner for "Connect Device" laptop pairing
+  flutter_webrtc: ^1.5.0    # true live video when off the laptop's LAN -
+                            # peer-to-peer (or TURN-relayed) video straight
+                            # from the laptop's camera, signaled via Firestore
+                            # (see lib/webrtc_call.dart, web/webrtc_stream.py)
   # (MJPEG live view is implemented inline in widgets.dart using `http`, so no
   #  extra streaming package is needed - avoids an http version conflict.)
 
