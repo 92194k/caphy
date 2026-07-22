@@ -241,6 +241,14 @@ class _LiveTabState extends State<LiveTab> {
                               url: Api.streamUrl(_sel),
                               active: _cameraOn,
                               fit: BoxFit.cover,
+                              // If the local stream stalls (the Wi-Fi
+                              // "spinner forever" case), fall back to WebRTC,
+                              // which works over both Wi-Fi and mobile data.
+                              onFailed: () {
+                                if (mounted && _lanReachable) {
+                                  setState(() => _lanReachable = false);
+                                }
+                              },
                             )
                           : (Store.lastDeviceId != null
                               ? WebRtcView(
@@ -490,6 +498,7 @@ class _FullscreenView extends StatefulWidget {
 
 class _FullscreenViewState extends State<_FullscreenView> {
   bool _showExit = true;
+  late bool _lan = widget.lanReachable;   // may flip to false on stream fail
   Timer? _hideTimer;
 
   @override
@@ -541,11 +550,14 @@ class _FullscreenViewState extends State<_FullscreenView> {
           Positioned.fill(
             child: GestureDetector(
               onTap: _tap,
-              child: widget.lanReachable
+              child: _lan
                   ? MjpegView(
                       key: ValueKey('fs${widget.cam}'),
                       url: Api.streamUrl(widget.cam),
                       fit: BoxFit.contain,
+                      onFailed: () {
+                        if (mounted && _lan) setState(() => _lan = false);
+                      },
                     )
                   : (Store.lastDeviceId != null
                       ? WebRtcView(

@@ -18,8 +18,13 @@ class MjpegView extends StatefulWidget {
   final String url;
   final BoxFit fit;
   final bool active;
+  // Called when the local stream can't be shown (bad status, dropped
+  // connection, OR no frame within a few seconds). live_tab uses this to
+  // auto-switch to the WebRTC path so Live view still works.
+  final VoidCallback? onFailed;
   const MjpegView(
-      {super.key, required this.url, this.fit = BoxFit.cover, this.active = true});
+      {super.key, required this.url, this.fit = BoxFit.cover,
+       this.active = true, this.onFailed});
   @override
   State<MjpegView> createState() => _MjpegViewState();
 }
@@ -29,6 +34,8 @@ class _MjpegViewState extends State<MjpegView> {
   StreamSubscription? _sub;
   Uint8List? _frame;
   bool _error = false;
+  bool _failedReported = false;
+  Timer? _firstFrameTimer;
   final List<int> _buf = [];
 
   @override
@@ -43,17 +50,36 @@ class _MjpegViewState extends State<MjpegView> {
     if (old.url != widget.url || old.active != widget.active) {
       _stop();
       _buf.clear();
+      _frame = null;
+      _error = false;
       if (widget.active) _connect();
     }
   }
 
+  void _reportFailed() {
+    if (_failedReported) return;
+    _failedReported = true;
+    widget.onFailed?.call();
+  }
+
   Future<void> _connect() async {
+    // If no first frame arrives quickly, treat the local path as unusable
+    // and let live_tab fall back to WebRTC (this is the Wi-Fi "spinner
+    // forever" fix).
+    _firstFrameTimer?.cancel();
+    _firstFrameTimer = Timer(const Duration(seconds: 5), () {
+      if (_frame == null) {
+        if (mounted) setState(() => _error = true);
+        _reportFailed();
+      }
+    });
     try {
       _client = http.Client();
       final req = http.Request('GET', Uri.parse(widget.url));
       final resp = await _client!.send(req);
       if (resp.statusCode != 200) {
         if (mounted) setState(() => _error = true);
+        _reportFailed();
         return;
       }
       _error = false;
@@ -87,14 +113,17 @@ class _MjpegViewState extends State<MjpegView> {
     if (end < 0) return;
     final frame = Uint8List.fromList(_buf.sublist(start, end));
     _buf.removeRange(0, end);
+    _firstFrameTimer?.cancel();   // got a frame -> local path is good
     if (mounted) setState(() => _frame = frame);
   }
 
   void _fail() {
     if (mounted) setState(() => _error = true);
+    _reportFailed();
   }
 
   void _stop() {
+    _firstFrameTimer?.cancel();
     _sub?.cancel();
     _sub = null;
     _client?.close();

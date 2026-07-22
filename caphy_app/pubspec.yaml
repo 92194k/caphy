@@ -67,6 +67,16 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
+
+# CAPHY app launcher icon (run: flutter pub run flutter_launcher_icons)
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/caphy_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#0B1117"
+  adaptive_icon_foreground: "assets/caphy_icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
