@@ -1,0 +1,291 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CAPHY - Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body{align-items:center;justify-content:center}
+    .box{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:38px;width:380px}
+    .box .logo{width:56px;height:56px;border-radius:14px;margin:0 auto 12px}
+    .remember{display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:12.5px}
+    .remember label{display:flex;align-items:center;gap:8px;color:var(--muted);margin:0;cursor:pointer}
+    .remember input{width:16px;height:16px;padding:0;accent-color:var(--teal)}
+    .forgot{color:var(--teal2);cursor:pointer}
+    .hint{display:none;color:var(--muted);font-size:11.5px;background:var(--bg2);border:1px solid var(--line);
+      border-radius:9px;padding:10px 12px;margin-top:12px;line-height:1.5}
+    .divider{display:flex;align-items:center;margin:20px 0;gap:12px;color:var(--muted);font-size:12px}
+    .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--line)}
+    .google-btn-wrapper{margin:14px 0}
+    .google-btn{display:flex;align-items:center;justify-content:center;gap:10px;
+      width:100%;padding:11px;border-radius:8px;border:1px solid var(--line);
+      background:#fff;color:#3c4043;font-size:14px;font-weight:500;cursor:pointer}
+    .google-btn:hover{background:#f7f7f7}
+    .error{color:var(--red);font-size:12px;margin-top:10px}
+    .success{color:var(--teal);font-size:12px;margin-top:10px}
+    .toggle-form{color:var(--teal2);cursor:pointer;font-size:12px;text-align:center;margin-top:16px}
+    .form-section{display:none}
+    .form-section.active{display:block}
+    .pwd-wrap{position:relative}
+    .pwd-wrap input{padding-right:38px !important}
+    .pwd-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+      cursor:pointer;color:var(--muted);width:22px;height:22px;display:flex;
+      align-items:center;justify-content:center;user-select:none}
+    .pwd-toggle:hover{color:var(--teal2)}
+    .caps-hint{display:none;color:var(--orange,#F4A261);font-size:11px;margin-top:6px;
+      align-items:center;gap:6px}
+    .caps-hint.show{display:flex}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div style="text-align:center;margin-bottom:6px">
+      <div class="logo" style="overflow:hidden">
+        <svg class="caphy-logo" viewBox="24 24 72 72" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+          <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2A9D8F"></stop><stop offset="1" stop-color="#217C72"></stop>
+          </linearGradient>
+          <clipPath id="lc"><rect x="24" y="24" width="72" height="72" rx="17"></rect></clipPath></defs>
+          <rect x="24" y="24" width="72" height="72" rx="17" fill="url(#lg)"></rect>
+          <g clip-path="url(#lc)">
+            <ellipse class="eye" cx="60" cy="60" rx="21" ry="13" fill="#08110f"></ellipse>
+            <g class="pupil">
+              <circle cx="60" cy="60" r="8.5" fill="#3dd7c4"></circle>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <b style="font-size:26px;letter-spacing:3px">CAPHY</b>
+      <div style="color:var(--teal2);font-size:11px;letter-spacing:3px">AI SECURITY</div>
+    </div>
+
+    <!-- Sign In Tab -->
+    <div id="signin-form" class="form-section active">
+      <h3 style="font-size:14px;margin-bottom:14px;color:var(--text)">Sign In</h3>
+
+      <!-- Google Sign-In - opens the system's real default browser
+           (see /auth/google/start) rather than running Google's embedded
+           sign-in widget inside this window. The embedded widget doesn't
+           reliably work inside pywebview/WebView2 - Google's own client
+           actively restricts it there, which showed up as a stuck/
+           duplicate popup that never completed. A real browser tab is
+           the standard, Google-endorsed pattern for desktop apps. -->
+      {% if google_client_id %}
+      <div class="google-btn-wrapper">
+        <button type="button" class="google-btn" onclick="window.location.href='/auth/google/start'">
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.81z"/>
+            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.94-2.92l-3.88-3c-1.08.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.94H1.28v3.1A12 12 0 0 0 12 24z"/>
+            <path fill="#FBBC05" d="M5.29 14.29A7.2 7.2 0 0 1 4.91 12c0-.8.14-1.57.38-2.29v-3.1H1.28A12 12 0 0 0 0 12c0 1.94.46 3.77 1.28 5.39l4.01-3.1z"/>
+            <path fill="#EA4335" d="M12 4.75c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.61l4.01 3.1C6.23 6.88 8.88 4.75 12 4.75z"/>
+          </svg>
+          <span>Sign in with Google</span>
+        </button>
+      </div>
+      <div class="divider">OR</div>
+      {% endif %}
+
+      <!-- Email + Password -->
+      <form id="signin-email-form" method="post" action="{{ url_for('login') }}">
+        <label>EMAIL</label>
+        <input name="email" type="email" placeholder="you@example.com" style="width:100%;padding:8px;margin-top:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg2)">
+
+        <label style="margin-top:12px;display:block">PASSWORD</label>
+        <div class="pwd-wrap" style="margin-top:6px">
+          <input id="signin-password" name="password" type="password"
+                 style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2)"
+                 onkeyup="checkCaps(event,'signin-caps')">
+          <span class="pwd-toggle" onclick="togglePwd('signin-password',this)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </span>
+        </div>
+        <div id="signin-caps" class="caps-hint">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2 L3 12 h5 v8 h8 v-8 h5 Z"/>
+          </svg>
+          Caps Lock is on
+        </div>
+
+        <div class="remember">
+          <label><input type="checkbox" name="remember" value="on"> Remember this device</label>
+          <span class="forgot" onclick="toggleResetHint()">Forgot?</span>
+        </div>
+
+        <div id="reset-hint" class="hint">
+          Password reset: Contact your account administrator or use "Sign up" to create a new account.
+        </div>
+
+        <div id="signin-error" class="error">{% if error %}{{ error }}{% endif %}</div>
+        <button class="btn" type="submit" style="width:100%;margin-top:18px;padding:12px">Sign In with Email</button>
+      </form>
+
+      <div class="toggle-form" onclick="toggleForms()">
+        Don't have an account? <u>Sign up</u>
+      </div>
+    </div>
+
+    <!-- Sign Up Tab -->
+    <div id="signup-form" class="form-section">
+      <h3 style="font-size:14px;margin-bottom:14px;color:var(--text)">Sign Up</h3>
+
+      <!-- Email + Password Signup -->
+      <form id="signup-email-form" onsubmit="handleSignup(event)">
+        <label>EMAIL</label>
+        <input id="signup-email" name="email" type="email" placeholder="you@example.com" style="width:100%;padding:8px;margin-top:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg2)">
+
+        <label style="margin-top:12px;display:block">PASSWORD</label>
+        <div class="pwd-wrap" style="margin-top:6px">
+          <input id="signup-password" name="password" type="password" placeholder="Min. 6 characters"
+                 style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2)"
+                 onkeyup="checkCaps(event,'signup-caps')">
+          <span class="pwd-toggle" onclick="togglePwd('signup-password',this)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </span>
+        </div>
+
+        <label style="margin-top:12px;display:block">CONFIRM PASSWORD</label>
+        <div class="pwd-wrap" style="margin-top:6px">
+          <input id="signup-password-confirm" name="password_confirm" type="password"
+                 style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2)"
+                 onkeyup="checkCaps(event,'signup-caps')">
+          <span class="pwd-toggle" onclick="togglePwd('signup-password-confirm',this)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </span>
+        </div>
+        <div id="signup-caps" class="caps-hint">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2 L3 12 h5 v8 h8 v-8 h5 Z"/>
+          </svg>
+          Caps Lock is on
+        </div>
+
+        <div id="signup-error" class="error"></div>
+        <div id="signup-success" class="success"></div>
+
+        <button class="btn" type="submit" style="width:100%;margin-top:18px;padding:12px">Create Account</button>
+      </form>
+
+      <div class="toggle-form" onclick="toggleForms()">
+        Already have an account? <u>Sign in</u>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Toggle between Sign In and Sign Up forms
+    function toggleForms() {
+      document.getElementById('signin-form').classList.toggle('active');
+      document.getElementById('signup-form').classList.toggle('active');
+      document.getElementById('signup-error').textContent = '';
+      document.getElementById('signup-success').textContent = '';
+    }
+
+    function toggleResetHint() {
+      const hint = document.getElementById('reset-hint');
+      hint.style.display = hint.style.display === 'block' ? 'none' : 'block';
+    }
+
+    // Show/hide a password field's typed text.
+    function togglePwd(inputId, iconEl) {
+      const el = document.getElementById(inputId);
+      const showing = el.type === 'text';
+      el.type = showing ? 'password' : 'text';
+      // Swap the eye icon between "open" (hidden) and "slashed" (showing).
+      iconEl.innerHTML = showing
+        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+          + '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>'
+        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+          + '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 5c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/>'
+          + '<path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/></svg>';
+    }
+
+    // Caps Lock warning - checked live on keyup, since Windows/Chromium
+    // only expose getModifierState reliably from a real key event, not on
+    // page load. Works for any physical letter key including Shift combos.
+    function checkCaps(evt, hintId) {
+      const hint = document.getElementById(hintId);
+      if (!hint) return;
+      const on = typeof evt.getModifierState === 'function'
+        && evt.getModifierState('CapsLock');
+      hint.classList.toggle('show', !!on);
+    }
+
+    // Email + Password Signup
+    function handleSignup(event) {
+      event.preventDefault();
+
+      const email = document.getElementById('signup-email').value.trim();
+      const pwd = document.getElementById('signup-password').value;
+      const pwd_confirm = document.getElementById('signup-password-confirm').value;
+
+      // Clear previous messages
+      document.getElementById('signup-error').textContent = '';
+      document.getElementById('signup-success').textContent = '';
+
+      // Validation
+      if (!email || !pwd || !pwd_confirm) {
+        showSignUpError('All fields required');
+        return;
+      }
+      if (pwd !== pwd_confirm) {
+        showSignUpError('Passwords do not match');
+        return;
+      }
+      if (pwd.length < 6) {
+        showSignUpError('Password must be at least 6 characters');
+        return;
+      }
+
+      // Send to backend
+      fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email: email, password: pwd})
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showSignUpSuccess('Account created! Redirecting...');
+          setTimeout(() => { window.location.href = '/'; }, 1500);
+        } else {
+          showSignUpError(data.error || 'Signup failed');
+        }
+      })
+      .catch(e => {
+        showSignUpError('Network error: ' + e);
+      });
+    }
+
+    function showSignUpError(msg) {
+      const el = document.getElementById('signup-error');
+      if (el) el.textContent = msg;
+    }
+
+    function showSignUpSuccess(msg) {
+      const el = document.getElementById('signup-success');
+      if (el) el.textContent = msg;
+    }
+
+    // Note: Google Sign-In no longer runs in this page's JS at all - the
+    // "Sign in with Google" button navigates straight to /auth/google/start,
+    // which opens the system's real browser (see google_waiting.html and
+    // google_done.html for the rest of that flow). /api/auth/google (the
+    // fetch-based JSON endpoint) still exists in web/server.py for any
+    // future embedded-JS use case, it's just not called from here anymore.
+
+    // Logo animation
+    (function(){
+      var d=-(Date.now()%4200)+'ms';
+      document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
+        .forEach(function(e){e.style.animationDelay=d;});
+    })();
+  </script>
+</body>
+</html>

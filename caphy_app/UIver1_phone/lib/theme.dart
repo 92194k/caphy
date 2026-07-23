@@ -1,31 +1,19 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-// ---- palette (matches the CAPHY web theme) ----
-// Near-black base, indigo glass cards, blue->purple gradient accents.
-// cTeal keeps its name but is now the blue; cTeal2 is the violet highlight.
-const cBg = Color(0xFF08080F);        // near-black base
-const cPanel = Color(0xFF12121F);     // indigo card
-const cPanel2 = Color(0xFF161528);    // indigo card (raised)
-const cLine = Color(0xFF2F2F4D);
-const cText = Color(0xFFECEAFB);
-const cMuted = Color(0xFF9A97BD);
-const cDim = Color(0xFF66638A);
-const cTeal = Color(0xFF5B7BFF);      // blue (primary accent)
-const cTeal2 = Color(0xFFA78BFA);     // violet (highlight)
-const cBlue = Color(0xFF4A7FFF);
-const cPurple = Color(0xFF8B6FFF);
-const cElectric = Color(0xFF5B7BFF);
-const cElectric2 = Color(0xFFA78BFA);
-const cOrange = Color(0xFFE0A44C);
-const cRed = Color(0xFFF0596B);
-const cGreen = Color(0xFF4FD1A0);
-
-/// The signature blue->purple gradient used across the app.
-const cGrad = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF4A7FFF), Color(0xFF7B6BFF), Color(0xFFA78BFA)]);
+// ---- palette (matches the CAPHY web console) ----
+const cBg = Color(0xFF0B1117);
+const cPanel = Color(0xFF16232E);
+const cPanel2 = Color(0xFF1A2A36);
+const cLine = Color(0xFF26404F);
+const cText = Color(0xFFE6EDF3);
+const cMuted = Color(0xFF8AA0B0);
+const cDim = Color(0xFF5C7180);
+const cTeal = Color(0xFF2A9D8F);
+const cTeal2 = Color(0xFF3DD7C4);
+const cOrange = Color(0xFFF4A261);
+const cRed = Color(0xFFE5484D);
+const cGreen = Color(0xFF3FB950);
 
 Color tierColor(int t) => t >= 3 ? cRed : (t == 2 ? cOrange : cTeal2);
 
@@ -75,7 +63,7 @@ class _CaphyLogoState extends State<CaphyLogo>
         gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF5B7BFF), Color(0xFF8B6FFF), Color(0xFFA78BFA)]),
+            colors: [Color(0xFF2A9D8F), Color(0xFF217C72)]),
         borderRadius: BorderRadius.circular(s * 0.24),
       ),
       child: ClipRRect(
@@ -90,7 +78,7 @@ class _CaphyLogoState extends State<CaphyLogo>
                 width: s * 0.56,
                 height: (s * 0.34) * lid,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0A1024),
+                  color: const Color(0xFF08110F),
                   borderRadius: BorderRadius.circular(s * 0.17),
                 ),
               ),
@@ -133,78 +121,6 @@ class _CaphyLogoState extends State<CaphyLogo>
   }
 }
 
-/// A larger, tappable CAPHY logo for the login screen — sits inside a soft
-/// pulsing glow ring, gently floats, and bounces when tapped.
-class InteractiveLogo extends StatefulWidget {
-  @override
-  State<InteractiveLogo> createState() => InteractiveLogoState();
-}
-
-class InteractiveLogoState extends State<InteractiveLogo>
-    with TickerProviderStateMixin {
-  late final AnimationController _float = AnimationController(
-      vsync: this, duration: const Duration(seconds: 5))
-    ..repeat(reverse: true);
-  late final AnimationController _bounce = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 480),
-      lowerBound: 0,
-      upperBound: 1);
-
-  @override
-  void dispose() {
-    _float.dispose();
-    _bounce.dispose();
-    super.dispose();
-  }
-
-  void _tap() {
-    _bounce.forward(from: 0);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: _tap,
-      child: AnimatedBuilder(
-        animation: Listenable.merge([_float, _bounce]),
-        builder: (_, child) {
-          final floatY = math.sin(_float.value * math.pi) * -8;
-          // playful bounce: quick scale up then settle
-          final b = _bounce.value;
-          final scale =
-              b == 0 ? 1.0 : 1.0 + math.sin(b * math.pi) * 0.18 * (1 - b * 0.3);
-          final glow = 0.35 + math.sin(_float.value * math.pi) * 0.25;
-          return Transform.translate(
-            offset: Offset(0, floatY),
-            child: Transform.scale(
-              scale: scale,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(colors: [
-                    cPurple.withValues(alpha: 0.22 * glow),
-                    Colors.transparent,
-                  ]),
-                  boxShadow: [
-                    BoxShadow(
-                        color: cTeal.withValues(alpha: glow * 0.5),
-                        blurRadius: 36,
-                        spreadRadius: 2),
-                  ],
-                ),
-                child: child,
-              ),
-            ),
-          );
-        },
-        child: const CaphyLogo(size: 104),
-      ),
-    );
-  }
-}
-
 /// Small rounded colored tier badge, e.g. "Tier 2".
 Widget tierPill(int t) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -218,21 +134,14 @@ Widget tierPill(int t) => Container(
               color: tierColor(t), fontSize: 12, fontWeight: FontWeight.bold)),
     );
 
-/// A slate-blue glass panel container (premium look: translucent fill,
-/// hairline highlight border, soft depth shadow).
+/// A bordered dark panel container.
 Widget panel({required Widget child, EdgeInsets? padding}) => Container(
       width: double.infinity,
       padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: cPanel2.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0x22789AD2)),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x33030712),
-              blurRadius: 24,
-              offset: Offset(0, 8)),
-        ],
+        color: cPanel2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cLine),
       ),
       child: child,
     );

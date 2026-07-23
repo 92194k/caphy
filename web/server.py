@@ -275,7 +275,12 @@ class Worker(threading.Thread):
                     except Exception as e:
                         self._log("WARN", "eval", f"could not log event ({e})")
 
-            siren_on = armed and result["threat"] and result["tier"] in config.SIREN_TIERS
+            # Siren only after the just-armed grace window - so arming (or
+            # starting the system) while you're standing right in front of the
+            # webcam does NOT instantly blast the siren at Tier 3.
+            siren_on = (armed and result["threat"]
+                        and result["tier"] in config.SIREN_TIERS
+                        and time.time() >= _arm_grace_until)
             _update_siren(self.cam_id, siren_on)
 
             self._annotate(frame, result)
@@ -739,10 +744,10 @@ def restart_workers(sources):
 
 
 def start_workers(sources):
-    # the system always starts up ARMED, regardless of what was saved from
-    # the last session - security should default to "on", not to whatever
-    # state it happened to be left in
-    _set_armed(True)
+    # Start DISARMED so launching CAPHY never instantly fires the siren while
+    # you're sitting right in front of the webcam. The user arms it when ready
+    # (dashboard, phone, or voice); arming then applies the grace window too.
+    _set_armed(False)
 
     # Bring the cloud services (registration, heartbeat, remote commands,
     # WebRTC live streaming) up FIRST, before the slow camera/model init
@@ -1640,6 +1645,81 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/console")
+def console():
+    """Optional single-screen console (not the default). The default home is
+    the classic multi-page dashboard at '/'. Kept here in case it's wanted
+    later; History / Full Logs / Settings / Live open as popups."""
+    cams = [{"cam": w.cam_id, "name": w.name} for w in workers] or [{"cam": 0, "name": "Camera 0"}]
+    return render_template("console.html", user=session.get("email", "admin"),
+                           cams_json=json.dumps(cams))
+
+
+@app.route("/api/dashboard")
+def api_dashboard():
+    """Top-bar stats + 24h threat chart for the one-screen console."""
+    db = Database(config.DB_PATH)
+    total = db.count_alerts()
+    today = db.conn.execute("SELECT COUNT(*) c FROM alerts "
+                            "WHERE date(timestamp)=date('now','localtime')").fetchone()["c"]
+    pending = db.conn.execute("SELECT COUNT(*) c FROM alerts WHERE synced=0").fetchone()["c"]
+    hours = {int(r["h"]): r["c"] for r in db.conn.execute(
+        "SELECT strftime('%H', timestamp) h, COUNT(*) c FROM alerts "
+        "WHERE timestamp >= datetime('now','-1 day') GROUP BY h")}
+    db.close()
+    cur = max([w.get_stats().get("tier", 0) for w in workers] or [0])
+    online = sum(1 for w in workers if w.get_stats().get("online"))
+    ncam = len(workers)
+    cur_dist = "-"
+    for w in workers:
+        s = w.get_stats()
+        if s.get("tier", 0) == cur and cur:
+            cur_dist = s.get("distance", "-")
+            break
+    return jsonify({
+        "total": total, "today": today, "pending": pending,
+        "online": online, "ncam": ncam,
+        "threat": ("Tier " + str(cur)) if cur else "Clear",
+        "threat_foot": (f"person · {cur_dist} m") if cur else "no active threat",
+        "hours": hours,
+    })
+
+
+@app.route("/api/health")
+def api_health():
+    """CPU / mem / disk / fps + module status for the console health panel."""
+    if psutil:
+        cpu = round(psutil.cpu_percent())
+        vm = psutil.virtual_memory()
+        mem = round(vm.percent)
+        mem_txt = f"{vm.used/1e9:.1f} / {vm.total/1e9:.0f} GB"
+        disk = round(psutil.disk_usage("/").percent)
+    else:
+        cpu = mem = disk = 0
+        mem_txt = "n/a"
+    st = workers[0].get_stats() if workers else {}
+    fps = st.get("fps", 0) or 0
+    db = Database(config.DB_PATH)
+    pending = db.conn.execute("SELECT COUNT(*) c FROM alerts WHERE synced=0").fetchone()["c"]
+    db.close()
+    yolo_ok = any(w.yolo_ok for w in workers)
+    nv_on = any(getattr(w, "nv", None) and w.nv.enabled for w in workers)
+    fcm_on = os.path.exists(config.FIREBASE_KEY)
+    G, T, M, R = "#3fb98a", "#5b8dff", "#8d9bb5", "#e5544e"
+    modules = [
+        {"name": "OpenCV capture", "status": "running", "color": G},
+        {"name": "YOLOv8-nano", "status": "running" if yolo_ok else "off", "color": G if yolo_ok else R},
+        {"name": "Tier engine", "status": "running", "color": G},
+        {"name": "Night vision (CLAHE)", "status": "engaged" if nv_on else "standby", "color": T if nv_on else M},
+        {"name": "Flask API / MJPEG", "status": "running", "color": G},
+        {"name": "SQLite", "status": "ok", "color": T},
+        {"name": "Cloud sync", "status": (f"offline · queue {pending}" if pending else "synced"), "color": R if pending else G},
+        {"name": "Firebase FCM", "status": "connected" if fcm_on else "off", "color": T if fcm_on else M},
+    ]
+    return jsonify({"cpu": cpu, "mem": mem, "mem_txt": mem_txt, "disk": disk,
+                    "fps": fps, "modules": modules})
+
+
 @app.route("/")
 def dashboard():
     db = Database(config.DB_PATH)
@@ -1711,14 +1791,16 @@ def dashboard():
     else:
         alerts_html = '<div style="color:var(--dim);font-size:13px">No alerts yet</div>'
 
-    # ---- 24h threat chart ----
+    # ---- 24h threat chart (hover a bar to see the hour + alert count) ----
     maxh = max(hours.values()) if hours else 1
     bars = ""
     for h in range(24):
         c = hours.get(h, 0)
         cls = "bar hot" if (c and c >= maxh) else ("bar warm" if c >= maxh * 0.5 and c else "bar")
         pct = int(100 * c / maxh) if maxh else 0
-        bars += f'<div class="{cls}" style="height:{max(pct,6)}%"></div>'
+        plural = "" if c == 1 else "s"
+        bars += (f'<div class="{cls}" style="--h:{max(pct,4)}%">'
+                 f'<span class="bartip"><b>{h:02d}:00</b> &middot; {c} alert{plural}</span></div>')
 
     body = f"""
     {cards}

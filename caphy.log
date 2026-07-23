@@ -8358,3 +8358,946 @@
 2026-07-22 08:31:26	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
 2026-07-22 08:31:29	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
 2026-07-22 08:31:29	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 00:32:01	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 00:32:01	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 00:32:02	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 00:32:02	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 00:32:06	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 00:32:09	DETECT	yolo(Cam Laptop)	person conf=0.61 tier=1
+2026-07-23 00:32:09	ALERT	db(Cam Phone)	alert #183 Tier 3 saved
+2026-07-23 00:32:10	ALERT	db(Cam Laptop)	alert #184 Tier 1 saved
+2026-07-23 00:32:11	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 00:32:12	ALERT	fcm(Cam Laptop)	push Tier 1 sent (owner-scoped)
+2026-07-23 00:32:12	DETECT	yolo(Cam Laptop)	person conf=0.91 tier=1
+2026-07-23 00:32:12	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=2
+2026-07-23 00:32:13	DETECT	yolo(Cam Laptop)	person conf=0.89 tier=2
+2026-07-23 00:32:24	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 00:32:24	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 00:40:51	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 00:40:51	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 00:40:52	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 00:40:52	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 00:40:55	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 00:40:56	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 00:40:58	ALERT	db(Cam Phone)	alert #185 Tier 3 saved
+2026-07-23 00:40:59	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 00:40:59	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 00:41:00	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 00:41:00	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 01:12:05	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 01:12:05	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 01:12:06	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 01:12:06	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 01:12:09	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 01:12:09	DETECT	yolo(Cam Laptop)	person conf=0.63 tier=2
+2026-07-23 01:12:11	ALERT	db(Cam Laptop)	alert #186 Tier 2 saved
+2026-07-23 01:12:11	ALERT	db(Cam Phone)	alert #187 Tier 3 saved
+2026-07-23 01:12:13	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 01:12:13	ALERT	fcm(Cam Laptop)	push Tier 2 sent (owner-scoped)
+2026-07-23 01:12:13	DETECT	yolo(Cam Laptop)	person conf=0.52 tier=2
+2026-07-23 01:12:15	DETECT	yolo(Cam Laptop)	person conf=0.81 tier=2
+2026-07-23 01:12:15	ALERT	db(Cam Laptop)	alert #188 Tier 2 saved
+2026-07-23 01:12:16	ALERT	fcm(Cam Laptop)	push Tier 2 sent (owner-scoped)
+2026-07-23 01:12:16	DETECT	yolo(Cam Laptop)	person conf=0.56 tier=2
+2026-07-23 01:12:16	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:12:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:12	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 01:25:12	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 01:25:13	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 01:25:13	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 01:25:15	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 01:25:17	ALERT	db(Cam Phone)	alert #189 Tier 3 saved
+2026-07-23 01:25:18	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 01:25:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 01:25:19	DETECT	yolo(Cam Laptop)	person conf=0.60 tier=3
+2026-07-23 01:25:19	ALERT	db(Cam Laptop)	alert #190 Tier 3 saved
+2026-07-23 01:25:20	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 01:25:21	DETECT	yolo(Cam Laptop)	person conf=0.83 tier=3
+2026-07-23 01:25:21	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 01:25:21	DETECT	yolo(Cam Laptop)	person conf=0.91 tier=3
+2026-07-23 01:25:40	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 01:25:40	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 01:32:37	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 01:32:37	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 01:32:38	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 01:32:38	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 01:32:40	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 01:32:42	ALERT	db(Cam Phone)	alert #191 Tier 3 saved
+2026-07-23 01:32:44	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 01:33:05	DETECT	yolo(Cam Phone)	person conf=0.89 tier=3
+2026-07-23 01:33:05	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 01:33:05	ALERT	db(Cam Phone)	alert #192 Tier 3 saved
+2026-07-23 01:33:06	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 01:33:06	ALERT	db(Cam Laptop)	alert #193 Tier 3 saved
+2026-07-23 01:33:07	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 01:33:07	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 01:33:07	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 01:52:28	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 01:52:28	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 01:52:29	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 01:52:30	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 01:52:32	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 01:52:34	ALERT	db(Cam Phone)	alert #194 Tier 3 saved
+2026-07-23 01:52:36	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 01:52:43	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 01:52:43	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 02:02:27	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 02:02:27	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 02:02:27	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 02:02:28	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 02:02:30	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 02:02:32	ALERT	db(Cam Phone)	alert #195 Tier 3 saved
+2026-07-23 02:02:33	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 02:44:36	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 02:44:36	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 02:44:37	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 02:44:37	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 02:44:39	DETECT	yolo(Cam Laptop)	person conf=0.86 tier=3
+2026-07-23 02:44:39	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 02:44:41	ALERT	db(Cam Laptop)	alert #196 Tier 3 saved
+2026-07-23 02:44:42	ALERT	db(Cam Phone)	alert #197 Tier 3 saved
+2026-07-23 02:44:43	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 02:44:43	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 02:44:43	DETECT	yolo(Cam Laptop)	person conf=0.69 tier=3
+2026-07-23 03:14:41	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 03:14:41	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 03:14:42	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 03:14:42	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 03:14:44	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 03:14:46	ALERT	db(Cam Phone)	alert #198 Tier 3 saved
+2026-07-23 03:14:48	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:15:04	DETECT	yolo(Cam Laptop)	person conf=0.80 tier=3
+2026-07-23 03:15:05	ALERT	db(Cam Laptop)	alert #199 Tier 3 saved
+2026-07-23 03:15:06	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	person conf=0.52 tier=3
+2026-07-23 03:15:07	DETECT	yolo(Cam Laptop)	person conf=0.70 tier=3
+2026-07-23 03:15:08	DETECT	yolo(Cam Laptop)	person conf=0.55 tier=3
+2026-07-23 03:15:08	DETECT	yolo(Cam Laptop)	person conf=0.62 tier=3
+2026-07-23 03:15:09	DETECT	yolo(Cam Laptop)	person conf=0.71 tier=3
+2026-07-23 03:15:09	DETECT	yolo(Cam Laptop)	person conf=0.67 tier=3
+2026-07-23 03:15:10	ALERT	db(Cam Laptop)	alert #200 Tier 3 saved
+2026-07-23 03:15:11	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:15:11	DETECT	yolo(Cam Laptop)	person conf=0.67 tier=3
+2026-07-23 03:15:11	DETECT	yolo(Cam Laptop)	person conf=0.58 tier=3
+2026-07-23 03:15:12	DETECT	yolo(Cam Laptop)	person conf=0.55 tier=3
+2026-07-23 03:15:12	DETECT	yolo(Cam Laptop)	person conf=0.62 tier=3
+2026-07-23 03:15:13	DETECT	yolo(Cam Laptop)	person conf=0.63 tier=3
+2026-07-23 03:15:13	DETECT	yolo(Cam Laptop)	person conf=0.59 tier=3
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:14	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:15	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:15	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:15	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:15	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:15	DETECT	yolo(Cam Laptop)	person conf=0.58 tier=3
+2026-07-23 03:15:15	ALERT	db(Cam Laptop)	alert #201 Tier 3 saved
+2026-07-23 03:15:16	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:15:16	DETECT	yolo(Cam Laptop)	person conf=0.50 tier=3
+2026-07-23 03:15:17	DETECT	yolo(Cam Laptop)	person conf=0.67 tier=3
+2026-07-23 03:15:17	DETECT	yolo(Cam Laptop)	person conf=0.65 tier=3
+2026-07-23 03:15:18	DETECT	yolo(Cam Laptop)	person conf=0.68 tier=3
+2026-07-23 03:15:18	DETECT	yolo(Cam Laptop)	person conf=0.71 tier=3
+2026-07-23 03:15:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:19	DETECT	yolo(Cam Laptop)	person conf=0.61 tier=3
+2026-07-23 03:15:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:19	DETECT	yolo(Cam Laptop)	person conf=0.51 tier=3
+2026-07-23 03:15:19	DETECT	yolo(Cam Laptop)	person conf=0.57 tier=3
+2026-07-23 03:15:20	ALERT	db(Cam Laptop)	alert #202 Tier 3 saved
+2026-07-23 03:15:21	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:15:21	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:15:21	DETECT	yolo(Cam Laptop)	person conf=0.73 tier=3
+2026-07-23 03:15:21	DETECT	yolo(Cam Laptop)	person conf=0.68 tier=3
+2026-07-23 03:15:22	DETECT	yolo(Cam Laptop)	person conf=0.69 tier=3
+2026-07-23 03:15:22	DETECT	yolo(Cam Laptop)	person conf=0.69 tier=3
+2026-07-23 03:15:23	DETECT	yolo(Cam Laptop)	person conf=0.72 tier=3
+2026-07-23 03:15:23	DETECT	yolo(Cam Laptop)	person conf=0.68 tier=3
+2026-07-23 03:15:24	DETECT	yolo(Cam Laptop)	person conf=0.67 tier=3
+2026-07-23 03:15:26	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 03:15:27	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 03:22:41	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 03:22:42	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 03:22:43	DETECT	yolo(Cam Laptop)	person conf=0.88 tier=3
+2026-07-23 03:22:44	ALERT	db(Cam Laptop)	alert #203 Tier 3 saved
+2026-07-23 03:22:45	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:22:45	DETECT	yolo(Cam Laptop)	person conf=0.85 tier=3
+2026-07-23 03:22:45	DETECT	yolo(Cam Laptop)	person conf=0.86 tier=3
+2026-07-23 03:22:46	DETECT	yolo(Cam Laptop)	person conf=0.85 tier=3
+2026-07-23 03:22:46	DETECT	yolo(Cam Laptop)	person conf=0.87 tier=3
+2026-07-23 03:22:47	DETECT	yolo(Cam Laptop)	person conf=0.88 tier=3
+2026-07-23 03:22:47	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=3
+2026-07-23 03:22:48	ALERT	db(Cam Laptop)	alert #204 Tier 3 saved
+2026-07-23 03:22:49	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:22:49	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=3
+2026-07-23 03:22:49	DETECT	yolo(Cam Laptop)	person conf=0.91 tier=3
+2026-07-23 03:22:49	DETECT	yolo(Cam Laptop)	person conf=0.91 tier=3
+2026-07-23 03:22:50	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 03:22:50	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 03:22:51	DETECT	yolo(Cam Laptop)	person conf=0.84 tier=3
+2026-07-23 03:22:51	DETECT	yolo(Cam Laptop)	person conf=0.89 tier=3
+2026-07-23 03:22:52	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=3
+2026-07-23 03:22:52	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 03:22:53	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=3
+2026-07-23 03:22:53	ALERT	db(Cam Laptop)	alert #205 Tier 3 saved
+2026-07-23 03:22:54	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:22:54	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=3
+2026-07-23 03:22:55	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=3
+2026-07-23 03:22:55	DETECT	yolo(Cam Laptop)	person conf=0.89 tier=3
+2026-07-23 03:22:56	DETECT	yolo(Cam Laptop)	person conf=0.89 tier=3
+2026-07-23 03:23:01	DETECT	yolo(Cam Laptop)	person conf=0.89 tier=3
+2026-07-23 03:23:01	ALERT	db(Cam Laptop)	alert #206 Tier 3 saved
+2026-07-23 03:23:02	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:24:26	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 03:24:26	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 03:26:20	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 03:26:20	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 03:26:21	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 03:26:21	ALERT	db(Cam Laptop)	alert #207 Tier 3 saved
+2026-07-23 03:26:22	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:26:22	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 03:26:22	DETECT	yolo(Cam Laptop)	person conf=0.93 tier=3
+2026-07-23 03:26:23	DETECT	yolo(Cam Laptop)	person conf=0.93 tier=3
+2026-07-23 03:26:23	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 03:26:24	DETECT	yolo(Cam Laptop)	person conf=0.78 tier=3
+2026-07-23 03:26:24	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:24	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:24	DETECT	yolo(Cam Laptop)	person conf=0.50 tier=3
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:25	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 03:26:27	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 03:26:27	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 03:26:54	INFO	night(Cam Laptop)	CLAHE ON (manual)
+2026-07-23 03:26:56	INFO	night(Cam Laptop)	CLAHE OFF (manual)
+2026-07-23 03:35:08	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 03:35:08	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 03:35:09	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 03:35:09	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 03:35:12	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 03:35:14	ALERT	db(Cam Phone)	alert #208 Tier 3 saved
+2026-07-23 03:35:16	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:35:41	DETECT	yolo(Cam Laptop)	person conf=0.92 tier=3
+2026-07-23 03:35:41	ALERT	db(Cam Laptop)	alert #209 Tier 3 saved
+2026-07-23 03:35:42	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 03:35:54	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 03:35:54	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 05:41:33	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 05:41:33	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 05:41:34	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 05:41:34	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 05:41:39	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 05:41:40	ALERT	db(Cam Phone)	alert #210 Tier 3 saved
+2026-07-23 05:41:42	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 05:41:52	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 05:41:52	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 05:43:49	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 05:43:49	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 05:43:51	DETECT	yolo(Cam Laptop)	person conf=0.91 tier=3
+2026-07-23 05:43:51	ALERT	db(Cam Laptop)	alert #211 Tier 3 saved
+2026-07-23 05:43:52	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 05:43:54	DETECT	yolo(Cam Laptop)	person conf=0.90 tier=3
+2026-07-23 05:44:04	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 05:44:04	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 15:04:52	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 15:04:52	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 15:04:53	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 15:04:53	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 15:04:57	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 15:05:04	ALERT	db(Cam Phone)	alert #212 Tier 3 saved
+2026-07-23 15:05:11	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 15:05:33	DETECT	yolo(Cam Laptop)	person conf=0.83 tier=3
+2026-07-23 15:05:34	ALERT	db(Cam Laptop)	alert #213 Tier 3 saved
+2026-07-23 15:05:37	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 15:05:48	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 15:05:48	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 16:51:24	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 16:51:24	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 16:51:25	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 16:51:25	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 16:51:29	DETECT	yolo(Cam Laptop)	person conf=0.64 tier=2
+2026-07-23 16:51:29	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 16:51:31	ALERT	db(Cam Laptop)	alert #214 Tier 2 saved
+2026-07-23 16:51:31	ALERT	db(Cam Phone)	alert #215 Tier 3 saved
+2026-07-23 16:53:38	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 16:54:07	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 16:54:07	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 17:14:30	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 17:14:30	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 17:14:36	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 17:14:38	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 17:14:51	ALERT	db(Cam Laptop)	alert #216 Tier 2 saved
+2026-07-23 18:19:53	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 18:19:53	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 18:19:54	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:19:55	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:20:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:01	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 18:20:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:03	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:05	DETECT	yolo(Cam Laptop)	person conf=0.55 tier=3
+2026-07-23 18:20:06	ALERT	db(Cam Laptop)	alert #218 Tier 3 saved
+2026-07-23 18:20:06	ALERT	db(Cam Phone)	alert #217 Tier 3 saved
+2026-07-23 18:20:09	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:20:09	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:10	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:11	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:12	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:12	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:12	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:12	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:12	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:12	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:12	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:18	DETECT	yolo(Cam Laptop)	person conf=0.56 tier=3
+2026-07-23 18:20:19	ALERT	db(Cam Laptop)	alert #219 Tier 3 saved
+2026-07-23 18:20:21	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:22	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:23	DETECT	yolo(Cam Phone)	person conf=0.89 tier=3
+2026-07-23 18:20:23	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:23	ALERT	db(Cam Phone)	alert #220 Tier 3 saved
+2026-07-23 18:20:25	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:20:42	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 18:20:42	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 18:20:43	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:20:43	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 18:20:43	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:20:44	ALERT	db(Cam Phone)	alert #221 Tier 3 saved
+2026-07-23 18:20:45	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:20:45	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:50	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 18:20:50	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 18:20:53	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:20:53	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:20:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:57	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:57	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:57	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:57	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:57	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:58	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:20:59	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 18:21:00	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 18:21:50	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:21:51	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:21:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:54	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:55	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:21:56	DETECT	yolo(Cam Laptop)	person conf=0.52 tier=2
+2026-07-23 18:22:17	ALERT	db(Cam Laptop)	alert #222 Tier 2 saved
+2026-07-23 18:22:17	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 18:22:30	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:22:44	DETECT	yolo(Cam Phone)	person conf=0.89 tier=3
+2026-07-23 18:22:45	ALERT	db(Cam Phone)	alert #223 Tier 3 saved
+2026-07-23 18:22:50	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 18:23:00	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:23:30	INFO	settings(Cam Phone)	updated from dashboard
+2026-07-23 18:23:30	INFO	settings(Cam Laptop)	updated from dashboard
+2026-07-23 18:23:30	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:23:33	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:23:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:38	DETECT	yolo(Cam Phone)	person conf=0.85 tier=3
+2026-07-23 18:23:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:39	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:39	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:41	ALERT	db(Cam Phone)	alert #225 Tier 3 saved
+2026-07-23 18:23:44	ALERT	fcm(Cam Phone)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:46	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:47	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:47	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:52	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:23:53	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:02	DETECT	yolo(Cam Laptop)	person conf=0.53 tier=2
+2026-07-23 18:24:03	ALERT	db(Cam Laptop)	alert #226 Tier 2 saved
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	person conf=0.57 tier=2
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	person conf=0.57 tier=2
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:17	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:18	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:19	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:20	DETECT	yolo(Cam Laptop)	person conf=0.56 tier=2
+2026-07-23 18:24:20	ALERT	db(Cam Laptop)	alert #227 Tier 2 saved
+2026-07-23 18:24:22	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 18:24:23	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 18:24:26	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:24:26	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:24:32	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:33	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:33	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:33	DETECT	yolo(Cam Laptop)	person conf=0.51 tier=2
+2026-07-23 18:24:33	ALERT	db(Cam Laptop)	alert #228 Tier 2 saved
+2026-07-23 18:24:34	DETECT	yolo(Cam Laptop)	person conf=0.64 tier=2
+2026-07-23 18:24:34	DETECT	yolo(Cam Laptop)	person conf=0.63 tier=2
+2026-07-23 18:24:34	DETECT	yolo(Cam Laptop)	person conf=0.68 tier=2
+2026-07-23 18:24:35	DETECT	yolo(Cam Laptop)	person conf=0.64 tier=2
+2026-07-23 18:24:35	DETECT	yolo(Cam Laptop)	person conf=0.61 tier=2
+2026-07-23 18:24:36	DETECT	yolo(Cam Laptop)	person conf=0.77 tier=2
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	person conf=0.73 tier=2
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:37	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	person conf=0.58 tier=2
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	person conf=0.51 tier=2
+2026-07-23 18:24:38	DETECT	yolo(Cam Laptop)	person conf=0.78 tier=2
+2026-07-23 18:24:39	DETECT	yolo(Cam Laptop)	person conf=0.79 tier=2
+2026-07-23 18:24:40	DETECT	yolo(Cam Laptop)	person conf=0.66 tier=2
+2026-07-23 18:24:41	DETECT	yolo(Cam Laptop)	person conf=0.77 tier=2
+2026-07-23 18:24:41	DETECT	yolo(Cam Laptop)	person conf=0.71 tier=2
+2026-07-23 18:24:41	DETECT	yolo(Cam Laptop)	person conf=0.86 tier=2
+2026-07-23 18:24:41	DETECT	yolo(Cam Laptop)	person conf=0.86 tier=3
+2026-07-23 18:24:42	DETECT	yolo(Cam Laptop)	person conf=0.79 tier=3
+2026-07-23 18:24:42	DETECT	yolo(Cam Laptop)	person conf=0.64 tier=3
+2026-07-23 18:24:42	DETECT	yolo(Cam Laptop)	person conf=0.81 tier=3
+2026-07-23 18:24:43	DETECT	yolo(Cam Laptop)	person conf=0.77 tier=3
+2026-07-23 18:24:43	ALERT	db(Cam Laptop)	alert #229 Tier 3 saved
+2026-07-23 18:24:45	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:24:45	DETECT	yolo(Cam Laptop)	person conf=0.76 tier=3
+2026-07-23 18:24:45	DETECT	yolo(Cam Laptop)	person conf=0.61 tier=3
+2026-07-23 18:24:45	DETECT	yolo(Cam Laptop)	person conf=0.68 tier=3
+2026-07-23 18:24:46	DETECT	yolo(Cam Laptop)	person conf=0.73 tier=3
+2026-07-23 18:24:46	DETECT	yolo(Cam Laptop)	person conf=0.75 tier=3
+2026-07-23 18:24:48	DETECT	yolo(Cam Laptop)	person conf=0.82 tier=2
+2026-07-23 18:24:48	ALERT	db(Cam Laptop)	alert #230 Tier 2 saved
+2026-07-23 18:24:49	ALERT	fcm(Cam Laptop)	push Tier 2 sent (owner-scoped)
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:50	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:51	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:24:56	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:00	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:01	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:01	DETECT	yolo(Cam Laptop)	person conf=0.53 tier=3
+2026-07-23 18:25:01	ALERT	db(Cam Laptop)	alert #231 Tier 3 saved
+2026-07-23 18:25:03	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:25:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:04	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:05	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:06	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:07	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	motion, no person - ignored
+2026-07-23 18:25:09	DETECT	yolo(Cam Laptop)	person conf=0.58 tier=3
+2026-07-23 18:25:10	ALERT	db(Cam Laptop)	alert #232 Tier 3 saved
+2026-07-23 18:25:11	ALERT	fcm(Cam Laptop)	push Tier 3 sent (owner-scoped)
+2026-07-23 18:25:11	DETECT	yolo(Cam Laptop)	person conf=0.84 tier=3
+2026-07-23 18:25:11	DETECT	yolo(Cam Laptop)	person conf=0.79 tier=3
+2026-07-23 18:25:12	DETECT	yolo(Cam Laptop)	person conf=0.69 tier=3
+2026-07-23 18:25:12	DETECT	yolo(Cam Laptop)	person conf=0.65 tier=3
+2026-07-23 18:25:12	DETECT	yolo(Cam Laptop)	person conf=0.68 tier=3
+2026-07-23 18:25:12	DETECT	yolo(Cam Laptop)	person conf=0.83 tier=3
+2026-07-23 18:25:16	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 18:25:16	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)
+2026-07-23 18:26:09	INFO	camera(Cam Phone)	Cam Phone: opened source 1
+2026-07-23 18:26:09	INFO	camera(Cam Laptop)	Cam Laptop: opened source 2
+2026-07-23 18:26:13	INFO	camera(Cam Phone)	Cam Phone: camera OFF (device released)
+2026-07-23 18:26:13	INFO	camera(Cam Laptop)	Cam Laptop: camera OFF (device released)

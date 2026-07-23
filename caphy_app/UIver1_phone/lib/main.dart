@@ -333,14 +333,14 @@ class _ConnectSignInScreenState extends State<ConnectSignInScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(),
-              Center(child: InteractiveLogo()),
-              const SizedBox(height: 18),
+              const Center(child: CaphyLogo(size: 64)),
+              const SizedBox(height: 16),
               const Center(
                 child: Text('CAPHY',
                     style: TextStyle(
-                        fontSize: 32,
+                        fontSize: 26,
                         fontWeight: FontWeight.bold,
-                        letterSpacing: 4,
+                        letterSpacing: 3,
                         color: cText)),
               ),
               const SizedBox(height: 4),
@@ -865,14 +865,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Center(child: InteractiveLogo()),
-                  const SizedBox(height: 14),
+                  const Center(child: CaphyLogo(size: 56)),
+                  const SizedBox(height: 12),
                   const Center(
                       child: Text('CAPHY',
                           style: TextStyle(
-                              fontSize: 30,
+                              fontSize: 25,
                               fontWeight: FontWeight.bold,
-                              letterSpacing: 4,
+                              letterSpacing: 3,
                               color: cText))),
                   const SizedBox(height: 2),
                   const Center(

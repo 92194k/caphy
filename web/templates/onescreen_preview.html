@@ -1,0 +1,556 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CAPHY — One-Screen Console (Preview v3)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='24 24 72 72'%3E%3Crect x='24' y='24' width='72' height='72' rx='17' fill='%232A9D8F'/%3E%3Cellipse cx='60' cy='60' rx='21' ry='13' fill='%2308110f'/%3E%3Ccircle cx='60' cy='60' r='7' fill='%233dd7c4'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0b1117; --bg2:#0d151c; --panel:#16232e; --panel2:#1a2a36;
+  --line:#22333f; --line2:#26404f;
+  --text:#e6edf3; --muted:#8aa0b0; --dim:#5c7180;
+  --teal:#2A9D8F; --teal2:#3dd7c4; --orange:#F4A261; --red:#e5484d; --green:#3fb950;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",Arial,sans-serif}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* ---- top bar ---- */
+.topbar{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line2);background:var(--bg2);flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:32px;height:32px;border-radius:9px;overflow:hidden;box-shadow:0 0 14px rgba(61,215,196,.35)}
+.brand b{font-size:16px;letter-spacing:3px}
+.brand small{display:block;color:var(--teal2);font-size:8px;letter-spacing:3px}
+.topstats{display:flex;gap:8px;margin-left:6px}
+.tstat{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:6px 12px;position:relative;overflow:hidden;min-width:106px}
+.tstat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+.tstat.a1::before{background:var(--teal2)}.tstat.a2::before{background:var(--orange)}
+.tstat.a3::before{background:var(--red)}.tstat.a4::before{background:var(--green)}
+.tstat .k{color:var(--muted);font-size:8.5px;letter-spacing:1px;text-transform:uppercase}
+.tstat .v{font-size:18px;font-weight:800;line-height:1.15;margin-top:1px}
+.tstat .f{font-size:9px;color:var(--dim);margin-top:1px}
+.topright{margin-left:auto;display:flex;align-items:center;gap:10px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%}
+.dot.armed{background:var(--green);box-shadow:0 0 8px var(--green)}
+.pill{padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid;display:inline-flex;align-items:center;gap:5px}
+.p1{background:rgba(61,215,196,.14);color:var(--teal2);border-color:rgba(61,215,196,.5)}
+.p2{background:rgba(244,162,97,.14);color:var(--orange);border-color:rgba(244,162,97,.5)}
+.p3{background:rgba(229,72,77,.14);color:var(--red);border-color:rgba(229,72,77,.5)}
+.tbtn{background:var(--panel);border:1px solid var(--line2);color:var(--muted);padding:7px 13px;border-radius:9px;font-size:12px;cursor:pointer;font-weight:600}
+.tbtn:hover{color:var(--teal2);border-color:var(--teal2)}
+.armstate{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600}
+.armstate small{color:var(--dim);font-weight:400}
+
+/* ---- main grid ---- */
+.grid{flex:1;display:grid;grid-template-columns:1.55fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;padding:10px 12px;min-height:0}
+.panel{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:11px 13px;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;flex-shrink:0;gap:8px}
+.ph h2{font-size:13px;font-weight:700;white-space:nowrap}
+.ph .link,.ph .live{color:var(--teal2);font-size:11px;cursor:pointer}
+.pbody{flex:1;min-height:0;overflow:auto}
+
+/* feed (col1, both rows) */
+.feed{grid-row:1 / 3;grid-column:1}
+.camselect{display:flex;gap:6px;align-items:center}
+.camselect select{background:var(--bg2);border:1px solid var(--line2);color:var(--text);padding:4px 8px;border-radius:7px;font-size:11px}
+.feedwrap{position:relative;flex:1;border-radius:10px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px;min-height:0}
+.detbox{position:absolute;top:11px;left:11px;background:rgba(8,14,18,.82);border:1px solid var(--line2);border-radius:9px;padding:9px 11px;min-width:158px}
+.detbox .dh{color:var(--teal2);font-size:9px;letter-spacing:2px;margin-bottom:7px}
+.detbox .dr{display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:11px;margin:4px 0;color:var(--muted)}
+.detbox .dd{color:var(--orange);font-size:11px;margin-top:6px}
+.statebar{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0 0;flex-shrink:0}
+.sb{font-size:10px;padding:4px 9px;border-radius:20px;border:1px solid var(--line);color:var(--dim);background:var(--panel);font-weight:600}
+.sb.on{color:var(--teal2);border-color:var(--teal2);background:rgba(63,215,196,.08)}
+.controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;flex-shrink:0}
+.ctrlbtn{display:flex;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:9px;width:38px;height:38px;cursor:pointer}
+.ctrlbtn:hover{border-color:var(--teal2);color:var(--teal2)}
+.ctrlbtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}
+.ctrlbtn.wide{width:auto;padding:0 14px;font-size:12px;font-weight:600;gap:7px}
+.ctrlbtn.primary{border-color:var(--teal2);color:var(--teal2)}
+.ctrlbtn.emg{border-color:var(--red);color:var(--red)}
+.ctrlbtn.siren{background:var(--red);color:#fff;border-color:var(--red)}
+.tflog{margin-top:9px;flex-shrink:0;border-top:1px solid var(--line);padding-top:8px}
+.tflog .th{font-size:10px;letter-spacing:1.5px;color:var(--dim);margin-bottom:6px}
+.tflog .lg{display:flex;gap:9px;font-size:10.5px;padding:1.5px 0}
+.tflog .lg .tt{color:var(--dim);white-space:nowrap}
+
+/* alerts (col2 row1) */
+.alerts{grid-row:1;grid-column:2}
+.alist{display:flex;flex-direction:column;gap:7px}
+.arow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:8px 10px}
+.arow.t1{border-left-color:var(--teal2)}.arow.t2{border-left-color:var(--orange)}.arow.t3{border-left-color:var(--red)}
+.arow .av{width:26px;height:26px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;color:var(--muted);flex-shrink:0;font-size:12px}
+.arow .txt{flex:1;min-width:0}
+.arow .txt .tt{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .txt .ss{font-size:10.5px;color:var(--dim);margin-top:1px}
+.ackbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:5px 9px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
+.ackbtn:hover{color:var(--teal2);border-color:var(--teal2)}
+.alertactions{display:flex;gap:6px;margin-top:8px;flex-shrink:0}
+
+/* threat chart (col2 row2) */
+.threat{grid-row:2;grid-column:2}
+.chart{display:flex;align-items:flex-end;gap:2px;flex:1;padding-top:6px;min-height:0}
+.bar{flex:1;background:var(--teal);border-radius:2px 2px 0 0;min-height:4px;position:relative;cursor:pointer;transition:.12s}
+.bar.warm{background:var(--orange)}.bar.hot{background:var(--red)}
+.bar:hover{filter:brightness(1.35);outline:1px solid var(--teal2)}
+.bar .tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
+  background:var(--panel2);border:1px solid var(--line2);border-radius:7px;padding:5px 9px;font-size:10.5px;
+  white-space:nowrap;z-index:20;box-shadow:0 6px 16px rgba(0,0,0,.5);color:var(--text)}
+.bar .tip b{color:var(--teal2)}
+.bar:hover .tip{display:block}
+.axis{display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-top:5px;flex-shrink:0}
+
+/* logs (col3 row1) */
+.logs{grid-row:1;grid-column:3}
+.logfilters{display:flex;gap:5px}
+.fbtn{background:var(--panel);border:1px solid var(--line2);color:var(--muted);border-radius:6px;padding:3px 8px;font-size:9.5px;font-weight:700;cursor:pointer}
+.fbtn.active{color:var(--teal2);border-color:var(--teal2);background:rgba(63,215,196,.08)}
+.logpanel .pbody{background:#070d12;border-radius:8px;padding:7px 9px}
+.log{font-family:Consolas,monospace;font-size:10.5px}
+.logline{display:flex;gap:7px;align-items:baseline;padding:1.5px 0}
+.logline .lt{color:var(--dim);white-space:nowrap}
+.logline .lm{color:var(--dim);min-width:44px}
+.lvl{padding:0 5px;border-radius:3px;font-size:8.5px;font-weight:bold;min-width:40px;text-align:center}
+.lvl.i{background:rgba(61,215,196,.15);color:var(--teal2)}
+.lvl.a{background:rgba(63,185,80,.15);color:var(--green)}
+.lvl.w{background:rgba(244,162,97,.15);color:var(--orange)}
+.lvl.e{background:rgba(229,72,77,.15);color:var(--red)}
+
+/* health + modules (col3 row2) */
+.health{grid-row:2;grid-column:3}
+.metric{margin-bottom:7px}
+.mrow{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-bottom:3px}
+.mrow b{color:var(--text)}
+.slider{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.slider .fill{height:5px;border-radius:3px;background:var(--teal)}
+.modrow{display:flex;justify-content:space-between;align-items:center;font-size:10px;padding:2.5px 0}
+.modrow .nm{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.modtag{font-size:9px;font-weight:700;padding:1px 7px;border-radius:5px;border:1px solid}
+
+/* ---- popups ---- */
+.modalbg{position:fixed;inset:0;background:rgba(6,10,14,.68);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:200}
+.modalbg.show{display:flex}
+.modalcard{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:20px 22px;width:840px;max-width:94vw;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modalcard .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px}
+.modalcard .mh h2{font-size:16px;font-weight:800}
+.mh .mactions{display:flex;gap:8px;align-items:center}
+.xbtn{width:30px;height:30px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);cursor:pointer;font-size:15px}
+.btn{background:var(--teal);color:#08110f;border:none;padding:8px 15px;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px}
+.btn.ghost{background:var(--panel);border:1px solid var(--line2);color:var(--muted)}
+.btn.ghost.danger{color:var(--red);border-color:rgba(229,72,77,.4)}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.toolbar input{flex:1;min-width:180px}
+.fpill{padding:5px 12px;border-radius:20px;font-size:11.5px;border:1px solid var(--line2);color:var(--muted);background:var(--panel);cursor:pointer}
+.fpill.active{background:rgba(42,157,143,.16);border-color:var(--teal2);color:var(--teal2);font-weight:700}
+input,select{background:var(--bg2);border:1px solid var(--line2);color:var(--text);padding:8px 11px;border-radius:8px;font-size:12.5px}
+table{width:100%;border-collapse:collapse}
+th{color:var(--teal2);text-align:left;padding:9px 11px;font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;border-bottom:1px solid var(--line2)}
+td{padding:9px 11px;border-top:1px solid var(--line);font-size:12px;vertical-align:middle}
+.thumb{width:44px;height:32px;border-radius:6px;border:1px solid var(--line2);background:var(--bg);display:inline-flex;align-items:center;justify-content:center;color:var(--teal2)}
+.viewbtn{border:1px solid var(--teal2);color:var(--teal2);border-radius:7px;padding:5px 14px;font-size:11px;font-weight:600;cursor:pointer;background:transparent}
+.viewbtn.disabled{color:var(--dim);border-color:var(--line);cursor:default;opacity:.6}
+.pager{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:11.5px;color:var(--dim)}
+.pg-btn{min-width:28px;height:28px;padding:0 8px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;cursor:pointer}
+.pg-btn.active{background:var(--teal2);color:#08110f;border-color:var(--teal2);font-weight:700}
+
+/* settings popup */
+.setwrap{display:grid;grid-template-columns:180px 1fr;gap:16px;min-height:380px}
+.setnav a{display:block;padding:8px 12px;border-radius:8px;color:var(--muted);font-size:12.5px;cursor:pointer;margin-bottom:2px}
+.setnav a.active{background:var(--panel);color:var(--text);font-weight:600}
+.setsec{display:none}.setsec.active{display:block}
+.sechead{font-size:15px;font-weight:700;margin-bottom:2px}
+.subd{color:var(--muted);font-size:12px;margin-bottom:16px}
+.field{margin-bottom:15px}
+.flabel{display:flex;justify-content:space-between;align-items:baseline}
+.flabel b{font-size:13px}.val{color:var(--teal2);font-weight:700;font-size:12px}
+.fdesc{color:var(--muted);font-size:11px;margin:2px 0 8px}
+.field input[type=range]{width:100%;accent-color:var(--teal);height:6px}
+.secheadsmall{font-size:10px;letter-spacing:1.5px;color:var(--dim);margin:16px 0 10px}
+.tiercards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:8px}
+.tiercard{background:var(--panel);border:1px solid var(--line2);border-top-width:3px;border-radius:10px;padding:11px}
+.tiercard.t1{border-top-color:var(--teal2)}.tiercard.t2{border-top-color:var(--orange)}.tiercard.t3{border-top-color:var(--red)}
+.tiercard .tl{font-size:10px;color:var(--muted)}.tiercard .tv{font-size:15px;font-weight:800;margin:6px 0 4px}.tiercard .tsub{font-size:10px;color:var(--dim)}
+.tin{width:46px;padding:2px 5px;font-size:14px;font-weight:800;text-align:center;border-radius:5px}
+.campick{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;background:var(--panel)}
+.campick.on{border-color:var(--teal2);background:rgba(63,215,196,.07)}
+.campick input[type=checkbox]{width:16px;height:16px;accent-color:var(--teal2)}
+.campick .cn{font-weight:600;font-size:12.5px}
+.campick .ci{color:var(--dim);font-size:11px}
+.campick .cactive{margin-left:auto;font-size:10px;color:var(--teal2);border:1px solid var(--teal2);border-radius:20px;padding:2px 9px}
+.togglerow{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.togglerow b{font-size:13px}
+.irow{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.irow:first-of-type{border-top:none}.irow b{color:var(--text);text-align:right}
+.sw{position:relative;width:42px;height:23px;display:inline-block;flex-shrink:0}
+.sw input{opacity:0;width:0;height:0}
+.sw .track{position:absolute;inset:0;background:var(--line);border-radius:12px;cursor:pointer}
+.sw .track::before{content:"";position:absolute;width:17px;height:17px;border-radius:50%;background:#fff;top:3px;left:3px;transition:.15s}
+.sw input:checked + .track{background:var(--teal)}
+.sw input:checked + .track::before{transform:translateX(19px)}
+.setfoot{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.qrbox{width:150px;height:150px;background:#fff;border-radius:10px;margin:14px auto;display:flex;align-items:center;justify-content:center;color:#333;font-size:11px}
+.steps{color:var(--muted);font-size:12px;line-height:1.8;padding-left:18px;margin:6px 0}
+.para{color:var(--muted);font-size:12px;line-height:1.7;margin-bottom:14px}
+
+/* snapshot viewer */
+.snapstage{aspect-ratio:16/9;background:#000;border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px}
+.snaphint{text-align:center;color:var(--muted);font-size:11.5px;margin-top:10px}
+
+/* login screen */
+.loginscreen{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:300}
+.loginscreen.show{display:flex}
+.loginbox{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:32px;width:360px}
+.loginbrand{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:22px}
+.loginbrand .logo{width:52px;height:52px}
+.loginbrand b{font-size:22px;letter-spacing:4px}
+.loginbrand small{color:var(--teal2);font-size:9px;letter-spacing:4px}
+.loginbox h3{font-size:16px;margin-bottom:16px;text-align:center}
+.gbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#333;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:14px}
+.ordiv{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:11px;margin:14px 0}
+.ordiv::before,.ordiv::after{content:"";flex:1;height:1px;background:var(--line)}
+.loginbox label{display:block;font-size:11px;color:var(--muted);margin:12px 0 5px;letter-spacing:.5px}
+.loginbox input{width:100%}
+.loginrow{display:flex;justify-content:space-between;align-items:center;margin:12px 0;font-size:11.5px;color:var(--muted)}
+.loginrow a{color:var(--teal2)}
+.signupline{text-align:center;font-size:12px;color:var(--muted);margin-top:16px}
+.signupline a{color:var(--teal2);font-weight:600}
+.previewnote{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(244,162,97,.12);border:1px solid var(--orange);color:var(--orange);border-radius:8px;padding:5px 13px;font-size:10.5px;z-index:100}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="logo"><svg viewBox="24 24 72 72" width="100%" height="100%"><rect x="24" y="24" width="72" height="72" rx="17" fill="#2A9D8F"/><ellipse cx="60" cy="60" rx="21" ry="13" fill="#08110f"/><circle cx="60" cy="60" r="8.5" fill="#3dd7c4"/></svg></div>
+    <div><b>CAPHY</b><small>AI SECURITY</small></div>
+  </div>
+  <div class="topstats">
+    <div class="tstat a1"><div class="k">Total Alerts</div><div class="v">185</div><div class="f">+8 today</div></div>
+    <div class="tstat a4"><div class="k">Active Cameras</div><div class="v">2 / 2</div><div class="f">all online</div></div>
+    <div class="tstat a2"><div class="k">Current Threat</div><div class="v">Tier 3</div><div class="f">person · 2.1 m</div></div>
+    <div class="tstat a3"><div class="k">Pending Sync</div><div class="v">185</div><div class="f">offline queue</div></div>
+  </div>
+  <div class="topright">
+    <div class="armstate"><span class="dot armed"></span>ARMED<small>Kem · Homeowner</small></div>
+    <div class="pill p1">● LIVE</div>
+    <button class="tbtn" onclick="openModal('mHistory')">History</button>
+    <button class="tbtn" onclick="openModal('mLogsFull')">Full Logs</button>
+    <button class="tbtn" onclick="openModal('mSettings')">Settings</button>
+    <button class="tbtn" style="color:var(--red);border-color:rgba(229,72,77,.4)" onclick="document.getElementById('login').classList.add('show')">Log out</button>
+  </div>
+</div>
+
+<div class="grid">
+  <!-- LIVE FEED + CAMERA SELECT + CONTROLS + TWO-FACTOR LOG -->
+  <div class="panel feed">
+    <div class="ph">
+      <h2>Live Feed</h2>
+      <div class="camselect">
+        <select id="camSel" onchange="document.getElementById('camName').textContent=this.value">
+          <option>Front Door</option><option>Backyard</option>
+        </select>
+        <span class="pill p3">● REC</span>
+        <span class="link">Open Live Camera →</span>
+      </div>
+    </div>
+    <div class="feedwrap">
+      <div class="detbox">
+        <div class="dh">DETECTION — <span id="camName">Front Door</span></div>
+        <div class="dr"><span>Factor 1 · Motion</span><span class="dot" style="background:var(--green)"></span></div>
+        <div class="dr"><span>Factor 2 · Person</span><span class="dot" style="background:var(--green)"></span></div>
+        <div class="dd">Est. distance 2.1 m</div>
+      </div>
+      Main feed · 640×480 · live
+    </div>
+    <div class="statebar">
+      <span class="sb on">System ARMED</span><span class="sb on">Camera ON</span>
+      <span class="sb">Night vision OFF</span><span class="sb">Siren OFF</span><span class="sb">Emergency OFF</span>
+    </div>
+    <div class="controls">
+      <button class="ctrlbtn wide primary"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>Disarm</button>
+      <button class="ctrlbtn" title="Camera on/off"><svg viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></button>
+      <button class="ctrlbtn" title="Snapshot"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+      <button class="ctrlbtn" title="Record"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></button>
+      <button class="ctrlbtn" title="Night vision"><svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+      <button class="ctrlbtn" title="Fullscreen"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+      <button class="ctrlbtn emg" title="Emergency"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+      <button class="ctrlbtn wide siren">Trigger Siren</button>
+    </div>
+    <div class="tflog">
+      <div class="th">TWO-FACTOR LOG</div>
+      <div class="lg"><span class="tt">09:14:02</span><span style="color:var(--teal2)">Motion + Person confirmed · 2.1 m</span></div>
+      <div class="lg"><span class="tt">09:13:40</span><span style="color:var(--orange)">Motion only · no person</span></div>
+      <div class="lg"><span class="tt">09:12:55</span><span style="color:var(--muted)">Person cleared · standing down</span></div>
+    </div>
+  </div>
+
+  <!-- ALERTS -->
+  <div class="panel alerts">
+    <div class="ph"><h2>Recent Alerts</h2><span class="live">● live</span></div>
+    <div class="pbody">
+      <div class="alist">
+        <div class="arow t3"><div class="av">!</div><div class="txt"><div class="tt">Person confirmed · TIER 3</div><div class="ss">Front Door · 2.1 m</div></div><button class="ackbtn">Acknowledge</button></div>
+        <div class="arow t2"><div class="av">◲</div><div class="txt"><div class="tt">Movement · TIER 2</div><div class="ss">Backyard · 4.0 m</div></div><button class="ackbtn">Acknowledge</button></div>
+        <div class="arow t1"><div class="av">◲</div><div class="txt"><div class="tt">Movement (no person)</div><div class="ss">Front Door · motion only</div></div><button class="ackbtn">Acknowledge</button></div>
+      </div>
+    </div>
+    <div class="alertactions">
+      <button class="btn ghost" style="flex:1">Acknowledge All</button>
+      <button class="btn ghost" onclick="openModal('mHistory')">History →</button>
+    </div>
+  </div>
+
+  <!-- THREAT CHART -->
+  <div class="panel threat">
+    <div class="ph"><h2>Threat Activity — 24h</h2><span style="color:var(--dim);font-size:10px">hover bars</span></div>
+    <div class="chart" id="chart"></div>
+    <div class="axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+  </div>
+
+  <!-- LOGS -->
+  <div class="panel logs logpanel">
+    <div class="ph"><h2>caphy.log <span style="color:var(--muted);font-weight:400;font-size:10px">live tail</span></h2><div class="logfilters"><button class="fbtn active">ALL</button><button class="fbtn">DETECT</button><button class="fbtn">ALERT</button><button class="fbtn">SYNC</button></div></div>
+    <div class="pbody">
+      <div class="log">
+        <div class="logline"><span class="lt">09:14:02</span><span class="lvl i">DETECT</span><span class="lm">yolo</span><span>person (0.94) · 2.1m</span></div>
+        <div class="logline"><span class="lt">09:14:01</span><span class="lvl a">ALERT</span><span class="lm">tier</span><span>Tier 3 · siren + video</span></div>
+        <div class="logline"><span class="lt">09:13:58</span><span class="lvl i">INFO</span><span class="lm">webrtc</span><span>peer connected</span></div>
+        <div class="logline"><span class="lt">09:13:40</span><span class="lvl w">WARN</span><span class="lm">sync</span><span>cloud retry — offline</span></div>
+        <div class="logline"><span class="lt">09:12:11</span><span class="lvl i">INFO</span><span class="lm">model</span><span>loaded — yolov8n</span></div>
+        <div class="logline"><span class="lt">09:11:03</span><span class="lvl i">SYNC</span><span class="lm">sync</span><span>185 alerts queued</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HEALTH + MODULES -->
+  <div class="panel health">
+    <div class="ph"><h2>System Health</h2></div>
+    <div class="pbody">
+      <div class="metric"><div class="mrow"><span>CPU</span><b>0%</b></div><div class="slider"><div class="fill" style="width:0%"></div></div></div>
+      <div class="metric"><div class="mrow"><span>Memory</span><b>13.6 / 16 GB</b></div><div class="slider"><div class="fill" style="width:85%"></div></div></div>
+      <div class="metric"><div class="mrow"><span>Disk (media)</span><b>69%</b></div><div class="slider"><div class="fill" style="width:69%;background:var(--orange)"></div></div></div>
+      <div class="metric"><div class="mrow"><span>Model FPS</span><b>0.3 fps</b></div><div class="slider"><div class="fill" style="width:2%;background:var(--green)"></div></div></div>
+      <div class="secheadsmall" style="margin:12px 0 6px">MODULE STATUS</div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--green)"></span>OpenCV capture</span><span class="modtag" style="color:var(--green);border-color:var(--green)">running</span></div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--green)"></span>YOLOv8-nano</span><span class="modtag" style="color:var(--green);border-color:var(--green)">running</span></div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--green)"></span>Tier engine</span><span class="modtag" style="color:var(--green);border-color:var(--green)">running</span></div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--muted)"></span>Night vision (CLAHE)</span><span class="modtag" style="color:var(--muted);border-color:var(--muted)">standby</span></div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--green)"></span>Flask API / MJPEG</span><span class="modtag" style="color:var(--green);border-color:var(--green)">running</span></div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--teal2)"></span>SQLite</span><span class="modtag" style="color:var(--teal2);border-color:var(--teal2)">ok</span></div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--red)"></span>Cloud sync</span><span class="modtag" style="color:var(--red);border-color:var(--red)">offline · queue 185</span></div>
+      <div class="modrow"><span class="nm"><span class="dot" style="background:var(--teal2)"></span>Firebase FCM</span><span class="modtag" style="color:var(--teal2);border-color:var(--teal2)">connected</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- HISTORY POPUP -->
+<div class="modalbg" id="mHistory">
+  <div class="modalcard">
+    <div class="mh"><h2>Alert History</h2><div class="mactions"><button class="btn ghost">Export CSV</button><button class="btn ghost danger">Clear History</button><button class="xbtn" onclick="closeModal('mHistory')">✕</button></div></div>
+    <div class="toolbar"><input placeholder="Search by date, e.g. 2026-07-14"><span class="fpill active">All Tiers</span><span class="fpill">Tier 3</span><span class="fpill">Tier 2</span><span class="fpill">Tier 1</span><span class="fpill">Last 24h</span><span class="fpill">Include acknowledged</span></div>
+    <table>
+      <tr><th>Event</th><th>Camera</th><th>Distance</th><th>Time</th><th>Snapshot</th></tr>
+      <tr><td>Person confirmed<div style="font-size:10px;color:var(--muted)">two-factor · motion + person</div></td><td>Front Door</td><td>2.1 m</td><td>Jul 23 09:14</td><td><span class="thumb"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></span> <button class="viewbtn" onclick="openModal('mSnap')">View</button></td></tr>
+      <tr><td>Movement (no person)<div style="font-size:10px;color:var(--muted)">motion only · no person confirmed</div></td><td>Backyard</td><td>4.0 m</td><td>Jul 23 08:56</td><td><span class="viewbtn disabled">View</span></td></tr>
+      <tr><td>Person confirmed<div style="font-size:10px;color:var(--muted)">two-factor · motion + person</div></td><td>Front Door</td><td>1.8 m</td><td>Jul 23 08:02</td><td><span class="thumb"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></span> <button class="viewbtn" onclick="openModal('mSnap')">View</button></td></tr>
+    </table>
+    <div class="pager"><span>Showing 1–12 of 185</span><div><span class="pg-btn">‹</span><span class="pg-btn active">1</span><span class="pg-btn">2</span><span class="pg-btn">3</span><span class="pg-btn">…</span><span class="pg-btn">16</span><span class="pg-btn">›</span></div></div>
+  </div>
+</div>
+
+<!-- SNAPSHOT VIEWER POPUP -->
+<div class="modalbg" id="mSnap">
+  <div class="modalcard" style="width:680px">
+    <div class="mh"><h2 style="font-size:14px">Person confirmed · Front Door · Jul 23 09:14</h2><div class="mactions"><button class="pg-btn">−</button><button class="pg-btn">100%</button><button class="pg-btn">+</button><button class="btn ghost danger" onclick="closeModal('mSnap')">✕ Exit</button></div></div>
+    <div class="snapstage">snapshot image</div>
+    <div class="snaphint">scroll to zoom · drag to pan · Esc to exit</div>
+  </div>
+</div>
+
+<!-- FULL LOGS POPUP -->
+<div class="modalbg" id="mLogsFull">
+  <div class="modalcard" style="width:740px">
+    <div class="mh"><h2>caphy.log — live tail</h2><div class="mactions"><span style="font-size:11px;color:var(--muted)">events today · last event · 185 alerts (24h)</span><button class="xbtn" onclick="closeModal('mLogsFull')">✕</button></div></div>
+    <div class="logfilters" style="margin-bottom:10px"><button class="fbtn active">ALL</button><button class="fbtn">DETECT</button><button class="fbtn">ALERT</button><button class="fbtn">SYNC</button></div>
+    <div class="log logpanel" style="background:#070d12;border-radius:8px;padding:10px 12px;max-height:340px;overflow:auto">
+      <div class="logline"><span class="lt">09:14:02</span><span class="lvl i">DETECT</span><span class="lm">yolo</span><span>person (0.94) · dist 2.1m</span></div>
+      <div class="logline"><span class="lt">09:14:01</span><span class="lvl a">ALERT</span><span class="lm">tier</span><span>Tier 3 · snapshot + video + siren</span></div>
+      <div class="logline"><span class="lt">09:13:58</span><span class="lvl i">INFO</span><span class="lm">webrtc</span><span>peer connected — Kem-iPhone</span></div>
+      <div class="logline" style="color:var(--muted);font-style:italic;padding:6px 0">↻ 96 identical DETECT/yolo lines collapsed — Show all</div>
+      <div class="logline"><span class="lt">09:13:40</span><span class="lvl w">WARN</span><span class="lm">sync</span><span>cloud retry (attempt 2) — offline fallback · queue 185</span></div>
+      <div class="logline"><span class="lt">09:12:11</span><span class="lvl i">INFO</span><span class="lm">model</span><span>loaded — yolov8n person detector</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS POPUP -->
+<div class="modalbg" id="mSettings">
+  <div class="modalcard">
+    <div class="mh"><h2>Settings</h2><button class="xbtn" onclick="closeModal('mSettings')">✕</button></div>
+    <div class="setwrap">
+      <div class="setnav" id="setnav">
+        <a class="active" data-s="detection">Detection</a><a data-s="cameras">Cameras</a><a data-s="alerts">Alerts</a>
+        <a data-s="storage">Storage &amp; Sync</a><a data-s="voice">Voice</a><a data-s="device">Connect Phone</a>
+        <a data-s="offline">Offline Mode</a><a data-s="users">Users</a><a data-s="about">About</a>
+      </div>
+      <div class="setbody">
+        <div class="setsec active" id="s-detection">
+          <div class="sechead">Detection Settings</div><div class="subd">Tune the two-factor validation pipeline</div>
+          <div class="field"><div class="flabel"><b>Motion Sensitivity (Factor 1)</b><span class="val">64%</span></div><div class="fdesc">Higher = more triggers · pixel-change threshold</div><input type="range" min="0" max="100" value="64"></div>
+          <div class="field"><div class="flabel"><b>Person Confidence (Factor 2)</b><span class="val">0.50</span></div><div class="fdesc">Minimum YOLOv8 confidence to confirm a person</div><input type="range" min="30" max="95" value="50"></div>
+          <div class="secheadsmall">THREE-TIER DISTANCE THRESHOLDS</div>
+          <div class="tiercards">
+            <div class="tiercard t1"><div class="tl">Tier 1 · Far</div><div class="tv">&gt; <input class="tin" value="4.5"> m</div><div class="tsub">Log only</div></div>
+            <div class="tiercard t2"><div class="tl">Tier 2 · Medium</div><div class="tv">2.5–4.5 m</div><div class="tsub">Snapshot + alert</div></div>
+            <div class="tiercard t3"><div class="tl">Tier 3 · Close</div><div class="tv">&lt; <input class="tin" value="2.5"> m</div><div class="tsub">Video + siren</div></div>
+          </div>
+          <div class="togglerow" style="border-top:none"><div><b>Software Night Vision (CLAHE)</b><div class="fdesc" style="margin:2px 0 0">Auto-enhance low-light frames</div></div><label class="sw"><input type="checkbox"><span class="track"></span></label></div>
+          <div class="togglerow"><div><b>Auto-Arm at Night</b><div class="fdesc" style="margin:2px 0 0">Arm system on schedule · 22:00–06:00</div></div><label class="sw"><input type="checkbox" checked><span class="track"></span></label></div>
+          <div class="togglerow"><div><b>Highest Security</b><div class="fdesc" style="margin:2px 0 0">Any confirmed person triggers a full Tier-3 response</div></div><label class="sw"><input type="checkbox"><span class="track"></span></label></div>
+          <div class="setfoot"><button class="btn ghost">Reset Defaults</button><button class="btn">Save Changes</button></div>
+        </div>
+
+        <div class="setsec" id="s-cameras">
+          <div class="sechead">Cameras</div><div class="subd">Choose which cameras CAPHY uses, then name them</div>
+          <div class="secheadsmall">DETECTED CAMERAS</div>
+          <div class="campick on"><input type="checkbox" checked><div><div class="cn">USB / External Camera 1</div><div class="ci">index 1</div></div><span class="cactive">in use</span></div>
+          <div class="campick on"><input type="checkbox" checked><div><div class="cn">USB / External Camera 2</div><div class="ci">index 2</div></div><span class="cactive">in use</span></div>
+          <div class="campick"><input type="checkbox"><div><div class="cn">USB / External Camera 3</div><div class="ci">index 3</div></div></div>
+          <div style="display:flex;gap:10px;margin-top:10px"><button class="btn">Apply</button><button class="btn ghost">Rescan</button></div>
+          <div class="fdesc" style="margin-top:8px">You can use up to 2 cameras at once. Index 0 is usually your laptop's built-in webcam; plug in a USB camera and press Rescan to see it, then tick the ones you want and press Apply.</div>
+          <div class="secheadsmall">CAMERA NAMES</div>
+          <div class="field"><div class="flabel"><b>Camera 0</b></div><div class="fdesc">Display name shown across the console &amp; saved with each alert</div><input value="Front Door" style="width:100%"></div>
+          <div class="field"><div class="flabel"><b>Camera 1</b></div><div class="fdesc">Display name shown across the console &amp; saved with each alert</div><input value="Backyard" style="width:100%"></div>
+          <div class="secheadsmall">CAPTURE (edit config.py to change)</div>
+          <div class="irow"><span>Resolution</span><b>640 × 480</b></div>
+          <div class="irow"><span>Stream quality</span><b>55 / 100</b></div>
+          <div class="irow"><span>Network cameras</span><b>none</b></div>
+          <div class="setfoot"><button class="btn">Save Names</button></div>
+        </div>
+
+        <div class="setsec" id="s-alerts">
+          <div class="sechead">Alerts &amp; Response</div><div class="subd">What each threat tier does (edit config.py to change)</div>
+          <div class="irow"><span>Save snapshot on</span><b>Tier 1, Tier 2, Tier 3</b></div>
+          <div class="irow"><span>Record video on</span><b>Tier 2, Tier 3</b></div>
+          <div class="irow"><span>Sound siren on</span><b>Tier 3</b></div>
+          <div class="irow"><span>Push to phone from</span><b>Tier 1 up</b></div>
+          <div class="irow"><span>Alert cooldown</span><b>5.0 s</b></div>
+          <div class="irow"><span>Recording grace</span><b>1.5 s after person leaves</b></div>
+          <div class="irow"><span>Highest Security</span><b>off</b></div>
+        </div>
+
+        <div class="setsec" id="s-storage">
+          <div class="sechead">Storage &amp; Sync</div><div class="subd">Local capture files and cloud upload</div>
+          <div class="irow"><span>Captures folder</span><b>C:\Users\king leonard\OneDrive\Pictures\CAPHY</b></div>
+          <div class="irow"><span>Compressed folder</span><b>captures_compressed</b></div>
+          <div class="irow"><span>Upload image quality</span><b>60 / 100</b></div>
+          <div class="irow"><span>Sync interval</span><b>15 s</b></div>
+          <div class="irow"><span>Firebase bucket</span><b>caphy-c6b77.firebasestorage.app</b></div>
+          <div class="irow"><span>Alerts stored</span><b>185</b></div>
+          <div class="irow"><span>Pending upload</span><b>185 queued</b></div>
+        </div>
+
+        <div class="setsec" id="s-voice">
+          <div class="sechead">Voice Control</div><div class="subd">Spoken commands run from the CAPHY mobile app</div>
+          <div class="irow"><span>Where it runs</span><b>CAPHY mobile app</b></div>
+          <div class="irow"><span>Speech to text</span><b>on the phone (device recognizer)</b></div>
+          <div class="irow"><span>Spoken replies</span><b>on the phone (device TTS)</b></div>
+          <div class="irow"><span>This console</span><b>serves the commands, does not listen</b></div>
+          <div class="irow"><span>Languages</span><b>English + Tagalog</b></div>
+          <div class="irow"><span>Commands available</span><b>16</b></div>
+          <div class="irow"><span>Source of truth</span><b>voice/intents.json</b></div>
+        </div>
+
+        <div class="setsec" id="s-device">
+          <div class="sechead">Connect Phone</div><div class="subd">Sign in on your phone just by scanning — no password</div>
+          <div class="para">CAPHY has no dedicated camera hardware — this laptop's own webcam is the camera. Open the CAPHY app on your phone and scan the code below. Your phone is signed in as this same account and connected to this laptop in one step — there's no email or password to type on the phone. This works from anywhere (mobile data included); the QR just needs to be on your phone's camera. The code is single-use and expires in a few minutes, so only scan a fresh one you generated yourself.</div>
+          <div class="qrbox">QR code</div>
+          <div style="text-align:center;color:var(--muted);font-size:12px">Code expires in 3 min · scan with the CAPHY app</div>
+          <div style="text-align:center;margin-top:12px"><button class="btn ghost">New Code</button></div>
+        </div>
+
+        <div class="setsec" id="s-offline">
+          <div class="sechead">Offline / Local Mode</div><div class="subd">Keep using CAPHY when there's no internet</div>
+          <div class="para">CAPHY normally works from anywhere over the internet. If the internet goes down, it can still run in Local Mode — your phone talks straight to this laptop over your local Wi‑Fi, with no internet needed. This only works when your phone and this laptop are on the same Wi‑Fi network (or the same hotspot), so it naturally can't happen while you're away from home — that's by design.</div>
+          <div class="secheadsmall">THIS LAPTOP'S LOCAL ADDRESS</div>
+          <div class="irow"><span>Local address</span><b>http://192.168.1.3:5000</b></div>
+          <div class="fdesc" style="margin-top:6px">This address only works on your own Wi‑Fi. It changes if you switch networks, so the app finds it automatically — you rarely need to type it.</div>
+          <div class="secheadsmall">CONNECT PHONE &amp; LAPTOP OFFLINE — STEP BY STEP</div>
+          <ol class="steps">
+            <li>Put this laptop and your phone on the same Wi‑Fi. No internet? Turn on a phone hotspot and connect the laptop to it, or use any router even without an internet uplink.</li>
+            <li>Keep CAPHY running on this laptop (this window).</li>
+            <li>Open the CAPHY app on your phone. It switches by itself when there's no internet but this laptop is reachable — you'll see an amber "Offline mode · Local Wi‑Fi" banner.</li>
+            <li>That's it — live view and controls work over the local network.</li>
+          </ol>
+          <div class="secheadsmall">WHAT WORKS OFFLINE (LOCAL MODE)</div>
+          <div class="irow"><span>Live camera view</span><b>Yes (over local Wi-Fi)</b></div>
+          <div class="irow"><span>Arm / Disarm, camera, siren</span><b>Yes</b></div>
+          <div class="irow"><span>On-laptop detection, alerts &amp; siren</span><b>Yes (always)</b></div>
+          <div class="irow"><span>Push notifications to phone</span><b>No — needs internet</b></div>
+          <div class="irow"><span>Watching from away / mobile data</span><b>No — needs internet</b></div>
+          <div class="irow"><span>Alert history synced to cloud</span><b>No — resumes when internet returns</b></div>
+        </div>
+
+        <div class="setsec" id="s-users">
+          <div class="sechead">Users</div><div class="subd">Console account</div>
+          <div class="irow"><span>Signed in as</span><b>alaokhemberly@gmail.com</b></div>
+          <div class="irow"><span>Role</span><b>Homeowner</b></div>
+          <div class="secheadsmall">CHANGE PASSWORD</div>
+          <div class="field"><div class="flabel"><b>Current password</b></div><input type="password" style="width:100%"></div>
+          <div class="field"><div class="flabel"><b>New password</b></div><input type="password" style="width:100%"></div>
+          <div class="setfoot"><button class="btn">Update Password</button></div>
+        </div>
+
+        <div class="setsec" id="s-about">
+          <div class="sechead">About CAPHY</div><div class="subd">AI-Intelligent Security System</div>
+          <div class="para">Two-Factor Motion Validation &amp; Monitoring Protocols — pixel-change motion (Factor 1) gates YOLOv8 person verification (Factor 2), with a 3-tier distance-based threat response.</div>
+          <div class="irow"><span>Version</span><b>Console v1.0</b></div>
+          <div class="irow"><span>Detection</span><b>OpenCV motion + YOLOv8-nano</b></div>
+          <div class="irow"><span>Cameras online</span><b>2</b></div>
+          <div class="irow"><span>Mobile alerts</span><b>Firebase Cloud Messaging</b></div>
+          <div class="irow"><span>Voice commands</span><b>CAPHY mobile app (English + Tagalog)</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN / SIGNUP SCREEN -->
+<div class="loginscreen" id="login">
+  <div class="loginbox">
+    <div class="loginbrand">
+      <div class="logo"><svg viewBox="24 24 72 72" width="100%" height="100%"><rect x="24" y="24" width="72" height="72" rx="17" fill="#2A9D8F"/><ellipse cx="60" cy="60" rx="21" ry="13" fill="#08110f"/><circle cx="60" cy="60" r="8.5" fill="#3dd7c4"/></svg></div>
+      <b>CAPHY</b><small>AI SECURITY</small>
+    </div>
+    <h3>Sign In</h3>
+    <button class="gbtn"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>Sign in with Google</button>
+    <div class="ordiv">OR</div>
+    <label>EMAIL</label><input placeholder="you@example.com">
+    <label>PASSWORD</label><input type="password" placeholder="••••••••">
+    <div class="loginrow"><label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" style="width:auto">Remember this device</label><a href="#">Forgot?</a></div>
+    <button class="btn" style="width:100%;padding:11px">Sign In with Email</button>
+    <div class="signupline">Don't have an account? <a href="#">Sign up</a></div>
+    <div style="text-align:center;margin-top:14px"><a href="#" style="color:var(--dim);font-size:11px" onclick="document.getElementById('login').classList.remove('show')">← back to console preview</a></div>
+  </div>
+</div>
+
+<div class="previewnote">Preview mockup · your real values · one screen, no scroll · popups: History · Full Logs · Settings (9 tabs) · Snapshot viewer · Login</div>
+
+<script>
+function openModal(id){document.getElementById(id).classList.add('show')}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+document.querySelectorAll('.modalbg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.modalbg').forEach(m=>m.classList.remove('show'));}});
+document.querySelectorAll('#setnav a').forEach(a=>a.addEventListener('click',()=>{
+  document.querySelectorAll('#setnav a').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.setsec').forEach(s=>s.classList.remove('active'));
+  a.classList.add('active');document.getElementById('s-'+a.dataset.s).classList.add('active');
+}));
+const counts=[0,0,0,1,0,0,2,3,5,4,1,0,2,1,0,3,6,8,5,2,1,0,1,0];
+const max=Math.max(...counts,1);const chart=document.getElementById('chart');
+counts.forEach((c,h)=>{const pct=Math.round(100*c/max);const cls=c>=max?'bar hot':(c>=max*0.5&&c?'bar warm':'bar');
+  const b=document.createElement('div');b.className=cls;b.style.height=Math.max(pct,4)+'%';
+  const hh=String(h).padStart(2,'0');b.innerHTML='<span class="tip"><b>'+hh+':00</b> · '+c+' alert'+(c===1?'':'s')+'</span>';chart.appendChild(b);});
+</script>
+</body>
+</html>
