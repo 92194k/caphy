@@ -44,10 +44,19 @@ class SystemState:
         self.armed = armed
         self.highest = highest
         self._stop = False
+        # No siren/alert until this time - set whenever we arm, so arming while
+        # you're still in front of the camera doesn't instantly blast the siren.
+        self.arm_grace_until = 0.0
 
     def set_armed(self, v):
         with self._lock:
             self.armed = v
+            if v:
+                self.arm_grace_until = time.time() + getattr(config, "ARM_GRACE_SEC", 8)
+
+    def in_grace(self):
+        with self._lock:
+            return self.armed and time.time() < self.arm_grace_until
 
     def request_stop(self):
         with self._lock:
@@ -135,8 +144,12 @@ def main():
                           config.SNAPSHOT_TIERS, config.RECORD_TIERS, config.PRESENCE_GRACE_SEC,
                           videos_dir=getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR))
     push = PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC)
-    row = db.conn.execute("SELECT armed FROM settings WHERE setting_id=1").fetchone()
-    state = SystemState(armed=bool(row["armed"]) if row else True, highest=config.HIGHEST_SECURITY)
+    # Start DISARMED so launching CAPHY never instantly fires the siren while
+    # you're still sitting in front of the webcam. Arm it when ready (key,
+    # phone, or voice); arming applies an 8s grace so you can step out of frame.
+    db.conn.execute("UPDATE settings SET armed=0 WHERE setting_id=1")
+    db.conn.commit()
+    state = SystemState(armed=False, highest=config.HIGHEST_SECURITY)
     siren = Siren()
     print(f"[CAPHY] Ready. Alerts: {db.count_alerts()}. Armed: {state.armed}. Highest-Security: {state.highest}")
 
@@ -171,7 +184,8 @@ def main():
         if stop_now:
             alerts.request_stop()
 
-        siren_on = armed and result["threat"] and result["tier"] in config.SIREN_TIERS and not stop_now
+        siren_on = (armed and result["threat"] and result["tier"] in config.SIREN_TIERS
+                    and not stop_now and not state.in_grace())
         # keep siren on across frames while the Tier-3 threat is present
         if siren_on:
             siren.start()

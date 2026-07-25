@@ -28,10 +28,14 @@ class Database:
             username      TEXT UNIQUE,
             password_hash TEXT,
             role          TEXT,
+            firebase_uid  TEXT UNIQUE,
+            email         TEXT,
             created_at    TEXT);
 
         CREATE TABLE IF NOT EXISTS alerts(
             alert_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_uid      TEXT,                -- Firebase UID (owner of this alert)
+            device_id     TEXT,                -- CAPHY device_id (which laptop)
             tier          INTEGER,
             distance_m    REAL,
             confidence    REAL,
@@ -113,6 +117,32 @@ class Database:
                 self.conn.execute("ALTER TABLE alerts ADD COLUMN dismissed_at TEXT")
             except Exception:
                 pass
+
+        # migration: add Firebase UID columns for multi-user support
+        if "firebase_uid" not in cols:
+            try:
+                self.conn.execute("ALTER TABLE users ADD COLUMN firebase_uid TEXT UNIQUE")
+            except Exception:
+                pass
+        if "email" not in cols:
+            try:
+                self.conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+            except Exception:
+                pass
+
+        # migration: add user_uid and device_id to alerts (for multi-household scoping)
+        alerts_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(alerts)")]
+        if "user_uid" not in alerts_cols:
+            try:
+                self.conn.execute("ALTER TABLE alerts ADD COLUMN user_uid TEXT")
+            except Exception:
+                pass
+        if "device_id" not in alerts_cols:
+            try:
+                self.conn.execute("ALTER TABLE alerts ADD COLUMN device_id TEXT")
+            except Exception:
+                pass
+
         self.conn.commit()
 
     def _seed(self):
@@ -127,14 +157,40 @@ class Database:
                 (1500, 0.5, 1, 0))
         self.conn.commit()
 
-    def add_alert(self, tier, distance_m, confidence, snapshot_path, video_path, camera=None):
-        """Save one confirmed threat. Returns the new alert_id."""
+    def add_alert(self, tier, distance_m, confidence, snapshot_path, video_path, camera=None,
+                 user_uid=None, device_id=None):
+        """Save one confirmed threat. Returns the new alert_id.
+
+        user_uid/device_id tag who owns this alert (which account, which
+        laptop) so cloud sync (storage/sync.py) and push notifications know
+        where it belongs. Left NULL if not supplied - falls back to the
+        SyncManager's default uploader when unset.
+        """
         cur = self.conn.execute(
-            "INSERT INTO alerts(tier, distance_m, confidence, snapshot_path, video_path, camera, synced, timestamp) "
-            "VALUES(?,?,?,?,?,?,0,?)",
-            (tier, distance_m, confidence, snapshot_path, video_path, camera, _now()))
+            "INSERT INTO alerts(tier, distance_m, confidence, snapshot_path, video_path, camera,"
+            " user_uid, device_id, synced, timestamp) VALUES(?,?,?,?,?,?,?,?,0,?)",
+            (tier, distance_m, confidence, snapshot_path, video_path, camera,
+             user_uid, device_id, _now()))
         self.conn.commit()
         return cur.lastrowid
+
+    def expired_alerts(self, retention_days):
+        """Alerts older than retention_days, oldest first (FIFO order).
+
+        Same rule for every tier - a Tier-3 alert is not treated specially,
+        per the age-based retention policy.
+        """
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM alerts WHERE timestamp < datetime('now', ?) ORDER BY alert_id",
+            (f"-{int(retention_days)} days",)
+        ).fetchall()]
+
+    def delete_alert(self, alert_id):
+        """Remove an alert row and its threat_logs rows (files are handled
+        by the caller - this only cleans up the database side)."""
+        self.conn.execute("DELETE FROM threat_logs WHERE alert_id=?", (alert_id,))
+        self.conn.execute("DELETE FROM alerts WHERE alert_id=?", (alert_id,))
+        self.conn.commit()
 
     def add_threat_log(self, alert_id, motion_area, bbox_height, est_distance, tier):
         """Save the detection detail behind an alert (used later for calibration)."""

@@ -1,0 +1,371 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CAPHY — Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Cpath d='M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z' fill='%235b7bff'/%3E%3Cellipse cx='48' cy='46' rx='20' ry='14' fill='%230a1024'/%3E%3Ccircle cx='48' cy='46' r='6' fill='%23a78bfa'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+html,body{height:100%}
+body{height:100vh;overflow:hidden;display:flex;flex-direction:column;margin:0}
+.topbar{display:flex;align-items:center;gap:14px;padding:9px 16px;border-bottom:1px solid var(--line2);background:var(--bg2);flex-shrink:0}
+.tb-brand{display:flex;align-items:center;gap:9px}
+.tb-brand .logo{width:32px;height:32px;border-radius:9px;overflow:hidden;box-shadow:0 0 14px var(--glow)}
+.tb-brand b{font-size:16px;letter-spacing:3px}
+.tb-brand small{display:block;color:var(--accent2);font-size:8px;letter-spacing:3px}
+.topstats{display:flex;gap:8px;margin-left:4px}
+.tstat{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:6px 12px;position:relative;overflow:hidden;min-width:104px}
+.tstat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+.tstat.a1::before{background:var(--accent2)}.tstat.a2::before{background:var(--orange)}
+.tstat.a3::before{background:var(--red)}.tstat.a4::before{background:var(--green)}
+.tstat .k{color:var(--muted);font-size:8.5px;letter-spacing:1px;text-transform:uppercase}
+.tstat .v{font-size:18px;font-weight:800;line-height:1.15;margin-top:1px}
+.tstat .f{font-size:9px;color:var(--dim);margin-top:1px}
+.topright{margin-left:auto;display:flex;align-items:center;gap:9px}
+.armstate{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600}
+.armstate small{color:var(--dim);font-weight:400}
+.pill{padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid;display:inline-flex;align-items:center;gap:5px}
+.p1{background:rgba(91,141,255,.14);color:var(--accent2);border-color:rgba(91,141,255,.5)}
+.p2{background:rgba(224,164,76,.14);color:var(--orange);border-color:rgba(224,164,76,.5)}
+.p3{background:rgba(229,84,78,.14);color:var(--red);border-color:rgba(229,84,78,.5)}
+.tbtn{background:var(--panel);border:1px solid var(--line2);color:var(--muted);padding:7px 13px;border-radius:9px;font-size:12px;cursor:pointer;font-weight:600}
+.tbtn:hover{color:var(--accent2);border-color:var(--accent2)}
+
+.grid{flex:1;display:grid;grid-template-columns:1.55fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;padding:10px 12px;min-height:0}
+.cpanel{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:11px 13px;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.cph{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;flex-shrink:0;gap:8px}
+.cph h2{font-size:13px;font-weight:700;white-space:nowrap}
+.cph .link{color:var(--accent2);font-size:11px;cursor:pointer}
+.cbody{flex:1;min-height:0;overflow:auto}
+
+.feed{grid-row:1 / 3;grid-column:1}
+.camselect{display:flex;gap:6px;align-items:center}
+.camselect select{background:var(--bg2);border:1px solid var(--line2);color:var(--text);padding:4px 8px;border-radius:7px;font-size:11px}
+.feedwrap{position:relative;flex:1;border-radius:10px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px;min-height:0}
+.feedwrap img{width:100%;height:100%;object-fit:cover;display:block}
+.detbox{position:absolute;top:11px;left:11px;background:rgba(8,12,22,.82);border:1px solid var(--line2);border-radius:9px;padding:9px 11px;min-width:160px}
+.detbox .dh{color:var(--accent2);font-size:9px;letter-spacing:2px;margin-bottom:7px}
+.detbox .dr{display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:11px;margin:4px 0;color:var(--muted)}
+.detbox .dd{color:var(--orange);font-size:11px;margin-top:6px}
+.statebar{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0 0;flex-shrink:0}
+.sb{font-size:10px;padding:4px 9px;border-radius:20px;border:1px solid var(--line);color:var(--dim);background:var(--panel);font-weight:600}
+.sb.on{color:var(--accent2);border-color:var(--accent2);background:rgba(91,141,255,.08)}
+.sb.red{color:var(--red);border-color:var(--red);background:rgba(229,84,78,.1)}
+.controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;flex-shrink:0}
+.ctrlbtn{display:flex;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:9px;width:38px;height:38px;cursor:pointer}
+.ctrlbtn:hover{border-color:var(--accent2);color:var(--accent2)}
+.ctrlbtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}
+.ctrlbtn.wide{width:auto;padding:0 14px;font-size:12px;font-weight:600;gap:7px}
+.ctrlbtn.primary{border-color:var(--accent2);color:var(--accent2)}
+.ctrlbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.ctrlbtn.emg{border-color:var(--red);color:var(--red)}
+.ctrlbtn.siren{background:var(--red);color:#fff;border-color:var(--red)}
+.tflog{margin-top:9px;flex-shrink:0;border-top:1px solid var(--line);padding-top:8px}
+.tflog .th{font-size:10px;letter-spacing:1.5px;color:var(--dim);margin-bottom:6px}
+.tflog .lg{display:flex;gap:9px;font-size:10.5px;padding:1.5px 0}
+.tflog .lg .tt{color:var(--dim);white-space:nowrap}
+
+.alerts{grid-row:1;grid-column:2}
+.alist{display:flex;flex-direction:column;gap:7px}
+.arow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:8px 10px}
+.arow.t1{border-left-color:var(--accent2)}.arow.t2{border-left-color:var(--orange)}.arow.t3{border-left-color:var(--red)}
+.arow .av{width:26px;height:26px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;color:var(--muted);flex-shrink:0;font-size:12px}
+.arow .txt{flex:1;min-width:0}
+.arow .txt .tt{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .txt .ss{font-size:10.5px;color:var(--dim);margin-top:1px}
+.ackbtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:5px 9px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap}
+.ackbtn:hover{color:var(--accent2);border-color:var(--accent2)}
+.alertactions{display:flex;gap:6px;margin-top:8px;flex-shrink:0}
+.emptyc{color:var(--dim);font-size:12px;text-align:center;padding:24px 0}
+
+.threat{grid-row:2;grid-column:2}
+.chart{display:flex;align-items:flex-end;gap:2px;flex:1;padding-top:6px;min-height:0}
+.bar{flex:1;background:var(--accent);border-radius:2px 2px 0 0;min-height:4px;position:relative;cursor:pointer;transition:.12s}
+.bar.warm{background:var(--orange)}.bar.hot{background:var(--red)}
+.bar:hover{filter:brightness(1.35);outline:1px solid var(--accent2)}
+.bar .tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
+  background:var(--panel2);border:1px solid var(--line2);border-radius:7px;padding:5px 9px;font-size:10.5px;
+  white-space:nowrap;z-index:20;box-shadow:0 6px 16px rgba(0,0,0,.5);color:var(--text)}
+.bar .tip b{color:var(--accent2)}
+.bar:hover .tip{display:block}
+.axis{display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-top:5px;flex-shrink:0}
+
+.logs{grid-row:1;grid-column:3}
+.logfilters{display:flex;gap:5px}
+.fbtn{background:var(--panel);border:1px solid var(--line2);color:var(--muted);border-radius:6px;padding:3px 8px;font-size:9.5px;font-weight:700;cursor:pointer}
+.fbtn.active{color:var(--accent2);border-color:var(--accent2);background:rgba(91,141,255,.08)}
+.logpanel .cbody{background:#060a14;border-radius:8px;padding:7px 9px}
+.log{font-family:Consolas,monospace;font-size:10.5px}
+.logline{display:flex;gap:7px;align-items:baseline;padding:1.5px 0}
+.logline .lt{color:var(--dim);white-space:nowrap}
+.logline .lm{color:var(--dim);min-width:42px}
+.lvl{padding:0 5px;border-radius:3px;font-size:8.5px;font-weight:bold;min-width:40px;text-align:center}
+
+.health{grid-row:2;grid-column:3}
+.metric{margin-bottom:7px}
+.mrow{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-bottom:3px}
+.mrow b{color:var(--text)}
+.slider{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.slider .fill{height:5px;border-radius:3px;background:var(--accent)}
+.modrow{display:flex;justify-content:space-between;align-items:center;font-size:10px;padding:2.5px 0}
+.modrow .nm{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.modtag{font-size:9px;font-weight:700;padding:1px 7px;border-radius:5px;border:1px solid}
+
+/* modal popups reuse a local style */
+.cmodalbg{position:fixed;inset:0;background:rgba(5,8,14,.7);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:200}
+.cmodalbg.show{display:flex}
+.cmodalcard{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:20px 22px;width:860px;max-width:94vw;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.cmh{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px}
+.cmh h2{font-size:16px;font-weight:800}
+.cmactions{display:flex;gap:8px;align-items:center}
+.xbtn{width:30px;height:30px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);cursor:pointer;font-size:15px}
+.mframe{width:100%;height:74vh;border:none;border-radius:10px;background:var(--bg)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="tb-brand">
+    <div class="logo"><svg class="caphy-logo" viewBox="0 0 96 96" width="100%" height="100%"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#5b7bff"/></linearGradient><clipPath id="tc"><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z"/></clipPath></defs><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z" fill="url(#tg)"/><g clip-path="url(#tc)"><ellipse class="eye" cx="48" cy="46" rx="20" ry="14" fill="#0a1024"/><g class="pupil"><circle cx="48" cy="46" r="8" fill="#a78bfa"/><circle cx="45" cy="43" r="1.6" fill="#cfe0ff"/></g></g></svg></div>
+    <div><b>CAPHY</b><small>AI SECURITY</small></div>
+  </div>
+  <div class="topstats">
+    <div class="tstat a1"><div class="k">Total Alerts</div><div class="v" id="stTotal">–</div><div class="f" id="stToday">–</div></div>
+    <div class="tstat a4"><div class="k">Active Cameras</div><div class="v" id="stCams">–</div><div class="f" id="stCamsF">–</div></div>
+    <div class="tstat a2"><div class="k">Current Threat</div><div class="v" id="stThreat">–</div><div class="f" id="stThreatF">–</div></div>
+    <div class="tstat a3"><div class="k">Pending Sync</div><div class="v" id="stPending">–</div><div class="f">offline queue</div></div>
+  </div>
+  <div class="topright">
+    <div class="armstate"><span class="dot off" id="armDot"></span><span id="armLbl">—</span><small id="whoami">{{ user }}</small></div>
+    <div class="pill p1">● LIVE</div>
+    <button class="tbtn" onclick="openPage('mHistory','/history')">History</button>
+    <button class="tbtn" onclick="openPage('mLogs','/logs')">Full Logs</button>
+    <button class="tbtn" onclick="openPage('mSettings','/settings')">Settings</button>
+    <a class="tbtn" style="color:var(--red);border-color:rgba(229,84,78,.4)" href="/logout">Log out</a>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="cpanel feed">
+    <div class="cph">
+      <h2>Live Feed</h2>
+      <div class="camselect">
+        <select id="camSel" onchange="selectCam(this.value)"></select>
+        <span class="pill p3" id="recPill" style="display:none">● REC</span>
+        <span class="link" onclick="openPage('mLive','/live')">Open Live →</span>
+      </div>
+    </div>
+    <div class="feedwrap"><img id="mainFeed" src="" alt="live">
+      <div class="detbox">
+        <div class="dh">DETECTION — <span id="camName">—</span></div>
+        <div class="dr"><span>Factor 1 · Motion</span><span class="dot off" id="dMotion"></span></div>
+        <div class="dr"><span>Factor 2 · Person</span><span class="dot off" id="dPerson"></span></div>
+        <div class="dd">Est. distance <span id="dDist">–</span> m</div>
+      </div>
+    </div>
+    <div class="statebar">
+      <span class="sb" id="sbArm">System —</span><span class="sb" id="sbCam">Camera —</span>
+      <span class="sb" id="sbNv">Night vision —</span><span class="sb" id="sbSiren">Siren —</span><span class="sb" id="sbEmg">Emergency —</span>
+    </div>
+    <div class="controls">
+      <button class="ctrlbtn wide primary" id="armBtn" onclick="toggleArm()"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg><span id="armBtnLbl">Arm</span></button>
+      <button class="ctrlbtn" id="camBtn" onclick="toggleCam()" title="Camera on/off"><svg viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></button>
+      <button class="ctrlbtn" onclick="snap()" title="Snapshot"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+      <button class="ctrlbtn" id="recBtn" onclick="toggleRec()" title="Record"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></button>
+      <button class="ctrlbtn" id="nvBtn" onclick="toggleNV()" title="Night vision"><svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+      <button class="ctrlbtn emg" id="emgBtn" onclick="toggleEmg()" title="Emergency"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+      <button class="ctrlbtn wide siren" id="sirenBtn" onclick="toggleSiren()">Trigger Siren</button>
+    </div>
+    <div class="tflog">
+      <div class="th">TWO-FACTOR LOG</div>
+      <div id="tflog"></div>
+    </div>
+  </div>
+
+  <div class="cpanel alerts">
+    <div class="cph"><h2>Recent Alerts</h2><span class="link" id="liveDot">● live</span></div>
+    <div class="cbody"><div class="alist" id="alist"></div><div class="emptyc" id="alEmpty" style="display:none">No new alerts</div></div>
+    <div class="alertactions">
+      <button class="tbtn" style="flex:1" onclick="ackAll()">Acknowledge All</button>
+      <button class="tbtn" onclick="openPage('mHistory','/history')">History →</button>
+    </div>
+  </div>
+
+  <div class="cpanel threat">
+    <div class="cph"><h2>Threat Activity — 24h</h2><span style="color:var(--dim);font-size:10px">hover bars</span></div>
+    <div class="chart" id="chart"></div>
+    <div class="axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+  </div>
+
+  <div class="cpanel logs logpanel">
+    <div class="cph"><h2>caphy.log <span style="color:var(--muted);font-weight:400;font-size:10px">live tail</span></h2>
+      <div class="logfilters"><button class="fbtn active" data-f="ALL" onclick="setLogFilter('ALL',this)">ALL</button><button class="fbtn" data-f="DETECT" onclick="setLogFilter('DETECT',this)">DETECT</button><button class="fbtn" data-f="ALERT" onclick="setLogFilter('ALERT',this)">ALERT</button><button class="fbtn" data-f="SYNC" onclick="setLogFilter('SYNC',this)">SYNC</button></div>
+    </div>
+    <div class="cbody"><div class="log" id="logtail"></div></div>
+  </div>
+
+  <div class="cpanel health">
+    <div class="cph"><h2>System Health</h2></div>
+    <div class="cbody" id="healthBody"><div class="emptyc">loading…</div></div>
+  </div>
+</div>
+
+<div class="cmodalbg" id="mHistory"><div class="cmodalcard"><div class="cmh"><h2>Alert History</h2><button class="xbtn" onclick="closeC('mHistory')">✕</button></div><iframe class="mframe" id="fHistory"></iframe></div></div>
+<div class="cmodalbg" id="mLogs"><div class="cmodalcard"><div class="cmh"><h2>System Logs</h2><button class="xbtn" onclick="closeC('mLogs')">✕</button></div><iframe class="mframe" id="fLogs"></iframe></div></div>
+<div class="cmodalbg" id="mSettings"><div class="cmodalcard"><div class="cmh"><h2>Settings</h2><button class="xbtn" onclick="closeC('mSettings')">✕</button></div><iframe class="mframe" id="fSettings"></iframe></div></div>
+<div class="cmodalbg" id="mLive"><div class="cmodalcard"><div class="cmh"><h2>Live Camera</h2><button class="xbtn" onclick="closeC('mLive')">✕</button></div><iframe class="mframe" id="fLive"></iframe></div></div>
+
+<script>
+const CAMS = {{ cams_json|safe }};
+let sel = CAMS.length ? CAMS[0].cam : 0;
+let ST = {};
+
+// ---- camera selector + feed ----
+(function initCams(){
+  const s=document.getElementById('camSel');
+  CAMS.forEach(c=>{const o=document.createElement('option');o.value=c.cam;o.textContent=c.name;s.appendChild(o);});
+  if(CAMS.length){ selectCam(sel); }
+})();
+function selectCam(id){
+  sel=+id;
+  document.getElementById('mainFeed').src='/video_feed/'+sel;
+  const c=CAMS.find(x=>x.cam===sel);
+  document.getElementById('camName').textContent=c?c.name:('Cam '+sel);
+}
+
+// ---- popups (existing pages loaded in an iframe, so all their JS keeps working) ----
+function openPage(modalId,url){const f=document.getElementById('f'+modalId.slice(1));if(f && !f.src.endsWith(url))f.src=url;document.getElementById(modalId).classList.add('show');}
+function closeC(id){document.getElementById(id).classList.remove('show');}
+document.querySelectorAll('.cmodalbg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show');}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.cmodalbg').forEach(m=>m.classList.remove('show'));});
+
+// ---- top stats ----
+async function loadStats(){
+  try{
+    const r=await fetch('/api/dashboard'); const d=await r.json();
+    document.getElementById('stTotal').textContent=d.total;
+    document.getElementById('stToday').textContent='+'+d.today+' today';
+    document.getElementById('stCams').textContent=d.online+' / '+d.ncam;
+    document.getElementById('stCamsF').textContent=d.online===d.ncam&&d.ncam?'all online':(d.online+' online');
+    document.getElementById('stThreat').textContent=d.threat;
+    document.getElementById('stThreatF').textContent=d.threat_foot;
+    document.getElementById('stPending').textContent=d.pending;
+    renderChart(d.hours);
+  }catch(e){}
+}
+let chartDone=false;
+function renderChart(hours){
+  const chart=document.getElementById('chart');
+  const counts=[];for(let h=0;h<24;h++)counts.push(hours[h]||0);
+  const max=Math.max(...counts,1);
+  chart.innerHTML='';
+  counts.forEach((c,h)=>{const pct=Math.round(100*c/max);
+    const cls=c>=max&&c?'bar hot':(c>=max*0.5&&c?'bar warm':'bar');
+    const b=document.createElement('div');b.className=cls;b.style.height=Math.max(pct,4)+'%';
+    const hh=String(h).padStart(2,'0');b.innerHTML='<span class="tip"><b>'+hh+':00</b> · '+c+' alert'+(c===1?'':'s')+'</span>';
+    chart.appendChild(b);});
+}
+
+// ---- live detection + two-factor log + feed dots ----
+async function poll(){
+  try{
+    const r=await fetch('/api/stats'); const data=await r.json();
+    data.forEach(s=>{ if(s.cam===sel){
+      document.getElementById('dMotion').className='dot '+(s.motion?'armed':'off');
+      document.getElementById('dPerson').className='dot '+(s.person?'armed':'off');
+      document.getElementById('dDist').textContent=s.distance;
+    }});
+    const lr=await fetch('/api/logs?n=6'); const logs=await lr.json();
+    document.getElementById('tflog').innerHTML=logs.slice(0,3).map(l=>{
+      const col=l.level==='ALERT'?'var(--orange)':(l.level==='DETECT'?'var(--accent2)':'var(--muted)');
+      return '<div class="lg"><span class="tt">'+l.t+'</span><span style="color:'+col+'">'+l.msg+'</span></div>';
+    }).join('');
+  }catch(e){}
+}
+
+// ---- system logs tail ----
+let logFilter='ALL';
+const LVLCLASS={INFO:'i',DETECT:'i',TIER:'i',ALERT:'a',SYNC:'i',WARN:'w',DB:'i'};
+function lvlColor(l){return {INFO:'var(--muted)',DETECT:'var(--accent2)',TIER:'var(--accent2)',ALERT:'var(--green)',SYNC:'var(--accent2)',WARN:'var(--orange)',DB:'var(--muted)'}[l]||'var(--muted)';}
+function setLogFilter(f,btn){logFilter=f;document.querySelectorAll('.logfilters .fbtn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');tailLogs();}
+async function tailLogs(){
+  try{
+    const r=await fetch('/api/logs?n=120'); let logs=await r.json();
+    if(logFilter!=='ALL')logs=logs.filter(l=>l.level===logFilter);
+    const box=document.getElementById('logtail');
+    if(!logs.length){box.innerHTML='<div style="color:var(--dim)">No matching events</div>';return;}
+    box.innerHTML=logs.slice(0,40).map(l=>{const c=lvlColor(l.level);
+      return '<div class="logline"><span class="lt">'+l.t+'</span><span class="lvl" style="background:rgba(91,141,255,.14);color:'+c+'">'+l.level+'</span><span class="lm">'+l.mod+'</span><span>'+l.msg+'</span></div>';
+    }).join('');
+  }catch(e){}
+}
+
+// ---- system health ----
+async function loadHealth(){
+  try{
+    const r=await fetch('/api/health'); const h=await r.json();
+    let html='';
+    function metric(n,v,pct,col){return '<div class="metric"><div class="mrow"><span>'+n+'</span><b>'+v+'</b></div><div class="slider"><div class="fill" style="width:'+Math.min(pct,100)+'%;background:'+(col||'var(--accent)')+'"></div></div></div>';}
+    html+=metric('CPU',h.cpu+'%',h.cpu);
+    html+=metric('Memory',h.mem_txt,h.mem);
+    html+=metric('Disk (media)',h.disk+'%',h.disk,'var(--orange)');
+    html+=metric('Model FPS',h.fps+' fps',Math.min(h.fps*4,100),'var(--green)');
+    html+='<div style="font-size:10px;letter-spacing:1.5px;color:var(--dim);margin:12px 0 6px">MODULE STATUS</div>';
+    h.modules.forEach(m=>{html+='<div class="modrow"><span class="nm"><span class="dot" style="background:'+m.color+'"></span>'+m.name+'</span><span class="modtag" style="color:'+m.color+';border-color:'+m.color+'">'+m.status+'</span></div>';});
+    document.getElementById('healthBody').innerHTML=html;
+  }catch(e){}
+}
+
+// ---- alerts feed (SSE + fallback poll) ----
+function tpill(t){const cls=t>=3?'p3':(t===2?'p2':'p1');return '<span class="pill '+cls+'" style="padding:1px 7px;font-size:9px">'+(t?'TIER '+t:'MOTION')+'</span>';}
+async function refreshAlerts(){
+  try{
+    const r=await fetch('/api/alerts/feed'); const j=await r.json();
+    const list=document.getElementById('alist'),empty=document.getElementById('alEmpty');
+    if(!j.alerts.length){list.innerHTML='';empty.style.display='block';return;}
+    empty.style.display='none';
+    list.innerHTML=j.alerts.slice(0,8).map(a=>{
+      const event=a.tier?'Person confirmed':'Movement';const cam=a.camera||'Unknown';
+      return '<div class="arow t'+(a.tier||1)+'"><div class="av">!</div><div class="txt"><div class="tt">'+event+' '+tpill(a.tier)+'</div><div class="ss">'+cam+' · '+(a.distance_m||'-')+' m</div></div><button class="ackbtn" onclick="ack('+a.id+')">Ack</button></div>';
+    }).join('');
+  }catch(e){}
+}
+async function ack(id){try{await fetch('/api/alert/'+id+'/dismiss',{method:'POST'});}catch(e){}refreshAlerts();}
+async function ackAll(){try{await fetch('/api/alerts/dismiss_all',{method:'POST'});}catch(e){}refreshAlerts();}
+(function stream(){try{const es=new EventSource('/api/alerts/stream');es.onmessage=refreshAlerts;}catch(e){}})();
+
+// ---- state (arm/camera/nv/siren/emergency) ----
+function setSb(el,label,on,onT,offT){el.textContent=label+' '+(on?onT:offT);el.classList.toggle('on',!!on);}
+async function refreshState(){
+  try{
+    const r=await fetch('/api/state'); ST=await r.json();
+    setSb(document.getElementById('sbArm'),'System',ST.armed,'ARMED','DISARMED');
+    setSb(document.getElementById('sbCam'),'Camera',ST.camera_on,'ON','OFF');
+    setSb(document.getElementById('sbNv'),'Night vision',ST.night_vision,'ON','OFF');
+    setSb(document.getElementById('sbSiren'),'Siren',ST.siren,'ON','OFF');
+    const emg=document.getElementById('sbEmg');setSb(emg,'Emergency',ST.emergency,'ACTIVE','OFF');emg.classList.toggle('red',ST.emergency);
+    document.getElementById('armDot').className='dot '+(ST.armed?'armed':'off');
+    document.getElementById('armLbl').textContent=ST.armed?'ARMED':'DISARMED';
+    document.getElementById('armBtnLbl').textContent=ST.armed?'Disarm':'Arm';
+    document.getElementById('armBtn').classList.toggle('active',ST.armed);
+    document.getElementById('nvBtn').classList.toggle('active',ST.night_vision);
+    document.getElementById('camBtn').classList.toggle('active',!ST.camera_on);
+    const sb=document.getElementById('sirenBtn');sb.textContent=ST.siren?'Stop Siren':'Trigger Siren';sb.classList.toggle('active',ST.siren);
+    document.getElementById('emgBtn').classList.toggle('active',ST.emergency);
+    document.getElementById('recPill').style.display=ST.camera_on?'inline-flex':'none';
+  }catch(e){}
+}
+async function toggleArm(){try{await fetch('/api/arm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!ST.armed})});}catch(e){}refreshState();}
+async function toggleCam(){try{await fetch('/api/camera/power',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!ST.camera_on})});}catch(e){}refreshState();}
+async function toggleNV(){try{await fetch('/api/nightvision/'+sel,{method:'POST'});}catch(e){}refreshState();}
+async function toggleSiren(){try{await fetch('/api/siren',{method:'POST'});}catch(e){}refreshState();}
+async function toggleEmg(){if(!ST.emergency&&!confirm('Activate Emergency Mode? This arms the system, sounds the siren, and pushes an alert to everyone.'))return;try{await fetch('/api/emergency',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!ST.emergency})});}catch(e){}refreshState();}
+let recOn=false;
+async function toggleRec(){try{const r=await fetch('/api/record/'+sel,{method:'POST'});const j=await r.json();recOn=j.recording;document.getElementById('recBtn').classList.toggle('active',recOn);}catch(e){}}
+async function snap(){try{const r=await fetch('/api/snapshot/'+sel,{method:'POST'});const j=await r.json();if(j.ok&&j.url)window.open(j.url,'_blank');}catch(e){}}
+
+loadStats();poll();tailLogs();loadHealth();refreshAlerts();refreshState();
+setInterval(poll,1500);setInterval(tailLogs,2000);setInterval(refreshState,2000);
+setInterval(loadStats,15000);setInterval(loadHealth,4000);setInterval(refreshAlerts,20000);
+</script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+rules_version = '2';
+
+// CAPHY Firestore security rules — defense in depth alongside the
+// owner_uid checks already enforced in storage/device_registry.py.
+//
+// The Admin SDK (desktop, via firebase_key.json) bypasses these rules
+// entirely — they only govern the Flutter client SDK (the phone talking
+// to Firestore directly). This is deliberate: the desktop is trusted
+// (it authenticated with a service account), the phone is not, so the
+// phone's every read/write must be provably scoped to its own uid.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // devices/{device_id}
+    // A phone may read a device doc ONLY if it owns it. A phone may never
+    // write devices directly — ownership is only ever assigned by the
+    // confirm_pairing() transaction, which runs server-side via the
+    // Admin SDK (invoked through the laptop's own /api/pairing/confirm),
+    // never by a raw client write. This is what stops a phone from just
+    // setting owner_uid = itself on someone else's device.
+    //
+    // "get" (single doc) and "list" (the where(owner_uid==) query
+    // myDevices() runs) are both covered by resource.data here - Firestore
+    // evaluates this per-document even for a query, and any query that
+    // could return a doc NOT satisfying this condition is rejected
+    // outright, which is exactly why myDevices() must filter by
+    // owner_uid == me: an unfiltered "list all devices" query would be
+    // denied wholesale, which is the desired fail-closed behavior.
+    match /devices/{deviceId} {
+      allow read: if request.auth != null
+                   && resource.data.owner_uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // pairing_codes/{code}
+    // The phone never reads this collection directly - it gets {code,
+    // device_id, ip, port} straight from the scanned QR payload, then
+    // calls the laptop's /api/pairing/confirm (Admin SDK) to redeem the
+    // code. So this collection is entirely server-side: no client read,
+    // no client write. Blocking reads too means a code can't be enumerated
+    // or guessed-and-inspected from the client SDK at all.
+    match /pairing_codes/{code} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // pairing_confirm_requests/{requestId}
+    // Lets a phone ask to redeem a QR pairing code WITHOUT needing to
+    // reach the laptop's LAN address at all (different network / no
+    // shared WiFi) - the laptop's own background poll loop
+    // (desktop_launcher.py's run_remote_command_listener) picks these up
+    // over the internet and calls confirm_pairing() via the Admin SDK.
+    //
+    // This can't use the commands/{deviceId}/queue collection above,
+    // because THAT requires already owning the device - which is exactly
+    // what pairing is establishing, so it doesn't exist yet. Any signed-in
+    // phone may create ONE request stamped with its own uid; the real
+    // security boundary is inside confirm_pairing() itself (server-side,
+    // Admin SDK), which refuses to hand a device to a different account
+    // than whoever already owns it - this collection only lets a phone
+    // ASK, it can never grant itself ownership.
+    match /pairing_confirm_requests/{requestId} {
+      allow read: if request.auth != null
+                   && resource.data.requested_by == request.auth.uid;
+      allow create: if request.auth != null
+                   && request.resource.data.requested_by == request.auth.uid
+                   && request.resource.data.status == "pending";
+      // Only the desktop (Admin SDK) marks it done/error.
+      allow update: if false;
+    }
+
+    // phone_link_tokens/{nonce}
+    // Scan-to-connect: the laptop (Admin SDK) stashes a one-time Firebase
+    // custom token here so a phone that is NOT signed in yet can read it by
+    // nonce and sign in silently as the laptop's account (see
+    // device_registry.store_link_token + the phone's scan flow). Read is
+    // deliberately open because the caller has no auth yet - but the 32-byte
+    // random nonce (the document id) IS the secret: without it you can't
+    // address the doc, and Firestore has no "list all documents" capability
+    // exposed to clients here (no allow list), so tokens can't be
+    // enumerated. Writes/deletes are Admin-SDK only. Tokens self-expire in a
+    // couple of minutes and are deleted right after use.
+    match /phone_link_tokens/{nonce} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if false;
+      // The phone may delete the token AFTER it has signed in with it (so
+      // it's now authed as the owner) - promptly retiring the one-shot
+      // credential. Everyone else's writes stay Admin-SDK only.
+      allow delete: if request.auth != null
+                     && request.auth.uid == resource.data.owner_uid;
+    }
+
+    // alerts/{alertId}
+    // Alert metadata (tier, distance, time, snapshot URL) published by the
+    // laptop (Admin SDK) so the phone can read its alerts from anywhere -
+    // mobile data included - instead of only over the laptop's LAN. A phone
+    // may read ONLY alerts belonging to its own account. Writes are
+    // Admin-SDK only (the laptop is the sole author of alerts).
+    match /alerts/{alertId} {
+      allow read: if request.auth != null
+                   && resource.data.owner_uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // commands/{deviceId}/queue/{commandId}
+    // A phone may enqueue a command only for a device it owns, and may
+    // only read back commands/results for devices it owns.
+    match /commands/{deviceId}/queue/{commandId} {
+      allow read: if request.auth != null
+                   && get(/databases/$(database)/documents/devices/$(deviceId)).data.owner_uid == request.auth.uid;
+      allow create: if request.auth != null
+                   && get(/databases/$(database)/documents/devices/$(deviceId)).data.owner_uid == request.auth.uid
+                   && request.resource.data.requested_by == request.auth.uid
+                   && request.resource.data.status == "pending";
+      // Only the desktop (Admin SDK) marks a command done/error.
+      allow update: if false;
+    }
+
+    // webrtc_calls/{callId}
+    // True live-streaming signaling (see web/webrtc_stream.py). The phone
+    // creates the call doc (with its SDP offer) and appends its own ICE
+    // candidates; the laptop (Admin SDK, bypasses these rules) writes the
+    // answer, fresh TURN credentials, and status. A phone may only touch
+    // calls for a device_id it owns, and may only create/update calls it
+    // itself is the caller of - this is what stops phone B from either
+    // hijacking phone A's call or spying on another account's video
+    // negotiation.
+    match /webrtc_calls/{callId} {
+      allow read: if request.auth != null
+                   && resource.data.caller_uid == request.auth.uid;
+      allow create: if request.auth != null
+                   && request.resource.data.caller_uid == request.auth.uid
+                   && get(/databases/$(database)/documents/devices/$(request.resource.data.device_id)).data.owner_uid == request.auth.uid
+                   && request.resource.data.status == "pending";
+      // The phone may only append/update its OWN ice candidates - it can
+      // never touch answer/ice_servers/status (those are the laptop's /
+      // Admin SDK's fields to write).
+      allow update: if request.auth != null
+                   && resource.data.caller_uid == request.auth.uid
+                   && request.resource.data.caller_uid == resource.data.caller_uid
+                   && request.resource.data.device_id == resource.data.device_id
+                   && request.resource.data.answer == resource.data.answer
+                   && request.resource.data.status == resource.data.status;
+    }
+  }
+}

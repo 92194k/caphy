@@ -12,7 +12,16 @@ pygame-ce>=2.5           # siren.py plays assets/siren.mp3 with smooth fade in/o
 
 # ---- optional ----
 psutil>=5.9            # battery / power-save reporting
-firebase-admin>=6.5    # push notifications to the phone
+firebase-admin>=6.5    # push notifications to the phone, Firestore device registry
+requests>=2.31         # desktop_launcher.py executes remote (cloud-queued) commands
+                        # against its own local Flask API
+aiortc>=1.9             # true live video streaming to the phone when it's off
+                        # the laptop's WiFi (web/webrtc_stream.py). Optional at
+                        # runtime - if this fails to install, CAPHY still runs
+                        # fine, just without off-LAN live video (LAN viewing,
+                        # snapshots, arm/disarm, alerts are all unaffected).
+                        # Most platforms get a prebuilt wheel via pip; if not,
+                        # see https://github.com/aiortc/aiortc#installation
 
 # NOTE: no speech packages here on purpose.
 # Voice lives entirely in the Flutter app (speech_to_text + flutter_tts, see

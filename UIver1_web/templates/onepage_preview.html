@@ -1,0 +1,310 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CAPHY — Single-Page Console (Preview)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='24 24 72 72'%3E%3Crect x='24' y='24' width='72' height='72' rx='17' fill='%232A9D8F'/%3E%3Cellipse cx='60' cy='60' rx='21' ry='13' fill='%2308110f'/%3E%3Ccircle cx='60' cy='60' r='7' fill='%233dd7c4'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0b1117; --bg2:#0d151c; --panel:#16232e; --panel2:#1a2a36;
+  --line:#22333f; --line2:#26404f;
+  --text:#e6edf3; --muted:#8aa0b0; --dim:#5c7180;
+  --teal:#2A9D8F; --teal2:#3dd7c4; --orange:#F4A261; --red:#e5484d; --green:#3fb950;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",Arial,sans-serif}
+body{background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+a{text-decoration:none;color:inherit}
+html{scroll-behavior:smooth}
+
+.side{width:230px;background:var(--bg2);border-right:1px solid var(--line2);
+  padding:16px 0;flex-shrink:0;position:fixed;height:100vh;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:11px;padding:4px 20px 18px}
+.logo{width:38px;height:38px;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 0 14px rgba(61,215,196,.35)}
+.brand b{font-size:19px;letter-spacing:3px}
+.brand small{display:block;color:var(--teal2);font-size:9px;letter-spacing:3px;margin-top:1px}
+.nav{margin-top:6px}
+.nav a{display:flex;align-items:center;gap:12px;padding:11px 22px;color:var(--muted);font-size:14px;border-left:3px solid transparent;transition:.15s;cursor:pointer}
+.nav a svg{width:18px;height:18px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.9}
+.nav a:hover{color:var(--text);background:rgba(255,255,255,.03)}
+.nav a.active{color:var(--text);background:rgba(42,157,143,.14);border-left-color:var(--teal2);font-weight:600}
+.sidefoot{margin-top:auto;padding:14px 20px 4px;border-top:1px solid var(--line);font-size:12px}
+.sidefoot .st{display:flex;align-items:center;gap:8px;font-weight:600}
+.sidefoot .st small{display:block;color:var(--dim);font-weight:400;font-size:11px;margin-left:16px}
+.sidefoot .fr{display:flex;align-items:center;gap:8px;color:var(--muted);margin-top:11px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.dot.armed{background:var(--green);box-shadow:0 0 8px var(--green)}
+
+.main{flex:1;margin-left:230px;display:flex;flex-direction:column;min-height:100vh}
+.header{display:flex;justify-content:space-between;align-items:center;padding:16px 30px;border-bottom:1px solid var(--line);background:rgba(13,21,28,.6);position:sticky;top:0;z-index:50;backdrop-filter:blur(6px)}
+.header .ht h1{font-size:21px;font-weight:700}
+.header .ht .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.header .hr{display:flex;align-items:center;gap:14px}
+.iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);display:flex;align-items:center;justify-content:center;color:var(--muted);position:relative;cursor:pointer}
+.iconbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
+.iconbtn .badge{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--red);border:2px solid var(--bg2);color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1}
+.content{padding:24px 30px;flex:1}
+
+/* section wrapper */
+.section{scroll-margin-top:78px;padding-bottom:14px;margin-bottom:30px;border-bottom:1px solid var(--line)}
+.section:last-child{border-bottom:none}
+.sectitle{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.sectitle h2{font-size:18px;font-weight:800;letter-spacing:.3px}
+.sectitle .tag{color:var(--dim);font-size:11.5px}
+
+/* KPI cards */
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+.card{background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;left:0;right:0;top:0;height:3px}
+.card.a1::before{background:var(--teal2)}.card.a2::before{background:var(--orange)}
+.card.a3::before{background:var(--red)}.card.a4::before{background:var(--green)}
+.card .k{color:var(--muted);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase}
+.card .v{font-size:32px;font-weight:800;margin-top:10px;line-height:1}
+.card .foot{margin-top:10px;font-size:11.5px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.card .foot .d{width:7px;height:7px;border-radius:50%}
+.card.a1 .foot .d{background:var(--teal2)}.card.a2 .foot .d{background:var(--orange)}
+.card.a3 .foot .d{background:var(--red)}.card.a4 .foot .d{background:var(--green)}
+
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.panel{background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:18px}
+.panel .ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.panel h3{font-size:15px;font-weight:700}
+.panel .link{color:var(--teal2);font-size:12.5px;cursor:pointer}
+
+.feedwrap{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px}
+.feedgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.feedgrid .feedwrap{aspect-ratio:4/3}
+
+.pill{padding:4px 13px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid;display:inline-flex;align-items:center;gap:6px}
+.p1{background:rgba(61,215,196,.14);color:var(--teal2);border-color:rgba(61,215,196,.5)}
+.p2{background:rgba(244,162,97,.14);color:var(--orange);border-color:rgba(244,162,97,.5)}
+.p3{background:rgba(229,72,77,.14);color:var(--red);border-color:rgba(229,72,77,.5)}
+
+.alist{display:flex;flex-direction:column;gap:9px}
+.arow{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px}
+.arow.t1{border-left-color:var(--teal2)}.arow.t2{border-left-color:var(--orange)}.arow.t3{border-left-color:var(--red)}
+.arow .av{width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;color:var(--muted);flex-shrink:0;font-size:15px}
+.arow .txt{flex:1}
+.arow .txt .tt{font-size:12.5px;font-weight:700}
+.arow .txt .ss{font-size:11.5px;color:var(--dim);margin-top:1px}
+.arow .tm{font-size:11px;color:var(--dim);white-space:nowrap}
+
+.toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.fpill{padding:7px 15px;border-radius:20px;font-size:12.5px;border:1px solid var(--line2);color:var(--muted);background:var(--panel);cursor:pointer}
+.fpill.active{background:rgba(42,157,143,.16);border-color:var(--teal2);color:var(--teal2);font-weight:700}
+input,select{background:var(--bg2);border:1px solid var(--line2);color:var(--text);padding:10px 12px;border-radius:9px;font-size:13px}
+
+table{width:100%;border-collapse:collapse}
+th{color:var(--muted);text-align:left;padding:11px 14px;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--line)}
+td{padding:11px 14px;border-top:1px solid var(--line);font-size:13px}
+.thumb{width:44px;height:32px;border-radius:6px;border:1px solid var(--line2);background:var(--bg);display:inline-block}
+
+.logpanel{background:#070d12}
+.log{font-family:Consolas,monospace;font-size:12px;max-height:280px;overflow:auto}
+.logline{display:flex;gap:10px;align-items:baseline;padding:2.5px 0}
+.logline .lt{color:var(--dim);white-space:nowrap}
+.lvl{padding:1px 7px;border-radius:4px;font-size:10px;font-weight:bold;min-width:52px;text-align:center}
+.lvl.i{background:rgba(61,215,196,.15);color:var(--teal2)}
+.lvl.w{background:rgba(244,162,97,.15);color:var(--orange)}
+.lvl.e{background:rgba(229,72,77,.15);color:var(--red)}
+
+.field{margin-bottom:20px}
+.field .flabel{display:flex;justify-content:space-between;align-items:baseline}
+.field .flabel b{font-size:14px}
+.field .val{color:var(--teal2);font-weight:700;font-size:13px}
+.field .fdesc{color:var(--muted);font-size:12px;margin:3px 0 10px}
+.field input[type=range]{width:100%;accent-color:var(--teal);height:6px}
+.togglerow{display:flex;justify-content:space-between;align-items:center;padding:15px 0;border-top:1px solid var(--line)}
+.togglerow b{font-size:14px}
+.togglerow .fdesc{margin:2px 0 0}
+.sw{position:relative;width:44px;height:24px;display:inline-block;flex-shrink:0}
+.sw input{opacity:0;width:0;height:0}
+.sw .track{position:absolute;inset:0;background:var(--line);border-radius:12px;transition:.15s;cursor:pointer}
+.sw .track::before{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:3px;left:3px;transition:.15s}
+.sw input:checked + .track{background:var(--teal)}
+.sw input:checked + .track::before{transform:translateX(20px)}
+.btn{background:var(--teal);color:#08110f;border:none;padding:10px 18px;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px}
+.previewnote{background:rgba(244,162,97,.1);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 16px;font-size:12.5px;margin-bottom:22px}
+</style>
+</head>
+<body>
+<div class="side">
+  <div class="brand">
+    <div class="logo">
+      <svg viewBox="24 24 72 72" width="100%" height="100%">
+        <rect x="24" y="24" width="72" height="72" rx="17" fill="#2A9D8F"></rect>
+        <ellipse cx="60" cy="60" rx="21" ry="13" fill="#08110f"></ellipse>
+        <circle cx="60" cy="60" r="8.5" fill="#3dd7c4"></circle>
+      </svg>
+    </div>
+    <div><b>CAPHY</b><small>AI SECURITY</small></div>
+  </div>
+  <div class="nav" id="nav">
+    <a data-t="dashboard" class="active"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</a>
+    <a data-t="live"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>Live Camera</a>
+    <a data-t="alerts"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>Alerts</a>
+    <a data-t="history"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Alert History</a>
+    <a data-t="logs"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>System Logs</a>
+    <a data-t="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</a>
+  </div>
+  <div class="sidefoot">
+    <div class="st"><span class="dot armed"></span>System ARMED<small>2 of 2 cameras online</small></div>
+    <div class="fr">
+      <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="1.9"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
+      <span>Kem</span> &middot; Homeowner
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="header">
+    <div class="ht"><h1 id="hTitle">Dashboard</h1><div class="sub" id="hSub">Everything, one page &mdash; scroll or use the sidebar</div></div>
+    <div class="hr">
+      <div class="iconbtn"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="badge">3</span></div>
+      <div class="pill p1">● LIVE</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="previewnote">Preview mockup &mdash; sample data. Sidebar links scroll to each section and highlight as you pass. Real feeds/alerts/logs will populate from your server.</div>
+
+    <!-- DASHBOARD -->
+    <section class="section" id="dashboard">
+      <div class="sectitle"><h2>Dashboard</h2><span class="tag">system overview</span></div>
+      <div class="cards">
+        <div class="card a1"><div class="k">Cameras Online</div><div class="v">2</div><div class="foot"><span class="d"></span>All feeds healthy</div></div>
+        <div class="card a2"><div class="k">Detections Today</div><div class="v">14</div><div class="foot"><span class="d"></span>3 in last hour</div></div>
+        <div class="card a3"><div class="k">Active Alerts</div><div class="v">3</div><div class="foot"><span class="d"></span>1 high priority</div></div>
+        <div class="card a4"><div class="k">Uptime</div><div class="v">99.8%</div><div class="foot"><span class="d"></span>7 days armed</div></div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="ph"><h3>Live Feeds</h3><span class="link" data-jump="live">Open live view →</span></div>
+          <div class="feedgrid">
+            <div class="feedwrap">Front Door · 1080p</div>
+            <div class="feedwrap">Backyard · 1080p</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>Recent Alerts</h3><span class="link" data-jump="alerts">See all →</span></div>
+          <div class="alist">
+            <div class="arow t3"><div class="av">!</div><div class="txt"><div class="tt">Person detected — Front Door</div><div class="ss">2.1m · high threat</div></div><div class="tm">2m</div></div>
+            <div class="arow t2"><div class="av">◲</div><div class="txt"><div class="tt">Motion — Backyard</div><div class="ss">medium threat</div></div><div class="tm">18m</div></div>
+            <div class="arow t1"><div class="av">✓</div><div class="txt"><div class="tt">System armed</div><div class="ss">by Kem</div></div><div class="tm">1h</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE -->
+    <section class="section" id="live">
+      <div class="sectitle"><h2>Live Camera</h2><span class="tag">real-time feeds</span></div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="ph"><h3>Front Door</h3><span class="pill p3">● REC</span></div>
+          <div class="feedwrap" style="aspect-ratio:16/9">Main feed · 1080p · 24 fps</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+            <button class="fpill">Snapshot</button><button class="fpill">Night vision</button>
+            <button class="fpill">Record</button><button class="fpill" style="background:var(--orange);border-color:var(--orange);color:#1a1206;font-weight:700">🔔 Siren</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>Cameras</h3></div>
+          <div class="alist">
+            <div class="arow t1"><div class="av">▣</div><div class="txt"><div class="tt">Front Door</div><div class="ss">online · active</div></div></div>
+            <div class="arow"><div class="av">▣</div><div class="txt"><div class="tt">Backyard</div><div class="ss">online</div></div></div>
+          </div>
+          <div style="margin-top:14px">
+            <div class="field"><div class="flabel"><b>Detection</b><span class="val">person · 2.1m</span></div><div class="fdesc">Live YOLO inference</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ALERTS -->
+    <section class="section" id="alerts">
+      <div class="sectitle"><h2>Alerts</h2><span class="tag">active &amp; unread</span></div>
+      <div class="toolbar">
+        <span class="fpill active">All</span><span class="fpill">High</span><span class="fpill">Medium</span><span class="fpill">Low</span>
+      </div>
+      <div class="alist">
+        <div class="arow t3"><div class="av">!</div><div class="txt"><div class="tt">Person detected — Front Door</div><div class="ss">Distance 2.1m · confidence 94%</div></div><div class="tm">2m ago</div></div>
+        <div class="arow t2"><div class="av">◲</div><div class="txt"><div class="tt">Motion — Backyard</div><div class="ss">Movement in zone B</div></div><div class="tm">18m ago</div></div>
+        <div class="arow t2"><div class="av">◲</div><div class="txt"><div class="tt">Motion — Front Door</div><div class="ss">Movement in zone A</div></div><div class="tm">42m ago</div></div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="section" id="history">
+      <div class="sectitle"><h2>Alert History</h2><span class="tag">searchable log</span></div>
+      <div class="toolbar">
+        <input placeholder="Search alerts…" style="flex:1;min-width:220px">
+        <span class="fpill active">All</span><span class="fpill">Person</span><span class="fpill">Motion</span>
+      </div>
+      <div class="panel" style="padding:4px 0">
+        <table>
+          <tr><th>Snapshot</th><th>Event</th><th>Camera</th><th>Threat</th><th>Time</th></tr>
+          <tr><td><span class="thumb"></span></td><td>Person detected</td><td>Front Door</td><td><span class="pill p3">High</span></td><td>Jul 23, 09:14</td></tr>
+          <tr><td><span class="thumb"></span></td><td>Motion</td><td>Backyard</td><td><span class="pill p2">Medium</span></td><td>Jul 23, 08:56</td></tr>
+          <tr><td><span class="thumb"></span></td><td>System armed</td><td>—</td><td><span class="pill p1">Info</span></td><td>Jul 23, 08:00</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section class="section" id="logs">
+      <div class="sectitle"><h2>System Logs</h2><span class="tag">live tail</span></div>
+      <div class="panel logpanel">
+        <div class="log">
+          <div class="logline"><span class="lt">09:14:02</span><span class="lvl i">INFO</span><span>Camera 0 frame processed — person (0.94)</span></div>
+          <div class="logline"><span class="lt">09:14:01</span><span class="lvl w">WARN</span><span>Alert queued — high threat, Front Door</span></div>
+          <div class="logline"><span class="lt">09:13:58</span><span class="lvl i">INFO</span><span>WebRTC peer connected — device Kem-iPhone</span></div>
+          <div class="logline"><span class="lt">09:13:40</span><span class="lvl e">ERROR</span><span>Cloud sync retry (attempt 2) — offline fallback active</span></div>
+          <div class="logline"><span class="lt">09:12:11</span><span class="lvl i">INFO</span><span>Model loaded — yolov8n person detector</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="section" id="settings">
+      <div class="sectitle"><h2>Settings</h2><span class="tag">configuration</span></div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="ph"><h3>Detection</h3></div>
+          <div class="field"><div class="flabel"><b>Confidence threshold</b><span class="val">0.55</span></div><div class="fdesc">Minimum score to trigger a detection</div><input type="range" min="0" max="100" value="55"></div>
+          <div class="field"><div class="flabel"><b>Alert distance</b><span class="val">3.0m</span></div><div class="fdesc">Trigger high-threat within this range</div><input type="range" min="0" max="100" value="30"></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>System</h3></div>
+          <div class="togglerow" style="border-top:none"><div><b>Arm on startup</b><div class="fdesc">Auto-arm when CAPHY launches</div></div><label class="sw"><input type="checkbox" checked><span class="track"></span></label></div>
+          <div class="togglerow"><div><b>Push notifications</b><div class="fdesc">Send FCM alerts to paired devices</div></div><label class="sw"><input type="checkbox" checked><span class="track"></span></label></div>
+          <div class="togglerow"><div><b>Siren on high threat</b><div class="fdesc">Sound siren automatically</div></div><label class="sw"><input type="checkbox"><span class="track"></span></label></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:18px"><button class="btn">Save changes</button></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const navLinks = [...document.querySelectorAll('#nav a')];
+const sections = navLinks.map(a => document.getElementById(a.dataset.t));
+const titles = {dashboard:['Dashboard','System overview'],live:['Live Camera','Real-time feeds'],alerts:['Alerts','Active & unread'],history:['Alert History','Searchable event log'],logs:['System Logs','Live tail'],settings:['Settings','Configuration']};
+
+navLinks.forEach(a => a.addEventListener('click', () => document.getElementById(a.dataset.t).scrollIntoView()));
+document.querySelectorAll('[data-jump]').forEach(el => el.addEventListener('click', () => document.getElementById(el.dataset.jump).scrollIntoView()));
+
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      const id = e.target.id;
+      navLinks.forEach(a => a.classList.toggle('active', a.dataset.t === id));
+      const t = titles[id]||[id,''];
+      document.getElementById('hTitle').textContent = t[0];
+      document.getElementById('hSub').textContent = t[1];
+    }
+  });
+}, {rootMargin:'-40% 0px -55% 0px'});
+sections.forEach(s => io.observe(s));
+</script>
+</body>
+</html>

@@ -18,7 +18,15 @@ caphy.db
 captures/
 captures_compressed/
 cloud_sim/
-models/
+# ignore everything in models/ EXCEPT the trained CAPHY model (teammates need it)
+models/*
+!models/caphy_person_best.pt
+
+# ---- Training dataset (120MB - too big for git; share separately if needed) ----
+training/dataset/
+dist/
+build/
+Output/
 
 # ---- Flutter build junk ----
 caphy_app/build/
@@ -32,3 +40,6 @@ ui_prefs.json
 
 # ---- API keys (never commit) ----
 caphy_keys.json
+
+# ---- Device identity (per-machine, never commit) ----
+device.json

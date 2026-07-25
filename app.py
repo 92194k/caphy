@@ -14,6 +14,7 @@ This PC never listens and never talks - no microphone, no Vosk, no TTS.
 """
 import sys
 import config
+from identity import get_device_identity
 from web.server import (app, start_workers, resolve_cameras,
                         start_auto_arm_scheduler)
 
@@ -26,6 +27,11 @@ def parse_args(argv):
 
 
 if __name__ == "__main__":
+    # Load device identity (generated once, persisted forever).
+    device = get_device_identity()
+    print(f"[CAPHY] Device ID: {device['device_id']}")
+    print(f"[CAPHY] Hostname: {device['hostname']}")
+
     # strip flags so they are never mistaken for a camera index / URL
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     if args:

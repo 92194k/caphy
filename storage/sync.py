@@ -52,15 +52,36 @@ def compress_image(path, quality, out_dir):
 
 
 class SyncManager:
-    def __init__(self, db_path, cloud_dir, compressed_dir, image_quality, uploader=None):
+    def __init__(self, db_path, cloud_dir, compressed_dir, image_quality,
+                uploader=None, uploader_factory=None):
+        """
+        uploader:         a fixed uploader instance used for every alert
+                           (fine when the whole box belongs to one account).
+        uploader_factory: fn(user_uid, device_id) -> uploader instance, called
+                           per-alert. Use this when different alerts in the
+                           same database can belong to different accounts
+                           (e.g. FirebaseUploader, scoped per user/device).
+                           Takes priority over `uploader` when both are set.
+        """
         self.db_path = db_path
         self.compressed_dir = compressed_dir
         self.image_quality = image_quality
         self.uploader = uploader or LocalCloudUploader(cloud_dir)
+        self.uploader_factory = uploader_factory
+        self._uploader_cache = {}
 
     def pending(self, db):
         return [dict(r) for r in db.conn.execute(
             "SELECT * FROM alerts WHERE synced=0 ORDER BY alert_id").fetchall()]
+
+    def _uploader_for(self, alert):
+        """Pick the right uploader for this alert's owner (cached per user+device)."""
+        if not self.uploader_factory:
+            return self.uploader
+        key = (alert.get("user_uid") or "", alert.get("device_id") or "")
+        if key not in self._uploader_cache:
+            self._uploader_cache[key] = self.uploader_factory(*key)
+        return self._uploader_cache[key]
 
     def sync_once(self):
         """Upload every unsynced alert's media (if online). Returns (count, status)."""
@@ -70,6 +91,7 @@ class SyncManager:
         rows = self.pending(db)
         count = 0
         for a in rows:
+            uploader = self._uploader_for(a)
             for key in ("snapshot_path", "video_path"):
                 p = a[key]
                 if not p or not os.path.exists(p):
@@ -77,7 +99,7 @@ class SyncManager:
                 upload_path = p
                 if p.lower().endswith((".jpg", ".jpeg", ".png")):
                     upload_path = compress_image(p, self.image_quality, self.compressed_dir)
-                self.uploader.upload(upload_path)
+                uploader.upload(upload_path)
             db.conn.execute("UPDATE alerts SET synced=1 WHERE alert_id=?", (a["alert_id"],))
             db.conn.commit()
             count += 1

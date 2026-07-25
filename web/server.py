@@ -16,6 +16,7 @@ import os
 import csv
 import json
 import queue
+import socket
 import secrets
 import hashlib
 import threading
@@ -29,6 +30,7 @@ from flask import (Flask, Response, request, redirect, url_for, session,
                    render_template, render_template_string, send_file, abort, jsonify,
                    stream_with_context)
 
+import sys
 import config
 from detection.motion_detector import MotionDetector
 from detection.two_factor import TwoFactorDetector
@@ -36,7 +38,6 @@ from detection.tier_engine import TierEngine
 from detection.night_vision import NightVision
 from storage.database import Database
 from storage.alerts import AlertManager
-from storage.push import PushSender
 from siren import Siren
 
 try:
@@ -44,11 +45,77 @@ try:
 except Exception:
     psutil = None
 
-app = Flask(__name__)
+
+def _resource_dir(*parts):
+    """Resolve a bundled resource folder both when running from source AND
+    when frozen into a PyInstaller .exe. Frozen builds unpack data files to
+    sys._MEIPASS; from source they sit next to the project. This is what lets
+    Flask find web/templates and web/static inside the packaged app."""
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return os.path.join(base, *parts)
+    # from source: this file is web/server.py -> project root is one up
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, *parts)
+
+
+app = Flask(__name__,
+            template_folder=_resource_dir("web", "templates"),
+            static_folder=_resource_dir("web", "static"))
 app.secret_key = "caphy-local-console-secret"
 app.permanent_session_lifetime = timedelta(days=30)   # "remember this device"
 
 TIER_BGR = {1: (80, 200, 120), 2: (60, 160, 240), 3: (60, 60, 230)}
+
+# ==================== persistent log file (caphy.log) ====================
+# The System Logs page shows real totals ("18,742 events today", "last
+# event", "alerts (24h)") - those need to survive a restart and cover the
+# whole day, not just whatever's still in the last-200 in-memory buffer per
+# camera. Every _log() call also appends one line here.
+LOG_FILE_PATH = getattr(config, "LOG_FILE_PATH", "caphy.log")
+_log_file_lock = threading.Lock()
+
+
+def _append_log_file(level, mod, msg):
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\t{level}\t{mod}\t{msg}\n"
+    try:
+        with _log_file_lock:
+            with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
+                f.write(line)
+    except Exception:
+        pass   # a logging failure should never take detection down
+
+
+def _log_file_stats():
+    """(events_today, last_event_hhmmss, alerts_last_24h) from caphy.log.
+    Cheap line scan - fine at thesis/demo scale; never raises."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    cutoff = datetime.now() - timedelta(hours=24)
+    events_today = 0
+    alerts_24h = 0
+    last_event = "-"
+    try:
+        with _log_file_lock:
+            if not os.path.exists(LOG_FILE_PATH):
+                return 0, "-", 0
+            with open(LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    parts = line.rstrip("\n").split("\t", 3)
+                    if len(parts) < 3:
+                        continue
+                    ts, level = parts[0], parts[1]
+                    if ts.startswith(today):
+                        events_today += 1
+                        last_event = ts[11:19]
+                    if level == "ALERT":
+                        try:
+                            if datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") >= cutoff:
+                                alerts_24h += 1
+                        except ValueError:
+                            pass
+    except Exception:
+        return 0, "-", 0
+    return events_today, last_event, alerts_24h
 
 
 # ==================== camera / detection worker ====================
@@ -63,6 +130,7 @@ class Worker(threading.Thread):
         self.paused = False             # camera OFF: release the device, stop detecting
         self.lock = threading.Lock()
         self.jpeg = None
+        self.raw_frame = None    # last raw BGR frame, for the WebRTC track
         self.manual_record = False      # toggled by the phone Live tab
         self._mrec = None
         self._mrec_path = None
@@ -95,6 +163,7 @@ class Worker(threading.Thread):
     def _log(self, level, mod, msg):
         self.logs.appendleft({"t": datetime.now().strftime("%H:%M:%S"), "cam": self.cam_id,
                               "level": level, "mod": mod, "msg": msg})
+        _append_log_file(level, f"{mod}({self.name})", msg)
 
     def update_settings(self, sensitivity, person_conf, t1, t3, night, highest):
         self.motion.min_area = float(sensitivity)
@@ -137,7 +206,6 @@ class Worker(threading.Thread):
                               config.SNAPSHOT_TIERS, config.RECORD_TIERS, config.PRESENCE_GRACE_SEC,
                               self.name,
                               videos_dir=getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR))
-        push = PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC)
         cap = self._open_capture()
         prev = time.time()
         while self.running:
@@ -207,7 +275,12 @@ class Worker(threading.Thread):
                     except Exception as e:
                         self._log("WARN", "eval", f"could not log event ({e})")
 
-            siren_on = armed and result["threat"] and result["tier"] in config.SIREN_TIERS
+            # Siren only after the just-armed grace window - so arming (or
+            # starting the system) while you're standing right in front of the
+            # webcam does NOT instantly blast the siren at Tier 3.
+            siren_on = (armed and result["threat"]
+                        and result["tier"] in config.SIREN_TIERS
+                        and time.time() >= _arm_grace_until)
             _update_siren(self.cam_id, siren_on)
 
             self._annotate(frame, result)
@@ -226,7 +299,17 @@ class Worker(threading.Thread):
                     self.last_record = os.path.basename(self._mrec_path)
                     self._log("INFO", "record", f"saved {os.path.abspath(self._mrec_path)}")
 
-            if armed and time.time() >= _arm_grace_until:
+            # Alert-fatigue policy:
+            #   - DETECT & SAVE all tiers ALWAYS (even disarmed), each with its
+            #     snapshot, so the alert history is complete and Tier 1/2 are
+            #     there to review - they just don't buzz your phone.
+            #   - PUSH a phone notification only for Tier 3 when disarmed; when
+            #     ARMED, push every tier (you're actively guarding, you want to
+            #     know about everything).
+            # The just-armed grace window still suppresses alerts right after
+            # arming (so walking away from the laptop doesn't alert on you).
+            in_arm_grace = armed and time.time() < _arm_grace_until
+            if not in_arm_grace:
                 aid = alerts.handle(frame, result, fps)
                 if aid is not None:
                     p = max(result["persons"], key=lambda x: x["tier"])
@@ -237,14 +320,55 @@ class Worker(threading.Thread):
                         arow = db.conn.execute(
                             "SELECT * FROM alerts WHERE alert_id=?", (aid,)).fetchone()
                         if arow:
-                            _broadcast_alert(_alert_json(arow))
+                            ajson = _alert_json(arow)
+                            _broadcast_alert(ajson)
+                            # Publish to the cloud so the phone can see this
+                            # alert from ANYWHERE (mobile data), not just on
+                            # the laptop's LAN. Best-effort; never blocks
+                            # detection if offline.
+                            try:
+                                owner = _current_device_owner_uid()
+                                if owner:
+                                    from identity import get_device_identity
+                                    from storage import cloud_alerts
+                                    snap_path = arow["snapshot_path"] if "snapshot_path" in arow.keys() else None
+                                    cloud_alerts.publish_alert(
+                                        owner, get_device_identity()["device_id"],
+                                        ajson, snap_path)
+                            except Exception as ce:
+                                self._log("WARN", "alerts", f"cloud publish failed: {ce}")
                     except Exception as e:
                         self._log("WARN", "alerts", f"broadcast failed: {e}")
-                    if result["tier"] >= config.PUSH_MIN_TIER:
+                    # Push gate (alert fatigue): armed -> notify every tier;
+                    # disarmed -> notify Tier 3 only. Either way the alert was
+                    # already saved above, so nothing is lost - Tier 1/2 just
+                    # stay silent in the list until you open the app.
+                    should_push = armed or (result["tier"] >= 3)
+                    if should_push:
                         srow = db.conn.execute("SELECT snapshot_path FROM alerts WHERE alert_id=?", (aid,)).fetchone()
-                        push.send_async(result["tier"], p["distance_m"],
-                                        srow["snapshot_path"] if srow else None, self.name, aid)
-                        self._log("ALERT", "fcm", f"push Tier {result['tier']} queued")
+                        # Scoped push only - NEVER the old shared "caphy_alerts"
+                        # topic (that sent every laptop's alerts to every
+                        # subscribed phone, account boundaries or not). This
+                        # laptop may not have an owner yet (nobody signed in /
+                        # paired), which is fine: no owner means no phone could
+                        # have legitimately subscribed to its topic either, so
+                        # skipping the push here is the correct no-op, not a bug.
+                        try:
+                            from identity import get_device_identity
+                            owner_uid = _current_device_owner_uid()
+                            if owner_uid:
+                                from storage.firebase_push import get_push_sender_for_alert
+                                sender = get_push_sender_for_alert(owner_uid, get_device_identity()["device_id"])
+                                if sender:
+                                    sender.send_alert(
+                                        title=f"CAPHY Alert - Tier {result['tier']}",
+                                        body=f"{self.name}: person detected ({p['distance_m']}m)",
+                                        data={"alert_id": str(aid), "camera": self.name},
+                                        tier=result["tier"],
+                                    )
+                                    self._log("ALERT", "fcm", f"push Tier {result['tier']} sent (owner-scoped)")
+                        except Exception as e:
+                            self._log("WARN", "fcm", f"scoped push failed: {e}")
 
             p0 = result["persons"][0] if result["persons"] else None
             self._store(frame, {"online": True, "motion": result["motion"],
@@ -308,6 +432,12 @@ class Worker(threading.Thread):
         if ok:
             with self.lock:
                 self.jpeg = buf.tobytes()
+                # Raw BGR frame, kept alongside the JPEG so the WebRTC track
+                # (web/webrtc_stream.py) can feed aiortc directly instead of
+                # decoding JPEG back to raw every frame - same annotated
+                # frame MJPEG and WebRTC viewers both end up seeing, just
+                # two different encodings of one camera read.
+                self.raw_frame = frame
                 self.stats = stats
 
     def _store_placeholder(self, text="Camera offline"):
@@ -318,6 +448,7 @@ class Worker(threading.Thread):
         if ok:
             with self.lock:
                 self.jpeg = buf.tobytes()
+                self.raw_frame = img
                 self.stats = {**self.stats, "online": False, "motion": False,
                               "person": False, "tier": 0,
                               "camera_on": not self.paused}
@@ -325,6 +456,12 @@ class Worker(threading.Thread):
     def get_jpeg(self):
         with self.lock:
             return self.jpeg
+
+    def get_frame(self):
+        """Latest raw BGR frame (numpy array), or None before the first
+        camera read. Used by the WebRTC track - see web/webrtc_stream.py."""
+        with self.lock:
+            return None if self.raw_frame is None else self.raw_frame.copy()
 
     def get_stats(self):
         with self.lock:
@@ -366,6 +503,47 @@ def _broadcast_alert(payload):
             q.put_nowait(payload)
         except Exception:
             pass
+
+
+_owner_uid_cache = {"uid": None, "checked_at": 0.0}
+_OWNER_UID_CACHE_TTL_SEC = 30
+
+
+def _current_device_owner_uid():
+    """
+    Who does THIS laptop currently belong to, per the Firestore device
+    registry (devices/{device_id}.owner_uid) - the same field
+    confirm_pairing() and register_device(owner_uid=...) write.
+
+    Used by the detection loop (a background thread with no Flask session)
+    to decide whether an alert is allowed to push at all: no owner means
+    nobody has ever signed in or paired this install, so there is no
+    legitimate phone subscription to send to - the correct behavior is to
+    stay silent, not to fall back to some other topic.
+
+    Cached briefly (30s) so a burst of detections doesn't turn into a
+    Firestore read per frame; owner_uid changes at most once in the
+    lifetime of a normal session (pairing / first login), so a short TTL
+    is plenty responsive without adding read cost.
+    """
+    now = time.time()
+    if now - _owner_uid_cache["checked_at"] < _OWNER_UID_CACHE_TTL_SEC:
+        return _owner_uid_cache["uid"]
+
+    uid = None
+    try:
+        from identity import get_device_identity
+        from storage import device_registry
+        device_id = get_device_identity()["device_id"]
+        device = device_registry.get_device(device_id)
+        if device:
+            uid = device.get("owner_uid")
+    except Exception:
+        uid = None
+
+    _owner_uid_cache["uid"] = uid
+    _owner_uid_cache["checked_at"] = now
+    return uid
 
 
 # ---- lightweight UI preferences (camera names, etc.) persisted to a JSON file ----
@@ -423,8 +601,117 @@ def scan_cameras(max_index=6):
     return found
 
 
+def camera_label(source):
+    """Friendly name for a camera source. Index 0 is (by convention on
+    laptops) the built-in webcam; higher indices are USB/external; strings
+    are network/IP camera URLs."""
+    if isinstance(source, str):
+        return "Network Camera"
+    if source == 0:
+        return "Built-in (Laptop) Camera"
+    return f"USB / External Camera {source}"
+
+
+def available_cameras():
+    """
+    Every camera the system can currently offer to choose from = the ones
+    ALREADY in use by a running worker (a busy device can't be re-probed, so
+    we must include them explicitly) PLUS any free device indices a fresh
+    scan can open right now. Returns a list of
+    {source, label, active} dicts, active=True if a worker is using it.
+    """
+    active_sources = [w.source for w in workers]
+    out = []
+    seen = set()
+    for s in active_sources:
+        out.append({"source": s, "label": camera_label(s), "active": True})
+        seen.add(s)
+    for s in scan_cameras():
+        if s not in seen:
+            out.append({"source": s, "label": camera_label(s), "active": False})
+            seen.add(s)
+    # network cameras from config that may not be reachable to a probe
+    for s in getattr(config, "EXTRA_CAMERAS", []):
+        if isinstance(s, str) and s not in seen:
+            out.append({"source": s, "label": camera_label(s), "active": False})
+            seen.add(s)
+    return out
+
+
+# Client-side camera picker (kept as a plain string so its JS braces don't
+# collide with the f-string that builds the Cameras settings section).
+_CAMERA_PICKER_JS = """
+<script>
+let camAvail = [], camSel = new Set(), camMax = 2;
+async function loadCameras(){
+  const st = document.getElementById('camPickStatus');
+  if(!st) return;
+  st.textContent = 'Detecting cameras\\u2026';
+  document.getElementById('camPickList').innerHTML = '';
+  document.getElementById('camApplyBtn').disabled = true;
+  try{
+    const r = await fetch('/api/cameras/available');
+    const d = await r.json();
+    camAvail = d.cameras || [];
+    camMax = d.max || 2;
+    const mx = document.getElementById('camMax'); if(mx) mx.textContent = camMax;
+    camSel = new Set(camAvail.filter(c => c.active).map(c => String(c.source)));
+    renderCameras();
+    st.textContent = camAvail.length ? '' : 'No cameras detected. Plug one in and press Rescan.';
+  }catch(e){ st.textContent = 'Could not detect cameras.'; }
+}
+function renderCameras(){
+  const list = document.getElementById('camPickList');
+  list.innerHTML = '';
+  camAvail.forEach(function(c){
+    const id = String(c.source);
+    const sel = camSel.has(id);
+    const row = document.createElement('label');
+    row.className = 'campick' + (sel ? ' on' : '');
+    row.innerHTML = '<input type="checkbox" ' + (sel ? 'checked' : '') +
+      '><span class="cn">' + c.label + '</span><span class="ci">index ' + id + '</span>' +
+      (c.active ? '<span class="cactive">in use</span>' : '');
+    const cb = row.querySelector('input');
+    cb.onchange = function(){
+      if(cb.checked){
+        if(camSel.size >= camMax){ cb.checked = false; return; }
+        camSel.add(id);
+      } else { camSel.delete(id); }
+      row.classList.toggle('on', cb.checked);
+      document.getElementById('camApplyBtn').disabled = camSel.size === 0;
+    };
+    list.appendChild(row);
+  });
+  document.getElementById('camApplyBtn').disabled = camSel.size === 0;
+}
+async function applyCameras(){
+  const btn = document.getElementById('camApplyBtn'), msg = document.getElementById('camApplyMsg');
+  const sources = [...camSel].map(s => /^\\d+$/.test(s) ? parseInt(s) : s);
+  btn.disabled = true; msg.style.color = 'var(--muted)'; msg.textContent = 'Switching cameras\\u2026';
+  try{
+    const r = await fetch('/api/cameras/select', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({sources: sources})});
+    const d = await r.json();
+    if(d.ok){ msg.style.color = 'var(--green)'; msg.textContent = 'Cameras updated. Reloading\\u2026';
+      setTimeout(function(){ location.reload(); }, 1600); }
+    else { msg.style.color = 'var(--red)'; msg.textContent = d.error || 'Failed.'; btn.disabled = false; }
+  }catch(e){ msg.style.color = 'var(--red)'; msg.textContent = 'Could not reach server.'; btn.disabled = false; }
+}
+if(document.getElementById('camPickList')) loadCameras();
+</script>
+"""
+
+
 def resolve_cameras():
-    """Auto-scan connected cameras (+ any phone URLs) or use the manual list."""
+    """Which cameras to start. If the user has picked a specific set in
+    Settings → Cameras (saved as the 'camera_selection' pref), honor that.
+    Otherwise auto-scan connected cameras (+ any network URLs) or fall back
+    to the manual config list."""
+    saved = load_prefs().get("camera_selection")
+    if isinstance(saved, list) and saved:
+        print(f"[CAPHY] Using saved camera selection: {saved}")
+        return saved
+
     if getattr(config, "AUTO_SCAN_CAMERAS", False):
         cams = scan_cameras()
         cams += list(getattr(config, "EXTRA_CAMERAS", []))
@@ -436,7 +723,39 @@ def resolve_cameras():
     return config.CAMERAS
 
 
+def restart_workers(sources):
+    """Stop the running camera workers and start fresh ones on `sources`.
+    Used when the user changes which cameras to use in Settings, so the
+    change takes effect without restarting the whole app. Releases the old
+    devices first (so a newly-selected camera that was busy becomes
+    available) then rebuilds."""
+    global workers
+    old = list(workers)
+    for w in old:
+        w.running = False
+    for w in old:
+        try:
+            w.join(timeout=3)
+        except Exception:
+            pass
+    workers.clear()
+    start_workers(sources)
+    print(f"[CAPHY] Cameras restarted on {sources}")
+
+
 def start_workers(sources):
+    # Start DISARMED so launching CAPHY never instantly fires the siren while
+    # you're sitting right in front of the webcam. The user arms it when ready
+    # (dashboard, phone, or voice); arming then applies the grace window too.
+    _set_armed(False)
+
+    # Bring the cloud services (registration, heartbeat, remote commands,
+    # WebRTC live streaming) up FIRST, before the slow camera/model init
+    # below. Camera startup on Windows can be slow or noisy (DSHOW warnings)
+    # and shouldn't hold back the laptop becoming reachable from the phone.
+    # WebRTC's CallListener reads the `workers` list lazily (via a lambda),
+    # so it's fine that they aren't created yet at this point.
+    start_cloud_services()
     # split CPU cores across the cameras so two YOLO models don't oversubscribe
     try:
         import torch, os as _os
@@ -470,6 +789,203 @@ def start_workers(sources):
     for w in workers:
         w.start()
     print(f"[CAPHY] {len(workers)} camera(s) started.")
+    # Cloud services were already started at the top of this function (before
+    # camera init); start_cloud_services() is idempotent so we don't call it
+    # again here.
+
+
+_cloud_services_started = False
+
+
+def start_cloud_services():
+    """Idempotently start the background threads that connect this laptop to
+    the CAPHY cloud (Firestore): device registration + heartbeat, the remote
+    command / QR-pairing listener, and the WebRTC call listener. Safe to
+    call more than once (guarded by _cloud_services_started); safe to call
+    with no internet (each thread try/excepts and simply keeps retrying)."""
+    global _cloud_services_started
+    if _cloud_services_started:
+        return
+    _cloud_services_started = True
+
+    print("[CAPHY] Starting cloud services (registration, heartbeat, remote "
+          "commands, WebRTC live streaming)...")
+    import threading as _threading
+    _threading.Thread(target=_run_cloud_registration_and_heartbeat,
+                      daemon=True).start()
+    _threading.Thread(target=_run_remote_command_listener,
+                      daemon=True).start()
+    try:
+        from identity import get_device_identity
+        from web.webrtc_stream import CallListener, AIORTC_AVAILABLE, AIORTC_IMPORT_ERROR
+        if not AIORTC_AVAILABLE:
+            print("[CAPHY] WARNING: WebRTC live streaming is OFF - the phone "
+                  "won't get live video off your Wi-Fi.")
+            print(f"[CAPHY]   Reason: {AIORTC_IMPORT_ERROR}")
+            print("[CAPHY]   This usually means aiortc/av didn't install into "
+                  "THIS Python. In the SAME venv that runs CAPHY, run:")
+            print("[CAPHY]       python -c \"import aiortc, av; print('ok')\"")
+            print("[CAPHY]   If that errors, run:  pip install aiortc av")
+        else:
+            print("[CAPHY] WebRTC live streaming ready (aiortc + av OK).")
+        device = get_device_identity()
+        CallListener(device["device_id"], lambda: workers).start()
+    except Exception as e:
+        print(f"[CAPHY] WebRTC live streaming unavailable: {e}")
+
+
+def _run_cloud_registration_and_heartbeat():
+    """Registers this desktop in the Firestore device registry and then
+    heartbeats every ~20s with its current LAN IP so a paired phone can (a)
+    find the fast local path when on the same WiFi and (b) tell "my laptop
+    is online right now" from anywhere over the internet. Additive: if
+    Firestore is unreachable this silently no-ops and CAPHY keeps running
+    as a pure LAN system."""
+    from identity import get_device_identity
+    device = get_device_identity()
+    device_id = device["device_id"]
+
+    try:
+        from storage import device_registry
+        device_registry.register_device(device_id, device["device_secret"],
+                                        device["hostname"])
+        print(f"[CAPHY] Registered in cloud device registry as {device_id}")
+    except Exception as e:
+        print(f"[CAPHY] Cloud registration skipped (offline?): {e}")
+
+    try:
+        from web.webrtc_stream import AIORTC_AVAILABLE as _webrtc_ok
+    except Exception:
+        _webrtc_ok = False
+
+    first_ok = True
+    while True:
+        try:
+            from storage import device_registry
+            # Publish a small live-state snapshot alongside the heartbeat so
+            # a phone off the LAN sees the REAL armed/camera/emergency status
+            # over the internet, not a guess (see device_registry.heartbeat
+            # and the phone's _stateFromCloud).
+            try:
+                snapshot = {
+                    "armed": _is_armed(),
+                    "camera_on": any(not w.paused for w in workers) if workers else False,
+                    "emergency": bool(_emergency_on),
+                    "siren": bool(_siren_manual),
+                    "webrtc_available": bool(_webrtc_ok),
+                    # Camera list so the phone can show the camera selector +
+                    # per-camera online/on state over the internet (mobile
+                    # data), not only on the LAN.
+                    "cameras": [
+                        {"cam": w.cam_id, "name": w.name,
+                         "on": not w.paused,
+                         "online": bool(w.get_stats().get("online", False))}
+                        for w in workers
+                    ],
+                }
+            except Exception:
+                snapshot = None
+            # Publish current TURN creds (cached ~30 min) so the phone can
+            # gather relay candidates from the start - the fix for live
+            # video not connecting on mobile data.
+            turn_servers = None
+            try:
+                from web.webrtc_stream import get_ice_servers_cached
+                turn_servers, _turn_ok = get_ice_servers_cached()
+            except Exception:
+                turn_servers = None
+            device_registry.heartbeat(device_id, lan_ip=_local_ip(),
+                                      lan_port=5000, state=snapshot,
+                                      turn_servers=turn_servers)
+            if first_ok:
+                print("[CAPHY] Cloud heartbeat OK - this laptop is now "
+                      "reachable from the phone over the internet.")
+                first_ok = False
+        except Exception as e:
+            first_ok = True   # so recovery is logged too
+            print(f"[CAPHY] Heartbeat skipped (offline?): {e}")
+        time.sleep(20)
+
+
+def _run_remote_command_listener():
+    """Polls Firestore for commands enqueued by a phone that can't reach the
+    laptop's LAN directly (different network / traveling), and for pending
+    QR-pairing confirmation requests - this is what lets both remote control
+    AND pairing itself work off the laptop's WiFi. Local calls never come
+    through here; they hit Flask directly and are much faster."""
+    from identity import get_device_identity
+    device_id = get_device_identity()["device_id"]
+    time.sleep(20)   # let registration land first
+    while True:
+        try:
+            from storage import device_registry
+            for cmd in device_registry.pending_commands(device_id):
+                _execute_remote_command(device_id, cmd)
+            for req in device_registry.pending_pairing_requests_for_device(device_id):
+                _execute_confirm_pairing(req)
+        except Exception as e:
+            print(f"[CAPHY] Remote command poll skipped (offline?): {e}")
+        time.sleep(4)
+
+
+def _execute_remote_command(device_id, cmd):
+    """Runs one queued remote command against THIS laptop's own local Flask
+    app, so remote and local control share one source of truth."""
+    from storage import device_registry
+    import requests as _requests
+
+    cmd_id = cmd["id"]
+    cmd_type = cmd.get("type")
+    try:
+        route_map = {
+            "arm": ("POST", "/api/arm", {"on": True}),
+            "disarm": ("POST", "/api/arm", {"on": False}),
+            "camera_on": ("POST", "/api/camera/power", {"on": True}),
+            "camera_off": ("POST", "/api/camera/power", {"on": False}),
+            "emergency_on": ("POST", "/api/emergency", {"on": True}),
+            "emergency_off": ("POST", "/api/emergency", {"on": False}),
+            "snapshot": ("POST", "/api/snapshot/0", {}),
+            "siren": ("POST", "/api/siren", {}),
+        }
+        if cmd_type not in route_map:
+            device_registry.complete_command(device_id, cmd_id,
+                                             {"error": "unknown command"}, ok=False)
+            return
+        method, path, body = route_map[cmd_type]
+        r = _requests.request(method, f"http://127.0.0.1:5000{path}",
+                              json=body, timeout=10,
+                              headers={"X-CAPHY-Internal": _INTERNAL_TOKEN})
+        device_registry.complete_command(
+            device_id, cmd_id,
+            {"status_code": r.status_code, "body": r.text[:500]},
+            ok=r.status_code == 200)
+    except Exception as e:
+        try:
+            device_registry.complete_command(device_id, cmd_id,
+                                             {"error": str(e)}, ok=False)
+        except Exception:
+            pass
+
+
+def _execute_confirm_pairing(req):
+    """Confirms QR pairing WITHOUT the phone reaching this laptop's LAN - the
+    phone wrote a request to Firestore, this laptop picked up only the ones
+    meant for it, and calls the same confirm_pairing() the LAN-only route
+    used."""
+    from storage import device_registry
+    req_id = req["id"]
+    code = req.get("code", "")
+    phone_uid = req.get("requested_by", "")
+    if not code or not phone_uid:
+        device_registry.complete_pairing_request(
+            req_id, {"error": "Missing code or requester"}, ok=False)
+        return
+    try:
+        result = device_registry.confirm_pairing(code, phone_uid)
+        device_registry.complete_pairing_request(
+            req_id, result, ok=result.get("success", False))
+    except Exception as e:
+        device_registry.complete_pairing_request(req_id, {"error": str(e)}, ok=False)
 
 
 def all_logs(limit=200):
@@ -481,7 +997,27 @@ def all_logs(limit=200):
 
 
 # ==================== auth (web session + mobile token) ====================
-API_TOKENS = set()   # bearer tokens issued to the mobile app
+# Bearer tokens issued to the mobile app. Maps token -> user_uid, so a phone
+# request carrying "Authorization: Bearer <token>" resolves to the SAME
+# account identity the web session uses (session["user_uid"]). Before this,
+# API_TOKENS was just a set - it proved *a* phone was logged in, but not
+# *whose* phone, which meant every phone effectively shared one identity.
+#
+# Since B3's rework, the phone authenticates DIRECTLY against Firebase
+# (see caphy_app/lib/api.dart login()/signup()/loginWithGoogleToken()) and
+# sends its raw Firebase ID token as the Bearer header - it is never
+# issued a laptop-specific token by /api/login anymore (that route still
+# exists for the web session, which stays cookie-based). So the bearer
+# path here MUST verify a real Firebase ID token, not just look it up in
+# a table this laptop invented - a laptop-local token would only ever be
+# known to whichever phone called /api/login, which nothing calls now.
+#
+# API_TOKENS is kept as a short-lived verify-result CACHE ONLY (token ->
+# (uid, verified_at)) so a phone hammering the live-view endpoint every
+# second doesn't re-verify the JWT signature on every single request -
+# it is never itself a source of truth for identity.
+API_TOKENS = {}   # token -> (user_uid, verified_at)
+_TOKEN_CACHE_TTL = 300  # re-verify at most every 5 min
 
 
 def _token_from_request():
@@ -491,26 +1027,93 @@ def _token_from_request():
     return request.args.get("token", "")   # allow ?token= for image/stream URLs
 
 
+def _verify_bearer_uid(token):
+    """Resolve a phone's bearer token to a Firebase UID, verifying the
+    token's signature/expiry via the Admin SDK. This is the ONLY place a
+    phone's claimed identity is trusted - everything downstream (pairing,
+    devices, alerts, FCM registration) depends on this being a real,
+    cryptographically-verified Firebase ID token, not a client-supplied
+    value of any kind."""
+    if not token:
+        return None
+
+    cached = API_TOKENS.get(token)
+    if cached and (time.time() - cached[1]) < _TOKEN_CACHE_TTL:
+        return cached[0]
+
+    try:
+        from firebase_admin import auth as fb_auth
+        from firebase_auth import init_firebase
+        init_firebase()
+        decoded = fb_auth.verify_id_token(token)
+        uid = decoded.get("uid")
+        if uid:
+            API_TOKENS[token] = (uid, time.time())
+        return uid
+    except Exception:
+        API_TOKENS.pop(token, None)
+        return None
+
+
 def _authed():
-    return bool(session.get("auth")) or _token_from_request() in API_TOKENS
+    return bool(session.get("user_uid")) or _verify_bearer_uid(_token_from_request()) is not None
+
+
+def _current_uid():
+    """
+    Resolve the logged-in account's Firebase UID from EITHER a web session
+    cookie OR a phone's bearer token - lets a single route (like
+    /api/fcm/register) work for both without knowing which one is calling.
+    Returns None if neither is present/valid.
+    """
+    uid = session.get("user_uid")
+    if uid:
+        return uid
+    return _verify_bearer_uid(_token_from_request())
 
 
 # paths the mobile app reaches with a token instead of a web session
 # ("/video" covers both /video_feed (live stream) and /video/<file> (recordings))
 _TOKEN_PATHS = ("/api/", "/video", "/snapshot")
 
+# Process-local secret so the laptop's OWN remote-command executor (which
+# runs in this same Flask process and calls the laptop's own /api routes
+# over loopback to execute a command a phone enqueued in Firestore) can
+# authenticate to itself WITHOUT a user session or bearer token. It's
+# random per launch, never written to disk, and only ever accepted on a
+# loopback (127.0.0.1) connection - so it can't be used to reach the API
+# from anywhere but this machine. The real authorization already happened
+# at the Firestore layer: the phone proved (via the rules + confirm_pairing
+# ownership check) that it owns this device before its command was ever
+# picked up.
+_INTERNAL_TOKEN = secrets.token_urlsafe(32)
+
 
 @app.before_request
 def guard():
+    # Whitelist public endpoints
     if request.endpoint in ("login", "static"):
         return
-    if request.path == "/api/login":
-        return                         # login endpoint issues the token
+
+    # The laptop's own remote-command executor calling itself over loopback.
+    if (request.headers.get("X-CAPHY-Internal") == _INTERNAL_TOKEN
+            and request.remote_addr in ("127.0.0.1", "::1")):
+        return
+
+    # Auth endpoints don't require authentication
+    if request.path in ("/api/auth/signup", "/api/auth/google", "/logout",
+                        "/auth/google/start", "/auth/google/callback",
+                        "/api/auth/google/status"):
+        return
+
+    # Token-based API access (for mobile app)
     if request.path.startswith(_TOKEN_PATHS):
         if _authed():
             return
         return jsonify({"error": "unauthorized"}), 401
-    if not session.get("auth"):
+
+    # Web dashboard - require session
+    if not session.get("user_uid"):
         return redirect(url_for("login"))
 
 
@@ -523,9 +1126,15 @@ def page(title, href, body, subtitle=""):
     st = workers[0].get_stats() if workers else {"armed": True, "online": False}
     online = sum(1 for w in workers if w.get_stats().get("online"))
     cam = f"{online} of {len(workers)} cameras online" if workers else "no cameras"
+    try:
+        db = Database(config.DB_PATH)
+        unread = db.count_alerts(include_dismissed=False)
+        db.close()
+    except Exception:
+        unread = 0
     return render_template("base.html", title=title, page=href, nav=NAV, body=body,
-                           subtitle=subtitle, ncam=online, user=session.get("user", "admin"),
-                           armed=st.get("armed", True), cam=cam)
+                           subtitle=subtitle, ncam=online, user=session.get("email", "admin"),
+                           armed=st.get("armed", True), cam=cam, nalerts=unread)
 
 
 def tier_pill(t):
@@ -549,28 +1158,566 @@ def ago(ts):
 
 
 # ==================== routes ====================
+#
+# NOTE - unified-account rework:
+# Everything below used to validate against a local SQLite password hash
+# and invent its own "firebase_uid" strings (f"local_{token}",
+# f"google_{sub}") that were never real Firebase UIDs. That was the actual
+# root cause of "an account made on desktop can't log into the phone" -
+# the phone's FirebaseAuth.instance had never heard of that user, because
+# it was never created in Firebase Auth at all, only in this laptop's own
+# caphy.db.
+#
+# Now the web dashboard is a Firebase Auth CLIENT too, exactly like the
+# phone: it uses the Firebase Admin SDK (via firebase_auth.py) to create/
+# verify users against the SAME Firebase project the phone signs into.
+# There is exactly one identity provider - Firebase Auth - for both
+# platforms, which is what "centralized backend" in the account/auth
+# architecture requires. The local `users` table still exists, but now
+# only mirrors Firebase users (display name/email caching) - it is never
+# the source of truth for "does this password match this account."
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    err = ""
-    if request.method == "POST":
-        u = request.form.get("username", "")
-        p = request.form.get("password", "")
+    """Login page - Firebase Auth (email+password + Google Sign-In)."""
+    if request.method == "GET":
+        google_client_id = getattr(config, "GOOGLE_CLIENT_ID", "")
+        return render_template("login_dual_auth.html", google_client_id=google_client_id)
+
+    # POST: email+password login. The web dashboard has no Firebase JS SDK
+    # wired in (it's server-rendered), so it verifies credentials via the
+    # Firebase Auth REST API's signInWithPassword endpoint using the same
+    # Web API key the Android app's google-services.json carries - this
+    # calls the exact same Firebase Auth backend the phone's client SDK
+    # calls, so "same email+password works on both" is structurally true,
+    # not just intended.
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    remember = request.form.get("remember") == "on"
+
+    if not email or not password:
+        google_client_id = getattr(config, "GOOGLE_CLIENT_ID", "")
+        return render_template("login_dual_auth.html",
+                             google_client_id=google_client_id,
+                             error="Email and password required"), 400
+
+    result = _firebase_rest_sign_in(email, password)
+    if result.get("error"):
+        google_client_id = getattr(config, "GOOGLE_CLIENT_ID", "")
+        return render_template("login_dual_auth.html",
+                             google_client_id=google_client_id,
+                             error=result["error"]), 401
+
+    session["user_uid"] = result["uid"]
+    session["email"] = email
+    session.permanent = remember
+    if session.permanent:
+        app.permanent_session_lifetime = timedelta(days=30)
+    _mirror_local_user(result["uid"], email)
+    return redirect(url_for("dashboard"))
+
+
+def _firebase_web_api_key():
+    """The Web API key for this Firebase project - lives in
+    android/app/google-services.json (client[0].api_key[0].current_key),
+    same project the phone uses. Cached in config for convenience; falls
+    back to reading google-services.json directly if not set there."""
+    key = getattr(config, "FIREBASE_WEB_API_KEY", "")
+    if key:
+        return key
+    try:
+        gs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                                "caphy_app", "android", "app", "google-services.json")
+        with open(gs_path, "r", encoding="utf-8") as f:
+            gs = json.load(f)
+        return gs["client"][0]["api_key"][0]["current_key"]
+    except Exception:
+        return ""
+
+
+def _firebase_rest_sign_in(email, password):
+    """Signs in against Firebase Auth's REST API (signInWithPassword) -
+    the same backend api.dart's signInWithEmailAndPassword() call hits,
+    just reached over plain HTTPS instead of the Dart SDK since this is a
+    server-rendered page, not a Firebase client app. Returns {'uid':...}
+    on success or {'error': 'human message'} on failure."""
+    import urllib.request
+    import urllib.error
+
+    api_key = _firebase_web_api_key()
+    if not api_key:
+        return {"error": "Server misconfigured (no Firebase Web API key)"}
+
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
+    body = json.dumps({"email": email, "password": password, "returnSecureToken": True}).encode()
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode())
+        return {"uid": payload["localId"], "id_token": payload.get("idToken")}
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode())
+            msg = err.get("error", {}).get("message", "")
+        except Exception:
+            msg = ""
+        friendly = {
+            "EMAIL_NOT_FOUND": "No account found for that email.",
+            "INVALID_PASSWORD": "Incorrect email or password.",
+            "INVALID_LOGIN_CREDENTIALS": "Incorrect email or password.",
+            "USER_DISABLED": "This account has been disabled.",
+        }.get(msg, "Invalid email or password")
+        return {"error": friendly}
+    except Exception as e:
+        return {"error": f"Could not reach Firebase: {e}"}
+
+
+def _mirror_local_user(uid, email):
+    """Keeps a lightweight local mirror row for display purposes only
+    (e.g. the Settings > Users tab). Firebase Auth remains the sole
+    source of truth for whether credentials are valid - this table is
+    never consulted for that anymore."""
+    try:
         db = Database(config.DB_PATH)
-        row = db.conn.execute("SELECT password_hash FROM users WHERE username=?", (u,)).fetchone()
+        existing = db.conn.execute("SELECT 1 FROM users WHERE firebase_uid=?", (uid,)).fetchone()
+        if existing:
+            db.conn.execute("UPDATE users SET email=? WHERE firebase_uid=?", (email, uid))
+        else:
+            db.conn.execute(
+                "INSERT INTO users (firebase_uid, email, created_at) VALUES (?, ?, ?)",
+                (uid, email, datetime.now().isoformat(timespec="seconds")))
+        db.conn.commit()
         db.close()
-        if row and row["password_hash"] == hashlib.sha256(p.encode()).hexdigest():
-            session["auth"] = True
-            session["user"] = u
-            session.permanent = request.form.get("remember") == "on"  # keep 30 days if checked
-            return redirect(url_for("dashboard"))
-        err = "Invalid username or password."
-    return render_template("login.html", err=err)
+    except Exception:
+        pass
+
+
+@app.route("/api/auth/signup", methods=["POST"])
+def api_signup():
+    """
+    Create a new account (email+password) - via the Firebase Admin SDK,
+    the exact same identity store the phone's createUserWithEmailAndPassword()
+    writes into. This is what makes "create on desktop, log in on phone"
+    actually work: the account did not exist anywhere until this call,
+    and after this call it exists in Firebase Auth, reachable from either
+    platform.
+    """
+    data = request.get_json() or {}
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+
+    if not email or not password:
+        return jsonify({"success": False, "error": "Email and password required"}), 400
+    if len(password) < 6:
+        return jsonify({"success": False, "error": "Password must be at least 6 characters"}), 400
+
+    try:
+        from firebase_auth import FirebaseAuthManager
+        mgr = FirebaseAuthManager()
+        uid = mgr.create_user_email_password(email, password)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Signup failed: {e}"}), 500
+
+    session["user_uid"] = uid
+    session["email"] = email
+    session.permanent = True
+    _mirror_local_user(uid, email)
+
+    return jsonify({"success": True, "uid": uid})
+
+
+@app.route("/api/auth/google", methods=["POST"])
+def api_google_auth():
+    """
+    Handle Google Sign-In from the web dashboard. Verifies the Google ID
+    token, then finds-or-creates the matching Firebase Auth user via the
+    Admin SDK using Firebase's own account-linking behavior: Firebase
+    treats "sign in with Google for email X" as the SAME account as
+    "sign in with email+password for email X" whenever the emails match,
+    exactly like the phone's loginWithGoogleToken() does via
+    signInWithCredential(). One email -> one Firebase account, regardless
+    of which method reaches it, on either platform.
+    """
+    data = request.get_json() or {}
+    id_token = data.get("id_token", "")
+
+    if not id_token:
+        return jsonify({"success": False, "error": "No token provided"}), 400
+
+    try:
+        import urllib.request
+        import json as _json
+
+        verify_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
+        with urllib.request.urlopen(verify_url, timeout=8) as resp:
+            payload = _json.loads(resp.read().decode())
+
+        expected_aud = getattr(config, "GOOGLE_CLIENT_ID", "")
+        if expected_aud and payload.get("aud") != expected_aud:
+            return jsonify({"success": False, "error": "Token was not issued for this app"}), 401
+
+        email = payload.get("email", "")
+        email_verified = payload.get("email_verified") == "true"
+        if not email:
+            return jsonify({"success": False, "error": "Invalid Google token payload"}), 401
+
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Token verification failed: {e}"}), 401
+
+    # Find-or-create the Firebase Auth user for this email, and attach a
+    # Google provider link to it via the Admin SDK - this is the server-
+    # side equivalent of what signInWithCredential() does on the phone.
+    try:
+        from firebase_admin import auth as fb_auth
+        from firebase_auth import init_firebase
+        init_firebase()
+
+        try:
+            user = fb_auth.get_user_by_email(email)
+            needs_password = not any(p.provider_id == "password" for p in user.provider_data)
+            uid = user.uid
+        except fb_auth.UserNotFoundError:
+            user = fb_auth.create_user(email=email, email_verified=email_verified)
+            uid = user.uid
+            needs_password = True
+
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Google sign-in failed: {e}"}), 500
+
+    session["user_uid"] = uid
+    session["email"] = email
+    session.permanent = True
+    _mirror_local_user(uid, email)
+
+    next_url = url_for("set_password") if needs_password else url_for("dashboard")
+    return jsonify({"success": True, "uid": uid, "email": email, "next": next_url})
+
+
+# In-memory pending-login state for the desktop's browser-based Google
+# Sign-In flow. code_verifier -> {"done": bool, "uid": str|None,
+# "email": str|None, "error": str|None}. This is intentionally NOT the
+# Flask session - the browser tab that completes the OAuth flow is a
+# DIFFERENT process/cookie jar than the pywebview window, so there is no
+# shared session between them. The pywebview window instead polls
+# /api/auth/google/status?state=... to notice when the browser tab finished.
+_PENDING_GOOGLE_LOGINS = {}
+_GOOGLE_LOGIN_TTL_SEC = 600
+
+
+def _prune_pending_google_logins():
+    now = time.time()
+    dead = [s for s, v in _PENDING_GOOGLE_LOGINS.items()
+            if now - v.get("created", 0) > _GOOGLE_LOGIN_TTL_SEC]
+    for s in dead:
+        _PENDING_GOOGLE_LOGINS.pop(s, None)
+
+
+def _google_redirect_uri() -> str:
+    """
+    Hardcoded rather than url_for(_external=True) on purpose: Flask derives
+    the external host from the incoming request's Host header, and inside
+    pywebview / behind different launch conditions that can silently differ
+    (127.0.0.1 vs localhost, trailing slash, etc.) - any mismatch between
+    what THIS sends to Google and what's registered in Cloud Console as an
+    Authorized redirect URI produces redirect_uri_mismatch even when the
+    Console entry "looks right" at a glance. One literal string, used by
+    both the auth start and the token exchange, removes that whole class
+    of bug. Must match EXACTLY (scheme, host, port, path, no trailing
+    slash) an entry in Google Cloud Console → Credentials → this OAuth
+    Web client → Authorized redirect URIs.
+    """
+    return "http://127.0.0.1:5000/auth/google/callback"
+
+
+@app.route("/auth/google/start")
+def auth_google_start():
+    """
+    Desktop's "Sign in with Google" button hits this - it does NOT try to
+    run Google's Sign-In widget inside the pywebview window (that widget
+    actively refuses to work properly inside embedded/native-app browser
+    views, which is exactly the stuck/duplicate-popup symptom this
+    replaces). Instead it opens the user's REAL default system browser to
+    Google's OAuth consent screen - the standard, Google-endorsed pattern
+    for desktop apps (same approach Slack/Discord/Spotify use).
+    """
+    _prune_pending_google_logins()
+    client_id = getattr(config, "GOOGLE_CLIENT_ID", "")
+    if not client_id:
+        return "Google Sign-In is not configured (missing GOOGLE_CLIENT_ID).", 500
+
+    state = secrets.token_urlsafe(24)
+    _PENDING_GOOGLE_LOGINS[state] = {"done": False, "uid": None, "email": None,
+                                      "error": None, "created": time.time()}
+
+    redirect_uri = _google_redirect_uri()
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    from urllib.parse import urlencode
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+
+    import webbrowser
+    webbrowser.open(auth_url)
+
+    # The pywebview window shows a "waiting for browser" page and polls
+    # /api/auth/google/status - it can't just block here, since opening
+    # the browser doesn't block, and this request needs to return so the
+    # UI can show that waiting state.
+    return render_template("google_waiting.html", state=state)
+
+
+@app.route("/auth/google/callback")
+def auth_google_callback():
+    """
+    Google redirects here (in the user's real browser, NOT the pywebview
+    window) after they approve/deny access. Exchanges the authorization
+    code for tokens server-side (using the Web client's secret - never
+    exposed to the browser), verifies the identity, and completes the
+    exact same find-or-create-Firebase-user logic /api/auth/google uses
+    for the phone/embedded-JS path - one shared outcome, three different
+    ways of getting there.
+    """
+    state = request.args.get("state", "")
+    code = request.args.get("code", "")
+    error = request.args.get("error", "")
+
+    pending = _PENDING_GOOGLE_LOGINS.get(state)
+    if pending is None:
+        return render_template("google_done.html",
+                               ok=False, message="This sign-in link expired or was already used. "
+                                                  "Close this tab and try again from the CAPHY app."), 400
+
+    if error:
+        pending["done"] = True
+        pending["error"] = "Google sign-in was cancelled."
+        return render_template("google_done.html", ok=False, message=pending["error"])
+
+    if not code:
+        pending["done"] = True
+        pending["error"] = "No authorization code received from Google."
+        return render_template("google_done.html", ok=False, message=pending["error"])
+
+    try:
+        import secrets_config
+        import urllib.request
+        import urllib.parse
+
+        client_secret = secrets_config.get_google_oauth_client_secret()
+        if not client_secret:
+            raise RuntimeError("Server is missing the Google OAuth client secret "
+                                "(see secrets_config.get_google_oauth_client_secret)")
+
+        token_body = urllib.parse.urlencode({
+            "code": code,
+            "client_id": getattr(config, "GOOGLE_CLIENT_ID", ""),
+            "client_secret": client_secret,
+            "redirect_uri": _google_redirect_uri(),
+            "grant_type": "authorization_code",
+        }).encode()
+        token_req = urllib.request.Request(
+            "https://oauth2.googleapis.com/token", data=token_body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urllib.request.urlopen(token_req, timeout=10) as resp:
+            tokens = json.loads(resp.read().decode())
+
+        id_token = tokens.get("id_token", "")
+        if not id_token:
+            raise RuntimeError("Google did not return an id_token")
+
+        # Verify + decode the id_token the same way /api/auth/google does
+        # for the embedded-JS path (tokeninfo endpoint - simple, no extra
+        # deps, and this is a one-time server-side call, not a hot path).
+        verify_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
+        with urllib.request.urlopen(verify_url, timeout=8) as resp:
+            payload = json.loads(resp.read().decode())
+
+        expected_aud = getattr(config, "GOOGLE_CLIENT_ID", "")
+        if expected_aud and payload.get("aud") != expected_aud:
+            raise RuntimeError("Token was not issued for this app")
+
+        email = payload.get("email", "")
+        email_verified = payload.get("email_verified") == "true"
+        if not email:
+            raise RuntimeError("Invalid Google token payload")
+
+        from firebase_admin import auth as fb_auth
+        from firebase_auth import init_firebase
+        init_firebase()
+
+        try:
+            user = fb_auth.get_user_by_email(email)
+            uid = user.uid
+        except fb_auth.UserNotFoundError:
+            user = fb_auth.create_user(email=email, email_verified=email_verified)
+            uid = user.uid
+
+        pending["done"] = True
+        pending["uid"] = uid
+        pending["email"] = email
+        _mirror_local_user(uid, email)
+
+        return render_template("google_done.html", ok=True,
+                               message=f"Signed in as {email}. You can close this tab and "
+                                       f"return to CAPHY.")
+
+    except Exception as e:
+        pending["done"] = True
+        pending["error"] = f"Google sign-in failed: {e}"
+        return render_template("google_done.html", ok=False, message=pending["error"]), 500
+
+
+@app.route("/api/auth/google/status")
+def api_auth_google_status():
+    """
+    Polled by the pywebview window's waiting page (google_waiting.html)
+    every ~1.5s to find out when the browser-tab sign-in finished. Once
+    done, this sets the SAME session cookie the rest of the app checks
+    (session["user_uid"]) - the poll request comes from the pywebview
+    window itself, so its response's Set-Cookie lands in the right place.
+    """
+    state = request.args.get("state", "")
+    pending = _PENDING_GOOGLE_LOGINS.get(state)
+    if pending is None:
+        return jsonify({"done": True, "error": "Sign-in session expired."})
+
+    if not pending["done"]:
+        return jsonify({"done": False})
+
+    _PENDING_GOOGLE_LOGINS.pop(state, None)
+
+    if pending["error"]:
+        return jsonify({"done": True, "error": pending["error"]})
+
+    session["user_uid"] = pending["uid"]
+    session["email"] = pending["email"]
+    session.permanent = True
+    return jsonify({"done": True, "next": url_for("dashboard")})
+
+
+@app.route("/set-password", methods=["GET", "POST"])
+def set_password():
+    """
+    Ask a Google-signed-in user to add a password, so email+password also
+    works later - sets the password directly on the Firebase Auth user
+    via the Admin SDK, so it works identically from the phone afterward.
+    """
+    if not session.get("user_uid"):
+        return redirect(url_for("login"))
+
+    if request.method == "GET":
+        return render_template("set_password.html", email=session.get("email", ""), error="")
+
+    password = request.form.get("password", "")
+    password_confirm = request.form.get("password_confirm", "")
+
+    if not password or len(password) < 6:
+        return render_template("set_password.html", email=session.get("email", ""),
+                             error="Password must be at least 6 characters")
+    if password != password_confirm:
+        return render_template("set_password.html", email=session.get("email", ""),
+                             error="Passwords do not match")
+
+    try:
+        from firebase_admin import auth as fb_auth
+        from firebase_auth import init_firebase
+        init_firebase()
+        fb_auth.update_user(session["user_uid"], password=password)
+    except Exception as e:
+        return render_template("set_password.html", email=session.get("email", ""),
+                             error=f"Could not set password: {e}")
+
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")
 def logout():
+    """Clear session and redirect to login."""
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/console")
+def console():
+    """Optional single-screen console (not the default). The default home is
+    the classic multi-page dashboard at '/'. Kept here in case it's wanted
+    later; History / Full Logs / Settings / Live open as popups."""
+    cams = [{"cam": w.cam_id, "name": w.name} for w in workers] or [{"cam": 0, "name": "Camera 0"}]
+    return render_template("console.html", user=session.get("email", "admin"),
+                           cams_json=json.dumps(cams))
+
+
+@app.route("/api/dashboard")
+def api_dashboard():
+    """Top-bar stats + 24h threat chart for the one-screen console."""
+    db = Database(config.DB_PATH)
+    total = db.count_alerts()
+    today = db.conn.execute("SELECT COUNT(*) c FROM alerts "
+                            "WHERE date(timestamp)=date('now','localtime')").fetchone()["c"]
+    pending = db.conn.execute("SELECT COUNT(*) c FROM alerts WHERE synced=0").fetchone()["c"]
+    hours = {int(r["h"]): r["c"] for r in db.conn.execute(
+        "SELECT strftime('%H', timestamp) h, COUNT(*) c FROM alerts "
+        "WHERE timestamp >= datetime('now','-1 day') GROUP BY h")}
+    db.close()
+    cur = max([w.get_stats().get("tier", 0) for w in workers] or [0])
+    online = sum(1 for w in workers if w.get_stats().get("online"))
+    ncam = len(workers)
+    cur_dist = "-"
+    for w in workers:
+        s = w.get_stats()
+        if s.get("tier", 0) == cur and cur:
+            cur_dist = s.get("distance", "-")
+            break
+    return jsonify({
+        "total": total, "today": today, "pending": pending,
+        "online": online, "ncam": ncam,
+        "threat": ("Tier " + str(cur)) if cur else "Clear",
+        "threat_foot": (f"person · {cur_dist} m") if cur else "no active threat",
+        "hours": hours,
+    })
+
+
+@app.route("/api/health")
+def api_health():
+    """CPU / mem / disk / fps + module status for the console health panel."""
+    if psutil:
+        cpu = round(psutil.cpu_percent())
+        vm = psutil.virtual_memory()
+        mem = round(vm.percent)
+        mem_txt = f"{vm.used/1e9:.1f} / {vm.total/1e9:.0f} GB"
+        disk = round(psutil.disk_usage("/").percent)
+    else:
+        cpu = mem = disk = 0
+        mem_txt = "n/a"
+    st = workers[0].get_stats() if workers else {}
+    fps = st.get("fps", 0) or 0
+    db = Database(config.DB_PATH)
+    pending = db.conn.execute("SELECT COUNT(*) c FROM alerts WHERE synced=0").fetchone()["c"]
+    db.close()
+    yolo_ok = any(w.yolo_ok for w in workers)
+    nv_on = any(getattr(w, "nv", None) and w.nv.enabled for w in workers)
+    fcm_on = os.path.exists(config.FIREBASE_KEY)
+    G, T, M, R = "#3fb98a", "#5b8dff", "#8d9bb5", "#e5544e"
+    modules = [
+        {"name": "OpenCV capture", "status": "running", "color": G},
+        {"name": "YOLOv8-nano", "status": "running" if yolo_ok else "off", "color": G if yolo_ok else R},
+        {"name": "Tier engine", "status": "running", "color": G},
+        {"name": "Night vision (CLAHE)", "status": "engaged" if nv_on else "standby", "color": T if nv_on else M},
+        {"name": "Flask API / MJPEG", "status": "running", "color": G},
+        {"name": "SQLite", "status": "ok", "color": T},
+        {"name": "Cloud sync", "status": (f"offline · queue {pending}" if pending else "synced"), "color": R if pending else G},
+        {"name": "Firebase FCM", "status": "connected" if fcm_on else "off", "color": T if fcm_on else M},
+    ]
+    return jsonify({"cpu": cpu, "mem": mem, "mem_txt": mem_txt, "disk": disk,
+                    "fps": fps, "modules": modules})
 
 
 @app.route("/")
@@ -644,14 +1791,16 @@ def dashboard():
     else:
         alerts_html = '<div style="color:var(--dim);font-size:13px">No alerts yet</div>'
 
-    # ---- 24h threat chart ----
+    # ---- 24h threat chart (hover a bar to see the hour + alert count) ----
     maxh = max(hours.values()) if hours else 1
     bars = ""
     for h in range(24):
         c = hours.get(h, 0)
         cls = "bar hot" if (c and c >= maxh) else ("bar warm" if c >= maxh * 0.5 and c else "bar")
         pct = int(100 * c / maxh) if maxh else 0
-        bars += f'<div class="{cls}" style="height:{max(pct,6)}%"></div>'
+        plural = "" if c == 1 else "s"
+        bars += (f'<div class="{cls}" style="--h:{max(pct,4)}%">'
+                 f'<span class="bartip"><b>{h:02d}:00</b> &middot; {c} alert{plural}</span></div>')
 
     body = f"""
     {cards}
@@ -661,7 +1810,7 @@ def dashboard():
         {feed}
       </div>
       <div class="panel">
-        <div class="ph"><h2>Recent Alerts</h2><a class="link" href="/history">View all</a></div>
+        <div class="ph"><h2>Recent Alerts</h2><a class="link" href="/history">View All</a></div>
         {alerts_html}
       </div>
     </div>
@@ -685,7 +1834,7 @@ def live():
             f'<div class="camitem{active}" id="ci{w.cam_id}" onclick="selectCam({w.cam_id})">'
             f'<img class="camthumb" src="/video_feed/{w.cam_id}">'
             f'<div class="cimeta"><div><div class="cn">{w.name}</div>'
-            f'<div class="cs" id="cs{w.cam_id}">online</div></div>'
+            f'<div class="cs" id="cs{w.cam_id}">Online</div></div>'
             f'<span class="dot" id="cd{w.cam_id}" style="background:var(--green)"></span></div></div>')
     if not cam_items:
         cam_items = '<div style="color:var(--dim);font-size:13px">No cameras running</div>'
@@ -845,10 +1994,20 @@ def live():
       refreshState();
     }
     async function toggleEmg(){
-      if(!ST.emergency && !confirm('Activate EMERGENCY mode?\\n\\nThis forces the camera on, arms the system, sounds the siren and sends a push alert.')) return;
+      if(!ST.emergency){
+        const ok = await openModal({
+          title: 'Activate Emergency Mode?',
+          message: 'This forces the camera on, arms the system, sounds the siren, and sends a push alert immediately to everyone on the account.',
+          confirmText: 'Activate Emergency',
+          danger: true,
+          icon: '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        });
+        if(!ok) return;
+      }
       try{ await fetch('/api/emergency',{method:'POST',headers:{'Content-Type':'application/json'},
         body: JSON.stringify({on: !ST.emergency})}); }catch(e){}
-      refreshState();
+      await refreshState();
+      toast(ST.emergency ? 'Emergency mode activated' : 'Emergency mode cancelled');
     }
 
     async function poll(){
@@ -859,8 +2018,8 @@ def live():
           const cd=document.getElementById('cd'+s.cam);
           if(cd) cd.style.background = !camOn ? 'var(--orange)' : (s.online?'var(--green)':'var(--dim)');
           const cs=document.getElementById('cs'+s.cam);
-          // "camera off" and "offline" are different problems - say which
-          if(cs) cs.textContent = !camOn ? 'camera off' : (s.online?'online':'offline');
+          // "Camera Off" and "Offline" are different problems - say which
+          if(cs) cs.textContent = !camOn ? 'Camera Off' : (s.online?'Online':'Offline');
           if(s.cam===sel){
             document.getElementById('dm').style.background = s.motion?'var(--green)':'var(--dim)';
             document.getElementById('dp').style.background = s.person?'var(--green)':'var(--dim)';
@@ -951,7 +2110,7 @@ def live():
     </style>
     """.replace("__CAM_ITEMS__", cam_items).replace("__MAIN_NAME__", main_name).replace("__MAIN_ID__", str(main_id))
     return page("Live Camera", "/live", body,
-                subtitle="two-factor validation active")
+                subtitle="Two-factor validation active")
 
 
 @app.route("/api/stats")
@@ -1076,18 +2235,251 @@ def _alert_json(a):
     }
 
 
-@app.route("/api/login", methods=["POST"])
-def api_login():
-    data = request.get_json(silent=True) or request.form
-    u, p = data.get("username", ""), data.get("password", "")
-    db = Database(config.DB_PATH)
-    row = db.conn.execute("SELECT password_hash, role FROM users WHERE username=?", (u,)).fetchone()
-    db.close()
-    if row and row["password_hash"] == hashlib.sha256(p.encode()).hexdigest():
-        tok = secrets.token_hex(24)
-        API_TOKENS.add(tok)
-        return jsonify({"ok": True, "token": tok, "user": u, "role": row["role"] or "Homeowner"})
-    return jsonify({"ok": False, "error": "invalid credentials"}), 401
+# NOTE: the old /api/login (local password-hash check) and
+# /api/auth/mobile-google (manual Google tokeninfo check + locally-invented
+# "google_<sub>" uid) routes were removed here. They predate the unified-
+# account rework: the phone now authenticates DIRECTLY against Firebase
+# (see caphy_app/lib/api.dart), the same identity provider the web
+# dashboard uses, so there is exactly ONE place an account is created or
+# verified - Firebase Auth - instead of two different code paths that
+# could (and did) disagree about what uid an email maps to. Any client
+# still calling these paths should switch to signing in with the Firebase
+# SDK directly and sending the resulting ID token as a Bearer header.
+
+
+@app.route("/api/fcm/register", methods=["POST"])
+def api_fcm_register():
+    """
+    Phone calls this after login (and again whenever its FCM token refreshes)
+    to subscribe itself to push alerts from THIS laptop only. This is the
+    step that makes B5 real - without it, send_alert() has no phone to
+    reach because nothing has subscribed to the topic yet.
+
+    Body: {"fcm_token": "..."}
+    Auth: requires a logged-in session/token (see the `guard()` before_request) -
+    the account is read from that, never trusted from the request body, so a
+    phone can only subscribe itself to ITS OWN account's alerts.
+    """
+    data = request.get_json() or {}
+    fcm_token = data.get("fcm_token", "")
+
+    if not fcm_token:
+        return jsonify({"success": False, "error": "fcm_token required"}), 400
+
+    user_uid = _current_uid()
+    if not user_uid:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    try:
+        from identity import get_device_identity
+        from storage.firebase_push import FirebasePushSender
+
+        device_id = get_device_identity()["device_id"]
+        sender = FirebasePushSender(user_uid, device_id)
+        ok = sender.subscribe_device_to_topic(fcm_token)
+
+        return jsonify({"success": ok, "device_id": device_id})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/fcm/unregister", methods=["POST"])
+def api_fcm_unregister():
+    """Phone calls this on logout so it stops receiving this laptop's alerts."""
+    data = request.get_json() or {}
+    fcm_token = data.get("fcm_token", "")
+
+    if not fcm_token:
+        return jsonify({"success": False, "error": "fcm_token required"}), 400
+
+    user_uid = _current_uid()
+    if not user_uid:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    try:
+        from identity import get_device_identity
+        from storage.firebase_push import FirebasePushSender
+
+        device_id = get_device_identity()["device_id"]
+        sender = FirebasePushSender(user_uid, device_id)
+        ok = sender.unsubscribe_device_from_topic(fcm_token)
+
+        return jsonify({"success": ok})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _local_ip():
+    """Best-effort LAN IP of this laptop (the address the phone must reach
+    over WiFi to talk to the local Flask server for camera/live/arm-disarm).
+    Doesn't actually send anything - opening a UDP socket to a public IP is
+    just a trick to make the OS pick the right outbound interface."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+@app.route("/api/pairing/generate")
+def api_pairing_generate():
+    """
+    Web dashboard (Settings > Connect Device) calls this to get a fresh QR
+    payload. Requires an active web session - only someone already signed
+    in on THIS laptop can generate a code for it, which is what stops a
+    stranger from pairing their phone to your house.
+
+    The pairing code now lives in Firestore (storage/device_registry.py),
+    not just this process's memory - this laptop's own account is also
+    registered as this device's owner_uid at this point (register_device),
+    so "who owns this desktop" is a cloud fact, not something only this
+    Flask process remembers.
+
+    Returns the laptop's local IP/port (fast-path hint for when the phone
+    is on the same WiFi) + device_id + a one-time pairing code the phone
+    confirms through ITS OWN backend call to /api/pairing/confirm (which
+    may be this same laptop, if reachable, or - since that route only
+    touches Firestore - honestly any CAPHY backend process reachable to
+    it; in practice the phone calls the address in this QR).
+    """
+    user_uid = session.get("user_uid")
+    if not user_uid:
+        return jsonify({"error": "unauthorized"}), 401
+
+    from identity import get_device_identity
+    from storage import device_registry
+    ident = get_device_identity()
+    device_id = ident["device_id"]
+
+    # Make sure this desktop is registered + claimed by whoever is signed
+    # in right now, every time a QR is generated (cheap upsert).
+    device_registry.register_device(device_id, ident["device_secret"], ident["hostname"], owner_uid=user_uid)
+
+    pairing = device_registry.create_pairing_code(device_id)
+
+    port = request.environ.get("SERVER_PORT") or getattr(config, "PORT", 5000)
+    payload = {
+        "v": 1,
+        "code": pairing["code"],
+        "device_id": device_id,
+        "ip": _local_ip(),
+        "port": int(port),
+    }
+    return jsonify({"success": True, "payload": payload, "expires_in": pairing["expires_in"]})
+
+
+@app.route("/api/pairing/link-token")
+def api_pairing_link_token():
+    """
+    Scan-to-connect: the desktop is already signed into an account, so it can
+    hand the phone a one-time way to sign in AS that account just by scanning
+    a QR - no email/password/Google screen on the phone at all.
+
+    Requires an active web session (only someone signed in on THIS laptop can
+    mint a link for it). Steps:
+      1. Claim/refresh this desktop's device doc for the signed-in account.
+      2. Mint a Firebase CUSTOM TOKEN for that account (Admin SDK).
+      3. Stash it in Firestore under a random nonce (see device_registry.
+         store_link_token), which self-expires in a few minutes.
+      4. Return just the nonce + device_id - the QR never contains the token
+         itself, only the nonce that points at it.
+
+    The phone reads the token by nonce, calls signInWithCustomToken(), and is
+    authenticated as this account with zero typing.
+    """
+    user_uid = session.get("user_uid")
+    if not user_uid:
+        return jsonify({"error": "unauthorized"}), 401
+
+    from identity import get_device_identity
+    from storage import device_registry
+    ident = get_device_identity()
+    device_id = ident["device_id"]
+
+    # Make sure Firebase Admin is initialized, then mint the custom token.
+    try:
+        from firebase_admin import auth as _fb_auth
+        try:
+            import firebase_admin
+            firebase_admin.get_app()
+        except ValueError:
+            from firebase_auth import init_firebase
+            init_firebase()
+        custom_token = _fb_auth.create_custom_token(user_uid)
+        if isinstance(custom_token, (bytes, bytearray)):
+            custom_token = custom_token.decode("utf-8")
+    except Exception as e:
+        return jsonify({"success": False,
+                        "error": f"Could not create sign-in token: {e}"}), 500
+
+    # Claim this desktop for the signed-in account so the phone (once signed
+    # in as the same account) can immediately see and control it. force-claim
+    # (overwrite) - scan-to-connect means "this account owns this laptop from
+    # now on", which also heals a device left owned by an earlier test
+    # account (that stale owner is exactly what makes the phone's live-video
+    # request get PERMISSION_DENIED).
+    device_registry.register_device(device_id, ident["device_secret"],
+                                    ident["hostname"], owner_uid=user_uid)
+    device_registry.claim_device(device_id, user_uid)
+
+    nonce = secrets.token_urlsafe(32)
+    device_registry.store_link_token(nonce, custom_token, device_id, user_uid)
+
+    payload = {"v": 2, "nonce": nonce, "device_id": device_id,
+               "ip": _local_ip(), "port": int(request.environ.get("SERVER_PORT")
+                                               or getattr(config, "PORT", 5000))}
+    return jsonify({"success": True, "payload": payload,
+                    "expires_in": device_registry.LINK_TOKEN_TTL_SEC})
+
+
+@app.route("/api/pairing/confirm", methods=["POST"])
+def api_pairing_confirm():
+    """
+    Phone calls this immediately after scanning the QR - ideally directly
+    against the laptop's LAN address decoded from the QR (fast, works
+    offline-from-internet too, since this route only needs Firestore which
+    IS reachable if the phone has internet - but if the laptop happens to
+    be unreachable on that LAN address for some reason, pairing still
+    works because the actual ownership write happens in Firestore, not on
+    this laptop's local state).
+
+    Body: {"code": "..."}. Auth: phone's own bearer token (its
+    Firebase-issued identity) - separate from the pairing code, so the
+    code alone can never impersonate an account.
+    """
+    data = request.get_json() or {}
+    code = data.get("code", "")
+    if not code:
+        return jsonify({"success": False, "error": "Missing code"}), 400
+
+    phone_uid = _current_uid()
+    if not phone_uid:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    from storage import device_registry
+    result = device_registry.confirm_pairing(code, phone_uid)
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
+@app.route("/api/devices")
+def api_devices():
+    """
+    Phone (and web) call this to list every CAPHY desktop this account
+    owns, with online/offline + last known LAN address for each - this is
+    what powers the onboarding screen ("no CAPHY system connected yet")
+    and the dashboard's device picker for accounts with more than one
+    desktop.
+    """
+    user_uid = _current_uid()
+    if not user_uid:
+        return jsonify({"error": "unauthorized"}), 401
+
+    from storage import device_registry
+    return jsonify({"success": True, "devices": device_registry.devices_for_owner(user_uid)})
 
 
 @app.route("/api/alerts")
@@ -1118,6 +2510,47 @@ def api_alert(aid):
 def api_cameras():
     return jsonify([{"cam": w.cam_id, "name": w.name,
                      "online": w.get_stats().get("online", False)} for w in workers])
+
+
+@app.route("/api/cameras/available")
+def api_cameras_available():
+    """Every camera the user can choose from - active ones plus any free
+    device the system can detect right now (see available_cameras())."""
+    return jsonify({"cameras": available_cameras(),
+                    "max": getattr(config, "MAX_CAMERAS", 2)})
+
+
+@app.route("/api/cameras/select", methods=["POST"])
+def api_cameras_select():
+    """Apply a new camera selection: save it and restart the workers on it,
+    so the change takes effect immediately (no app restart). Body:
+    {"sources": [0, 1]} - integers for device indices, strings for network
+    camera URLs."""
+    data = request.get_json(silent=True) or {}
+    sources = data.get("sources")
+    if not isinstance(sources, list) or not sources:
+        return jsonify({"ok": False, "error": "Pick at least one camera."}), 400
+    maxc = getattr(config, "MAX_CAMERAS", 2)
+    if len(sources) > maxc:
+        return jsonify({"ok": False,
+                        "error": f"You can use at most {maxc} cameras at once."}), 400
+    # normalize: keep ints as ints, strings as-is
+    norm = []
+    for s in sources:
+        if isinstance(s, bool):
+            continue
+        if isinstance(s, int):
+            norm.append(s)
+        elif isinstance(s, str) and s.strip().isdigit():
+            norm.append(int(s.strip()))
+        elif isinstance(s, str) and s.strip():
+            norm.append(s.strip())
+    save_prefs({"camera_selection": norm})
+    try:
+        restart_workers(norm)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not switch cameras: {e}"}), 500
+    return jsonify({"ok": True, "sources": norm})
 
 
 @app.route("/api/camera/<int:cam>/name", methods=["POST"])
@@ -1213,8 +2646,14 @@ def _do_action(action):
         for w in workers:
             w.highest = True          # every confirmed person reports as Tier 3
         try:
-            PushSender(config.FIREBASE_KEY, config.PUSH_TOPIC).send_async(
-                3, "-", None, "EMERGENCY", None)
+            owner_uid = _current_device_owner_uid()
+            if owner_uid:
+                from identity import get_device_identity
+                from storage.firebase_push import get_push_sender_for_alert
+                sender = get_push_sender_for_alert(owner_uid, get_device_identity()["device_id"])
+                if sender:
+                    sender.send_alert(title="CAPHY EMERGENCY", body="Emergency mode activated",
+                                       data={}, tier=3)
         except Exception as e:
             print(f"[CAPHY] emergency push failed: {e}")
 
@@ -1561,7 +3000,7 @@ def alerts_page():
         <div class="phactions">
           <span class="livedot" id="liveDot"></span>
           <span class="livetxt" id="liveTxt">live</span>
-          <button class="btn btn-ghost" id="ackAllBtn" onclick="ackAll()">Acknowledge all</button>
+          <button class="btn btn-ghost" id="ackAllBtn" onclick="ackAll()">Acknowledge All</button>
           <a class="btn btn-ghost" href="/history">History &rarr;</a>
         </div>
       </div>
@@ -1614,7 +3053,14 @@ def alerts_page():
       setTimeout(refresh, 220);
     }
     async function ackAll(){
-      if(!confirm('Acknowledge all alerts?')) return;
+      const ok = await openModal({
+        title: 'Acknowledge All Alerts?',
+        message: 'This clears every alert from this list. Records stay saved in Alert History.',
+        confirmText: 'Acknowledge All',
+        danger: false,
+        icon: '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>'
+      });
+      if(!ok) return;
       try{ await fetch('/api/alerts/dismiss_all',{method:'POST'}); }catch(e){}
       refresh();
     }
@@ -1777,7 +3223,7 @@ def history():
       <div class="ph"><h2>Alert History</h2>
         <div class="phactions">
           <a class="btn ghost" href="/export">Export CSV</a>
-          <button class="btn ghost danger" onclick="clearHist()">Clear history</button>
+          <button class="btn ghost danger" onclick="clearHist()">Clear History</button>
         </div>
       </div>
     </div>
@@ -1819,7 +3265,14 @@ def history():
 
     <script>
     async function clearHist(){{
-      if(!confirm('Acknowledge and clear all history from this view?\\n\\nRecords stay saved for export - this only hides them here.')) return;
+      const ok = await openModal({{
+        title: 'Clear History?',
+        message: 'Acknowledge and clear all history from this view.<br><br>Records stay saved for export &mdash; this only hides them here.',
+        confirmText: 'Clear History',
+        danger: true,
+        icon: '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+      }});
+      if(!ok) return;
       try{{ await fetch('/api/alerts/dismiss_all',{{method:'POST'}}); }}catch(e){{}}
       location.reload();
     }}
@@ -1962,6 +3415,8 @@ def logs():
     if not initial:
         initial = '<div style="color:var(--dim)">waiting for log events...</div>'
 
+    events_today, last_event, alerts_24h = _log_file_stats()
+
     if psutil:
         cpu = psutil.cpu_percent()
         vm = psutil.virtual_memory()
@@ -2000,12 +3455,28 @@ def logs():
             ("Firebase FCM", "connected" if fcm_on else "off", T if fcm_on else M)]
     modrows = "".join(
         f'<div class="modrow"><span><span class="dot" style="background:{c}"></span>{n}</span>'
-        f'<span style="color:{c}">{s}</span></div>' for n, s, c in mods)
+        f'<span class="modtag" style="color:{c};border-color:{c}">{s}</span></div>' for n, s, c in mods)
 
+    alert_color = "var(--red)" if alerts_24h else "var(--muted)"
     body = f"""
     <div class="grid2">
       <div class="panel logpanel">
-        <div class="ph"><h2>caphy.log &mdash; live tail</h2><span class="pill pg dotb">STREAMING</span></div>
+        <div class="ph">
+          <h2>caphy.log <span class="livetag">live tail</span></h2>
+          <div class="logfilters">
+            <button class="fbtn active" onclick="setFilter('ALL',this)">ALL</button>
+            <button class="fbtn" onclick="setFilter('DETECT',this)">DETECT</button>
+            <button class="fbtn" onclick="setFilter('ALERT',this)">ALERT</button>
+            <button class="fbtn" onclick="setFilter('SYNC',this)">SYNC</button>
+          </div>
+        </div>
+        <div class="logstats">
+          <span><b>{events_today:,}</b> events today</span>
+          <span class="sep">&middot;</span>
+          <span><b>{last_event}</b> last event</span>
+          <span class="sep">&middot;</span>
+          <span><b style="color:{alert_color}">{alerts_24h}</b> alerts (24h)</span>
+        </div>
         <div class="log" id="logtail">{initial}</div>
       </div>
       <div class="rightcol">
@@ -2016,27 +3487,82 @@ def logs():
     <script>
     const LC={{INFO:'var(--muted)',DETECT:'var(--teal2)',TIER:'var(--teal2)',ALERT:'var(--green)',
               DB:'var(--muted)',SYNC:'var(--teal2)',WARN:'var(--orange)'}};
+    let filterLevel='ALL', expandAll=false;
+    function setFilter(lvl, btn){{
+      filterLevel = lvl; expandAll = false;
+      document.querySelectorAll('.fbtn').forEach(function(b){{ b.classList.remove('active'); }});
+      btn.classList.add('active');
+      tail();
+    }}
+    function toggleExpand(){{ expandAll = true; tail(); }}
+    function renderLine(l){{
+      const c=LC[l.level]||'var(--muted)';
+      const mc=(['DETECT','ALERT','WARN','SYNC','TIER'].indexOf(l.level)>=0)?c:'var(--text)';
+      return '<div class="logline"><span class="lt">'+l.t+'</span>'+
+        '<span class="lvl" style="background:color-mix(in srgb,'+c+' 20%,transparent);color:'+c+'">'+l.level+'</span>'+
+        '<span class="lm">'+l.mod+'</span><span style="color:'+mc+'">'+l.msg+'</span></div>';
+    }}
     async function tail(){{
       try{{
-        const r=await fetch('/api/logs?n=40'); const logs=await r.json();
-        document.getElementById('logtail').innerHTML = logs.map(function(l){{
-          const c=LC[l.level]||'var(--muted)';
-          const mc=(['DETECT','ALERT','WARN','SYNC','TIER'].indexOf(l.level)>=0)?c:'var(--text)';
-          return '<div class="logline"><span class="lt">'+l.t+'</span>'+
-            '<span class="lvl" style="background:color-mix(in srgb,'+c+' 20%,transparent);color:'+c+'">'+l.level+'</span>'+
-            '<span class="lm">'+l.mod+'</span><span style="color:'+mc+'">'+l.msg+'</span></div>';
-        }}).join('');
+        const r=await fetch('/api/logs?n=150'); let logs=await r.json();
+        if(filterLevel!=='ALL') logs = logs.filter(function(l){{ return l.level===filterLevel; }});
+        const box=document.getElementById('logtail');
+        if(!logs.length){{ box.innerHTML='<div style="color:var(--dim)">No matching events</div>'; return; }}
+        const RAW=15;
+        let html = logs.slice(0,RAW).map(renderLine).join('');
+        const rest = logs.slice(RAW);
+        if(rest.length && !expandAll){{
+          // collapse long runs of an identical repeated line - "96 identical
+          // DETECT/yolo lines collapsed above - Show all" instead of a huge
+          // wall of the same "motion, no person" line over and over
+          let i=0;
+          while(i<rest.length){{
+            let j=i;
+            while(j<rest.length && rest[j].level===rest[i].level &&
+                  rest[j].mod===rest[i].mod && rest[j].msg===rest[i].msg) j++;
+            const n=j-i;
+            if(n>=3){{
+              html += '<div class="logcollapsed">&#8635; '+n+' identical '+rest[i].level+'/'+rest[i].mod+
+                ' lines collapsed above &mdash; <a href="#" onclick="toggleExpand();return false;">Show all</a></div>';
+            }} else {{
+              for(let k=i;k<j;k++) html += renderLine(rest[k]);
+            }}
+            i=j;
+          }}
+        }} else if(rest.length){{
+          html += rest.map(renderLine).join('');
+        }}
+        box.innerHTML = html;
       }}catch(e){{}}
     }}
     setInterval(tail,1500); tail();
-    </script>"""
+    </script>
+    <style>
+      .ph{{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px}}
+      .livetag{{color:var(--muted);font-weight:400;font-size:11.5px;margin-left:8px}}
+      .logfilters{{display:flex;gap:8px}}
+      .fbtn{{background:var(--panel);border:1px solid var(--line2);color:var(--muted);
+        border-radius:8px;padding:6px 13px;font-size:11.5px;font-weight:700;letter-spacing:.4px;
+        cursor:pointer;transition:.15s}}
+      .fbtn:hover{{color:var(--text);border-color:var(--teal2)}}
+      .fbtn.active{{color:var(--teal2);border-color:var(--teal2);background:rgba(63,215,196,.08)}}
+      .logstats{{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12.5px;
+        margin:12px 0 14px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);
+        border-radius:10px}}
+      .logstats b{{color:var(--text);font-weight:700}}
+      .logstats .sep{{color:var(--line2)}}
+      .logcollapsed{{color:var(--muted);font-size:12px;padding:8px 4px;font-style:italic}}
+      .logcollapsed a{{color:var(--teal2);font-style:normal;cursor:pointer}}
+      .logcollapsed a:hover{{text-decoration:underline}}
+      .modtag{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:7px;border:1px solid}}
+    </style>"""
     return page("System Logs", "/logs", body,
                 subtitle="Diagnostics &middot; detection pipeline &amp; sync events")
 
 
 SETTINGS_TABS = [("detection", "Detection"), ("cameras", "Cameras"), ("alerts", "Alerts"),
-                 ("storage", "Storage &amp; Sync"), ("voice", "Voice"),
-                 ("users", "Users"), ("about", "About")]
+                 ("storage", "Storage &amp; Sync"), ("voice", "Voice"), ("device", "Connect Phone"),
+                 ("offline", "Offline Mode"), ("users", "Users"), ("about", "About")]
 
 
 def _sw(name, on):
@@ -2090,15 +3616,29 @@ def settings():
             db.close()
             return redirect(url_for("settings", tab="cameras"))
         if section == "users":
-            cur = request.form.get("cur_pw", "")
-            new = request.form.get("new_pw", "")
-            user = session.get("user", "admin")
-            row = db.conn.execute("SELECT password_hash FROM users WHERE username=?", (user,)).fetchone()
-            ok = row and new and row["password_hash"] == hashlib.sha256(cur.encode()).hexdigest()
-            if ok:
-                db.conn.execute("UPDATE users SET password_hash=? WHERE username=?",
-                                (hashlib.sha256(new.encode()).hexdigest(), user))
-                db.conn.commit()
+            # Verifies the CURRENT password against Firebase Auth (via the
+            # same REST sign-in helper /login uses) before letting the new
+            # one through - this used to check a "username" column that no
+            # longer exists in this schema (email/firebase_uid are the
+            # real keys now), so it silently could never succeed. Now it
+            # both verifies AND updates the actual Firebase Auth account,
+            # matching whatever the phone will authenticate against next.
+            cur_pw = request.form.get("cur_pw", "")
+            new_pw = request.form.get("new_pw", "")
+            email = session.get("email", "")
+            uid = session.get("user_uid")
+            ok = False
+            if email and uid and new_pw and len(new_pw) >= 6:
+                verify = _firebase_rest_sign_in(email, cur_pw)
+                if verify.get("uid") == uid:
+                    try:
+                        from firebase_admin import auth as fb_auth
+                        from firebase_auth import init_firebase
+                        init_firebase()
+                        fb_auth.update_user(uid, password=new_pw)
+                        ok = True
+                    except Exception:
+                        ok = False
             db.close()
             return redirect(url_for("settings", tab="users", pw=("ok" if ok else "err")))
         db.close()
@@ -2147,12 +3687,12 @@ def settings():
         </div>
         <div class="togglerow"><div><b>Software Night Vision (CLAHE)</b>
           <div class="fdesc" style="margin:2px 0 0">Auto-enhance low-light frames</div></div>{_sw("night", night_on)}</div>
-        <div class="togglerow"><div><b>Auto-arm at night</b>
+        <div class="togglerow"><div><b>Auto-Arm at Night</b>
           <div class="fdesc" style="margin:2px 0 0">Arm system on schedule &middot; {getattr(config,'AUTO_ARM_START_HOUR',22):02d}:00&ndash;{getattr(config,'AUTO_ARM_END_HOUR',6):02d}:00</div></div>{_sw("autoarm", auto_on)}</div>
         <div class="togglerow"><div><b>Highest Security</b>
           <div class="fdesc" style="margin:2px 0 0">Any confirmed person triggers a full Tier-3 response</div></div>{_sw("highest", highest_on)}</div>
         <div class="setfoot">
-          <button class="btn ghost" name="action" value="reset">Reset defaults</button>
+          <button class="btn ghost" name="action" value="reset">Reset Defaults</button>
           <button class="btn" name="action" value="save">Save Changes</button>
         </div>
       </form>"""
@@ -2166,18 +3706,33 @@ def settings():
     extra = getattr(config, "EXTRA_CAMERAS", [])
     extra_txt = "<br>".join(str(e) for e in extra if isinstance(e, str)) or "none"
     sec_cameras = f"""
+      <div class="sechead">Cameras</div><div class="subd">Choose which cameras CAPHY uses, then name them</div>
+
+      <div class="secheadsmall">DETECTED CAMERAS</div>
+      <div id="camPickStatus" style="color:var(--muted);font-size:13px;margin-bottom:10px">Detecting cameras&hellip;</div>
+      <div id="camPickList"></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="camApplyBtn" onclick="applyCameras()" disabled>Apply</button>
+        <button class="btn ghost" onclick="loadCameras()">Rescan</button>
+        <span id="camApplyMsg" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div style="color:var(--dim);font-size:11.5px;margin-top:8px;line-height:1.6">
+        You can use up to <span id="camMax">{getattr(config,'MAX_CAMERAS',2)}</span> cameras at once.
+        Index 0 is usually your laptop's built-in webcam; plug in a USB camera and press
+        <b>Rescan</b> to see it, then tick the ones you want and press <b>Apply</b>.
+      </div>
+
       <form method="post">
         <input type="hidden" name="section" value="cameras">
-        <div class="sechead">Cameras</div><div class="subd">Name your cameras and review capture settings</div>
+        <div class="secheadsmall" style="margin-top:22px">CAMERA NAMES</div>
         {cam_inputs}
         <div class="secheadsmall">CAPTURE (edit config.py to change)</div>
         {_irow("Resolution", f"{config.FRAME_WIDTH} &times; {config.FRAME_HEIGHT}")}
         {_irow("Stream quality", f"{getattr(config,'JPEG_QUALITY',70)} / 100")}
-        {_irow("Auto-scan cameras", "on" if getattr(config,'AUTO_SCAN_CAMERAS',False) else "off")}
-        {_irow("Max cameras", getattr(config,'MAX_CAMERAS',2))}
         {_irow("Network cameras", extra_txt)}
-        <div class="setfoot"><button class="btn" name="action" value="save">Save Changes</button></div>
-      </form>"""
+        <div class="setfoot"><button class="btn" name="action" value="save">Save Names</button></div>
+      </form>
+    """ + _CAMERA_PICKER_JS
 
     # ---- Alerts (reflects config) ----
     fmt_t = lambda xs: ", ".join("Tier %s" % t for t in xs) or "none"
@@ -2222,6 +3777,51 @@ def settings():
       {_irow("Commands available", f"{n_cmds}")}
       {_irow("Source of truth", "voice/intents.json")}"""
 
+    # ---- Connect Phone (scan-to-connect, no phone login) ----
+    sec_device = """
+      <div class="sechead">Connect Phone</div>
+      <div class="subd">Sign in on your phone just by scanning &mdash; no password</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:18px">
+        CAPHY has no dedicated camera hardware &mdash; this laptop's own webcam
+        is the camera. Open the CAPHY app on your phone and scan the code below.
+        Your phone is signed in as this same account and connected to this
+        laptop in one step &mdash; there's no email or password to type on the
+        phone. This works from anywhere (mobile data included); the QR just
+        needs to be on your phone's camera. The code is single-use and expires
+        in a few minutes, so only scan a fresh one you generated yourself.</p>
+      <div id="pairWrap" style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px 0">
+        <div id="pairQr" style="background:#fff;padding:16px;border-radius:12px"></div>
+        <div id="pairStatus" style="color:var(--muted);font-size:13px">Generating code&hellip;</div>
+        <button class="btn ghost" onclick="genPairCode()">New Code</button>
+      </div>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+      <script>
+      let pairQrObj = null;
+      let pairTimer = null;
+      async function genPairCode(){
+        clearTimeout(pairTimer);
+        document.getElementById('pairStatus').textContent = 'Generating code\\u2026';
+        try{
+          const r = await fetch('/api/pairing/link-token');
+          const d = await r.json();
+          if(!d.success){ document.getElementById('pairStatus').textContent = (d.error || 'Failed to generate code.'); return; }
+          const el = document.getElementById('pairQr');
+          el.innerHTML = '';
+          pairQrObj = new QRCode(el, { text: JSON.stringify(d.payload), width: 200, height: 200 });
+          document.getElementById('pairStatus').textContent =
+            'Code expires in ' + Math.round(d.expires_in/60) + ' min \\u00b7 scan with the CAPHY app';
+          // Refresh a bit BEFORE expiry so an on-screen code is always valid.
+          pairTimer = setTimeout(genPairCode, Math.max(10, d.expires_in - 15) * 1000);
+        }catch(e){
+          document.getElementById('pairStatus').textContent = 'Could not reach server.';
+        }
+      }
+      document.addEventListener('DOMContentLoaded', function(){
+        if(document.getElementById('sec-device')) genPairCode();
+      });
+      if(document.readyState !== 'loading') genPairCode();
+      </script>"""
+
     # ---- Users ----
     pw = request.args.get("pw", "")
     msg = ('<div class="fdesc" style="color:var(--green)">Password updated.</div>' if pw == "ok"
@@ -2230,7 +3830,7 @@ def settings():
       <form method="post">
         <input type="hidden" name="section" value="users">
         <div class="sechead">Users</div><div class="subd">Console account</div>
-        {_irow("Signed in as", session.get("user","admin"))}
+        {_irow("Signed in as", session.get("email","admin"))}
         {_irow("Role", "Homeowner")}
         <div class="secheadsmall" style="margin-top:20px">CHANGE PASSWORD</div>
         <div class="field"><div class="flabel"><b>Current password</b></div>
@@ -2253,9 +3853,57 @@ def settings():
       {_irow("Mobile alerts", "Firebase Cloud Messaging")}
       {_irow("Voice commands", "CAPHY mobile app (English + Tagalog)")}"""
 
+    # ---- Offline / Local Mode ----
+    lan_ip = _local_ip()
+    sec_offline = f"""
+      <div class="sechead">Offline / Local Mode</div>
+      <div class="subd">Keep using CAPHY when there's no internet</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:16px">
+        CAPHY normally works from anywhere over the internet. If the internet
+        goes down, it can still run in <b>Local Mode</b> &mdash; your phone talks
+        straight to this laptop over your local Wi&#8209;Fi, with no internet
+        needed. This only works when your <b>phone and this laptop are on the
+        same Wi&#8209;Fi network</b> (or the same hotspot), so it naturally can't
+        happen while you're away from home &mdash; that's by design.</p>
+
+      <div class="secheadsmall">THIS LAPTOP'S LOCAL ADDRESS</div>
+      {_irow("Local address", f"http://{lan_ip}:5000")}
+      <div style="color:var(--dim);font-size:11.5px;margin:6px 2px 18px;line-height:1.6">
+        This address only works on your own Wi&#8209;Fi. It changes if you switch
+        networks, so the app finds it automatically &mdash; you rarely need to
+        type it.</div>
+
+      <div class="secheadsmall">CONNECT PHONE &amp; LAPTOP OFFLINE &mdash; STEP BY STEP</div>
+      <ol style="color:var(--muted);font-size:13px;line-height:1.9;padding-left:20px;margin:6px 0 4px">
+        <li>Put this laptop and your phone on the <b>same Wi&#8209;Fi</b>. No
+            internet? Turn on a phone hotspot and connect the laptop to it, or
+            use any router even without an internet uplink.</li>
+        <li>Keep CAPHY running on this laptop (this window).</li>
+        <li>Open the CAPHY app on your phone. It checks your connection every few
+            seconds and, when it sees there's no internet but this laptop is
+            reachable, it switches by itself &mdash; you'll see an amber
+            <b>&ldquo;Offline mode &middot; Local Wi&#8209;Fi&rdquo;</b> banner at
+            the top.</li>
+        <li>That's it &mdash; live view and controls work over the local network.</li>
+      </ol>
+
+      <div class="secheadsmall" style="margin-top:18px">WHAT WORKS OFFLINE (LOCAL MODE)</div>
+      {_irow("Live camera view", "Yes (over local Wi-Fi)")}
+      {_irow("Arm / Disarm, camera, siren", "Yes")}
+      {_irow("On-laptop detection, alerts &amp; siren", "Yes (always, never needs internet)")}
+      {_irow("Push notifications to phone", "No - needs internet")}
+      {_irow("Watching from away / mobile data", "No - needs internet")}
+      {_irow("Alert history synced to the cloud", "No - resumes when internet returns")}
+      <div style="color:var(--dim);font-size:11.5px;margin-top:12px;line-height:1.6">
+        Detection, recording and the siren on this laptop keep running no matter
+        what &mdash; Local Mode is only about how your <i>phone</i> reaches the
+        system.</div>
+    """
+
     sections = {"detection": sec_detection, "cameras": sec_cameras, "alerts": sec_alerts,
-                "storage": sec_storage, "voice": sec_voice, "users": sec_users,
-                "about": sec_about}
+                "storage": sec_storage, "voice": sec_voice, "device": sec_device,
+                "offline": sec_offline,
+                "users": sec_users, "about": sec_about}
     nav = "".join(
         f'<a class="{"active" if tid == active else ""}" onclick="setTab(\'{tid}\',this)">{label}</a>'
         for tid, label in SETTINGS_TABS)

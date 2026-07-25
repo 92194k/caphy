@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CAPHY - {{ title }}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='24 24 72 72'%3E%3Crect x='24' y='24' width='72' height='72' rx='17' fill='%232A9D8F'/%3E%3Cellipse cx='60' cy='60' rx='21' ry='13' fill='%2308110f'/%3E%3Ccircle cx='60' cy='60' r='7' fill='%233dd7c4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="side">
+    <div class="brand">
+      <div class="logo">
+        <svg class="caphy-logo" viewBox="24 24 72 72" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+          <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2A9D8F"></stop><stop offset="1" stop-color="#217C72"></stop>
+          </linearGradient>
+          <clipPath id="cc"><rect x="24" y="24" width="72" height="72" rx="17"></rect></clipPath></defs>
+          <rect x="24" y="24" width="72" height="72" rx="17" fill="url(#cg)"></rect>
+          <g clip-path="url(#cc)">
+            <ellipse class="eye" cx="60" cy="60" rx="21" ry="13" fill="#08110f"></ellipse>
+            <g class="pupil">
+              <circle cx="60" cy="60" r="8.5" fill="#3dd7c4"></circle>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div><b>CAPHY</b><small>AI SECURITY</small></div>
+    </div>
+    <div class="nav">
+    {% for href, label in nav %}
+      <a href="{{ href }}" class="{{ 'active' if page == href else '' }}">
+        {% if href == '/' %}<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        {% elif href == '/live' %}<svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>
+        {% elif href == '/alerts' %}<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        {% elif href == '/history' %}<svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        {% elif href == '/logs' %}<svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        {% elif href == '/settings' %}<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        {% endif %}
+        {{ label }}
+      </a>
+    {% endfor %}
+    </div>
+    <div class="sidefoot">
+      <div class="st"><span class="dot {{ 'armed' if armed else 'off' }}"></span>
+        System {{ 'ARMED' if armed else 'DISARMED' }}<small>{{ cam }}</small></div>
+      <div class="fr">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
+        <span class="frname" title="{{ user }}">{{ user }}</span> &middot; Homeowner &nbsp;<a href="/logout" style="color:var(--teal2)">Log out</a></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div id="offlineBar" class="offlinebar" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M1 1l22 22"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      <div><b>You're offline</b> &mdash; CAPHY is running in Local Mode. Only devices on the same Wi&#8209;Fi as this laptop can connect right now.
+        <a href="/settings?tab=offline">How to connect &rarr;</a></div>
+    </div>
+    <div class="header">
+      <div class="ht"><h1>{{ title }}</h1>{% if subtitle %}<div class="sub">{{ subtitle }}</div>{% endif %}</div>
+      <div class="hr">
+        <span class="pill pg dotb">LIVE &middot; {{ ncam }} CAM</span>
+        <a class="iconbtn" href="/alerts" title="Alerts">
+          {% if nalerts and nalerts > 0 %}<span class="badge">{{ nalerts if nalerts < 100 else '99+' }}</span>{% endif %}
+          <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        </a>
+        <div class="profilewrap">
+          <div class="iconbtn" id="profileBtn" onclick="toggleProfile(event)" title="Account">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
+          </div>
+          <div class="profilemenu" id="profileMenu">
+            <div class="pmname">{{ user }}</div>
+            <div class="pmrole">Homeowner</div>
+            <a href="/settings">Settings</a>
+            <a href="/logout" class="pmlogout">Log out</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="content">{{ body|safe }}</div>
+  </div>
+
+  <div class="modalbg" id="appModal" onclick="if(event.target===this) closeModal(false)">
+    <div class="modalcard">
+      <div class="modalicon" id="modalIcon"></div>
+      <div class="modaltitle" id="modalTitle"></div>
+      <div class="modalmsg" id="modalMsg"></div>
+      <div class="modalbtns">
+        <button class="btn ghost" onclick="closeModal(false)">Cancel</button>
+        <button class="btn" id="modalConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // resume the logo animation at the current wall-clock phase, so it doesn't
+    // restart from zero every time you switch pages
+    (function(){var d=-(Date.now()%4200)+'ms';
+      document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
+        .forEach(function(e){e.style.animationDelay=d;});})();
+
+    // ---- auto-shrink a long email so it stays on ONE line ----
+    // Instead of wrapping/truncating, scale the font down until it fits its
+    // container's width (mirrors the phone app's FittedBox behaviour).
+    function fitText(el, maxPx, minPx){
+      if(!el) return;
+      var size = maxPx;
+      el.style.fontSize = size + 'px';
+      // shrink until it fits (or we hit the minimum readable size)
+      var guard = 0;
+      while(el.scrollWidth > el.clientWidth && size > minPx && guard < 40){
+        size -= 0.5; guard++;
+        el.style.fontSize = size + 'px';
+      }
+    }
+    function fitAccountText(){
+      fitText(document.querySelector('.sidefoot .frname'), 12, 8);
+      fitText(document.querySelector('.profilemenu .pmname'), 13.5, 9);
+    }
+    window.addEventListener('load', fitAccountText);
+    window.addEventListener('resize', fitAccountText);
+
+    // ---- laptop-side offline detection ----
+    // Auto-detect when THIS laptop has no internet and show a banner that
+    // explains Local Mode + links to the step-by-step guide. Uses a tiny
+    // no-content request to a reliable host; if it can't be reached, we're
+    // offline (the LAN can still be up - that's exactly what Local Mode is).
+    async function caphyCheckOnline(){
+      var online = false;
+      try{
+        await fetch('https://www.gstatic.com/generate_204',
+                    {mode:'no-cors', cache:'no-store'});
+        online = true;
+      }catch(e){ online = false; }
+      var bar = document.getElementById('offlineBar');
+      if(bar) bar.style.display = online ? 'none' : 'flex';
+    }
+    caphyCheckOnline();
+    setInterval(caphyCheckOnline, 8000);
+    // the profile menu is hidden at load (clientWidth 0), so re-fit when opened
+    (function(){var b=document.getElementById('profileBtn');
+      if(b) b.addEventListener('click', function(){ setTimeout(fitAccountText, 0); });})();
+
+    // ---- header profile dropdown ----
+    function toggleProfile(e){
+      if(e) e.stopPropagation();
+      document.getElementById('profileMenu').classList.toggle('show');
+    }
+    document.addEventListener('click', function(){
+      document.getElementById('profileMenu').classList.remove('show');
+    });
+
+    // ---- shared confirm modal (replaces browser confirm() everywhere) ----
+    let _modalResolve = null;
+    function openModal(opts){
+      opts = opts || {};
+      const icon = document.getElementById('modalIcon');
+      icon.innerHTML = opts.icon || '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+      icon.className = 'modalicon' + (opts.danger === false ? '' : ' danger');
+      document.getElementById('modalTitle').textContent = opts.title || 'Are you sure?';
+      document.getElementById('modalMsg').innerHTML = opts.message || '';
+      const btn = document.getElementById('modalConfirmBtn');
+      btn.textContent = opts.confirmText || 'Confirm';
+      btn.className = 'btn' + (opts.danger === false ? '' : ' danger');
+      btn.onclick = function(){ closeModal(true); };
+      document.getElementById('appModal').classList.add('show');
+      return new Promise(function(res){ _modalResolve = res; });
+    }
+    function closeModal(ok){
+      document.getElementById('appModal').classList.remove('show');
+      if(_modalResolve){ _modalResolve(!!ok); _modalResolve = null; }
+    }
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'Escape') closeModal(false);
+    });
+  </script>
+</body>
+</html>

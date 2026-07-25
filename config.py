@@ -21,7 +21,7 @@ MOG2_VAR_THRESHOLD = 40
 MOTION_BLUR        = 5
 
 # ---- Factor 2: Person (YOLOv8) ----
-YOLO_MODEL = "runs/detect/caphy_person-6/weights/best.pt"
+YOLO_MODEL = "models/caphy_person_best.pt"   # custom-trained CAPHY person model
 PERSON_CLASS_ID = 0
 PERSON_CONF     = 0.50
 
@@ -68,6 +68,15 @@ EVAL_GROUND_TRUTH = ""   # what SHOULD happen: "person", "no_person", or ""
 
 # ---- Database & captures ----
 DB_PATH            = "caphy.db"
+
+# ---- Retention (auto-delete old alerts) ----
+# Alerts (and their snapshot/video files, local AND cloud copy) older than
+# this many days are deleted automatically. Applies equally to every tier -
+# a Tier-1 alert and a Tier-3 alert both get the same window. Cloud copies
+# are deleted alongside local ones, so Firebase Storage usage stays low
+# instead of growing forever.
+RETENTION_DAYS     = 30
+RETENTION_ENABLED  = True
 
 # Registry value names for the REAL target of the "Pictures"/"Videos" Windows
 # libraries. Just guessing "~/Pictures" is wrong if OneDrive has redirected
@@ -183,4 +192,41 @@ JPEG_QUALITY   = 55    # MJPEG stream quality 1-100 (low = lightest stream)
 
 # ---- Firebase Storage (real photos on phone) ----
 FIREBASE_BUCKET = "caphy-c6b77.firebasestorage.app"    # e.g. "caphy-xxxx.appspot.com"  (from Firebase Console -> Storage)
+
+# ===== Firebase Configuration (B3+B4+B5) =====
+FIREBASE_KEY_PATH = "firebase_key.json"
+# NOTE: FIREBASE_BUCKET is defined ONCE, above (the .firebasestorage.app
+# value). There used to be a second definition here ("caphy-c6b77.appspot.com")
+# that silently overrode it - a duplicate is exactly the kind of thing that
+# makes cloud snapshot uploads fail with a confusing "bucket not found".
+# Verify the exact name in Firebase Console -> Storage (top of the page); it
+# is either <project>.firebasestorage.app (newer projects) or
+# <project>.appspot.com (older ones). If phone alert images don't load,
+# this line is the first thing to check.
+GOOGLE_CLIENT_ID = "790179915609-sujeq75jbavgsekof1vsk92prqiqpes9.apps.googleusercontent.com"
+
+# Web API key for this Firebase project (from android/app/google-services.json
+# -> client[0].api_key[0].current_key, or Firebase Console -> Project
+# Settings -> General -> Web API Key). Lets the server-rendered web
+# dashboard sign in against Firebase Auth's REST API - the SAME identity
+# store the phone's Firebase SDK uses - instead of checking a local
+# password hash. If left blank, web/server.py falls back to reading it
+# straight out of google-services.json at request time.
+FIREBASE_WEB_API_KEY = "AIzaSyDFRq5xH3AufJVQiXj1GrPxn3iJLVyw-oQ"
+
+# ---- WebRTC (true live streaming from outside the LAN) ----
+# TURN/STUN credentials are NEVER hardcoded here - they're fetched fresh
+# from Metered.ca's REST API every time a WebRTC call starts (see
+# secrets_config.py for where the API key itself lives, and
+# web/webrtc_stream.py / caphy_app/lib/webrtc_call.dart for the fetch).
+# This keeps the actual relay credentials short-lived and out of the
+# repo entirely, and means users never configure anything by hand.
+#
+# Fallback STUN-only server list, used only if the Metered fetch fails
+# (network hiccup, key rotated, etc.) - direct P2P still works for most
+# network pairs on STUN alone, just without a relay for the harder cases.
+FALLBACK_STUN_URLS = [
+    "stun:stun.l.google.com:19302",
+    "stun:global.stun.twilio.com:3478",
+]
 

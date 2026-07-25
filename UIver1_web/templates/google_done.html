@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CAPHY - Google Sign-In</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body{align-items:center;justify-content:center}
+    .box{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:38px;width:400px;text-align:center}
+    .icon{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      margin:0 auto 16px;font-size:28px}
+    .icon.ok{background:rgba(42,157,143,0.15);color:var(--teal)}
+    .icon.fail{background:rgba(229,72,77,0.15);color:var(--red)}
+    .msg{color:var(--text);font-size:14px;line-height:1.6}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="icon {{ 'ok' if ok else 'fail' }}">{{ '✓' if ok else '✕' }}</div>
+    <div class="msg">{{ message }}</div>
+  </div>
+  <script>
+    // This tab's only job was to complete the Google OAuth redirect - the
+    // actual CAPHY window (pywebview) is polling in the background and
+    // will pick up the result on its own. Safe (and tidy) to close this
+    // tab automatically a moment after showing the result, though some
+    // browsers block window.close() on tabs they didn't open via script -
+    // in that case the user just closes it manually, which is fine too.
+    setTimeout(function(){ window.close(); }, 2500);
+  </script>
+</body>
+</html>
