@@ -20,7 +20,7 @@ captures_compressed/
 cloud_sim/
 # ignore everything in models/ EXCEPT the trained CAPHY model (teammates need it)
 models/*
-!models/caphy_person_best.pt
+!models/caphy_person_best-6.ptx
 
 # ---- Training dataset (120MB - too big for git; share separately if needed) ----
 training/dataset/
