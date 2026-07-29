@@ -203,7 +203,7 @@ FIREBASE_KEY_PATH = "firebase_key.json"
 # is either <project>.firebasestorage.app (newer projects) or
 # <project>.appspot.com (older ones). If phone alert images don't load,
 # this line is the first thing to check.
-GOOGLE_CLIENT_ID = "790179915609-sujeq75jbavgsekof1vsk92prqiqpes9.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "316206433276-ret6igi42cf8t155cs51n9sa17sg4o6t.apps.googleusercontent.com"
 
 # Web API key for this Firebase project (from android/app/google-services.json
 # -> client[0].api_key[0].current_key, or Firebase Console -> Project
@@ -212,7 +212,7 @@ GOOGLE_CLIENT_ID = "790179915609-sujeq75jbavgsekof1vsk92prqiqpes9.apps.googleuse
 # store the phone's Firebase SDK uses - instead of checking a local
 # password hash. If left blank, web/server.py falls back to reading it
 # straight out of google-services.json at request time.
-FIREBASE_WEB_API_KEY = "AIzaSyDFRq5xH3AufJVQiXj1GrPxn3iJLVyw-oQ"
+FIREBASE_WEB_API_KEY = "AIzaSyApSAO8Og7dFVt8xe8VvM6W5-iEfAeuYfY"
 
 # ---- WebRTC (true live streaming from outside the LAN) ----
 # TURN/STUN credentials are NEVER hardcoded here - they're fetched fresh
