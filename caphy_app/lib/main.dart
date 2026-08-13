@@ -36,60 +36,168 @@ Future<void> main() async {
     systemNavigationBarDividerColor: Colors.transparent,
   ));
 
-  await Store.init();
+  // runApp() fires immediately with AppRoot instead of after all the async
+  // init below - previously main() awaited Firebase/login/FCM setup BEFORE
+  // the first frame ever rendered, so the OS's blank default splash sat
+  // there with zero feedback for however long that took (worse on a cold
+  // start with a slow/no connection). AppRoot owns ONE MaterialApp for the
+  // whole app lifetime and swaps its `home` from the splash content to
+  // CaphyApp once boot finishes - both live under the SAME Navigator, so
+  // there's no nested-MaterialApp/no-Navigator-found trap (that was the
+  // bug behind "reaches 100% then never proceeds": the previous version
+  // gave SplashScreen its own separate MaterialApp, so
+  // Navigator.of(context) from that State had no Navigator ancestor to
+  // find - pushReplacement silently had nothing to push onto).
+  runApp(const AppRoot());
+}
 
-  bool loggedIn = false;
-  try {
-    await Firebase.initializeApp();
+/// Single top-level MaterialApp for the whole app. Shows splash content
+/// while _booting, then CaphyApp once boot finishes - a plain setState
+/// swap, not a Navigator push, so there's exactly one MaterialApp/Navigator
+/// for the app's entire lifetime.
+class AppRoot extends StatefulWidget {
+  const AppRoot({super.key});
+  @override
+  State<AppRoot> createState() => _AppRootState();
+}
 
-    // Firebase remembers the signed-in user across app restarts on its own
-    // (separate from Store.token, which is just a cached copy of the ID
-    // token for local-network requests). currentUser is the source of
-    // truth for "is anyone logged in" now.
-    final user = fb.FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      // ID tokens expire (~1 hour) - refresh on startup so a phone that's
-      // been closed for a while doesn't open to a stale/expired token.
-      final freshToken = await user.getIdToken(true);
-      if (freshToken != null) {
-        Store.token = freshToken;
-        Store.user = user.email ?? '';
-        loggedIn = true;
-      }
-    }
+class _AppRootState extends State<AppRoot> {
+  bool _booting = true;
+  bool _loggedInAfterBoot = false;
 
-    FirebaseMessaging.onBackgroundMessage(_bgHandler);
-    await FirebaseMessaging.instance.requestPermission();
-
-    // No more shared 'caphy_alerts' topic - every phone subscribing to the
-    // same topic meant every phone got every household's alerts. Instead,
-    // each phone registers its own FCM token with the paired laptop
-    // (/api/fcm/register), which subscribes it to a topic scoped to just
-    // that account + that device (see storage/firebase_push.py). Only
-    // works if the laptop's address has been set - if not, this silently
-    // no-ops and retries next time (e.g. after the user visits Settings).
-    if (loggedIn && Store.hasServerAddress) {
-      final fcmToken = await FirebaseMessaging.instance.getToken();
-      if (fcmToken != null) {
-        Api.rememberFcmToken(fcmToken);
-        await Api.registerFcmToken(fcmToken);
-      }
-    }
-
-    // If the OS rotates the token later, re-register it so the phone keeps
-    // receiving alerts under the new token.
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      Api.rememberFcmToken(newToken);
-      if (Store.token != null && Store.hasServerAddress) {
-        Api.registerFcmToken(newToken);
-      }
-    });
-  } catch (_) {
-    // Firebase not set up / offline — the app still works over local Wi-Fi
-    // once the user has a cached Store.token from a previous session.
-    loggedIn = Store.token != null;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
   }
-  runApp(CaphyApp(initiallyLoggedIn: loggedIn));
+
+  Future<void> _boot() async {
+    bool loggedIn = false;
+
+    await Store.init();
+
+    // Hard per-step ceiling for every network/OS call below - same pattern
+    // already used throughout the app (Api.setArmed, Api.siren, etc: see
+    // live_tab.dart). Without this, a stalled getIdToken() call, a
+    // requestPermission() dialog that never resolves, or a slow/offline FCM
+    // registration would hang _boot() forever - and because this now runs
+    // on a VISIBLE splash screen instead of silently before runApp() (the
+    // old behavior), that hang reads as "stuck on loading" instead of just
+    // a slightly-longer blank OS splash. Each step degrades gracefully
+    // (skips itself) on timeout rather than blocking the whole sequence.
+    const stepTimeout = Duration(seconds: 8);
+
+    try {
+      await Firebase.initializeApp().timeout(stepTimeout);
+      // Starts/stops the periodic ID-token refresh automatically as the
+      // user signs in/out, from whichever path they used (password, magic
+      // link, Google, or QR pairing) - see Api.watchAuthForTokenRefresh().
+      Api.watchAuthForTokenRefresh();
+
+      // Firebase remembers the signed-in user across app restarts on its
+      // own (separate from Store.token, which is just a cached copy of the
+      // ID token for local-network requests). currentUser is the source of
+      // truth for "is anyone logged in" now.
+      final user = fb.FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // ID tokens expire (~1 hour) - refresh on startup so a phone that's
+        // been closed for a while doesn't open to a stale/expired token.
+        // On timeout, fall through to the cached Store.token below rather
+        // than hanging - a slow token refresh shouldn't block getting into
+        // the app when a usable cached session already exists.
+        final freshToken = await user
+            .getIdToken(true)
+            .timeout(stepTimeout, onTimeout: () => null);
+        if (freshToken != null) {
+          Store.token = freshToken;
+          Store.user = user.email ?? '';
+          loggedIn = true;
+        }
+      }
+
+      FirebaseMessaging.onBackgroundMessage(_bgHandler);
+      // requestPermission() waits on the OS permission dialog - if the user
+      // doesn't interact with it promptly (or the dialog is suppressed by
+      // the OS), this must not block startup.
+      await FirebaseMessaging.instance
+          .requestPermission()
+          .timeout(stepTimeout, onTimeout: () => throw TimeoutException('perm'));
+
+      // No more shared 'caphy_alerts' topic - every phone subscribing to
+      // the same topic meant every phone got every household's alerts.
+      // Instead, each phone registers its own FCM token with the paired
+      // laptop (/api/fcm/register), which subscribes it to a topic scoped
+      // to just that account + that device (see storage/firebase_push.py).
+      // Only works if the laptop's address has been set - if not, this
+      // silently no-ops and retries next time (e.g. after the user visits
+      // Settings).
+      if (loggedIn && Store.hasServerAddress) {
+        final fcmToken = await FirebaseMessaging.instance
+            .getToken()
+            .timeout(stepTimeout, onTimeout: () => null);
+        if (fcmToken != null) {
+          Api.rememberFcmToken(fcmToken);
+          await Api.registerFcmToken(fcmToken).timeout(stepTimeout,
+              onTimeout: () => false);
+        }
+      }
+
+      // If the OS rotates the token later, re-register it so the phone
+      // keeps receiving alerts under the new token.
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        Api.rememberFcmToken(newToken);
+        if (Store.token != null && Store.hasServerAddress) {
+          Api.registerFcmToken(newToken);
+        }
+      });
+    } catch (_) {
+      // Firebase not set up / offline / a step above timed out - the app
+      // still works over local Wi-Fi once the user has a cached
+      // Store.token from a previous session.
+      loggedIn = Store.token != null;
+    }
+
+    if (!mounted) return;
+    // Plain setState swap, not a Navigator push - see the note on AppRoot
+    // above for why (no nested MaterialApp means no missing-Navigator trap).
+    setState(() {
+      _loggedInAfterBoot = loggedIn;
+      _booting = false;
+    });
+  }
+
+  // Simplified per request: no progress bar/percentage/label anymore, just
+  // a big centered logo while _boot() runs in the background. _boot() still
+  // does the same Firebase/login/FCM work either way - only the UI shown
+  // during it changed.
+  Widget _splashContent() {
+    return const Scaffold(
+      backgroundColor: cBg,
+      body: Center(
+        child: CaphyLogo(size: 180),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // While booting: a minimal MaterialApp just for the splash (it needs
+    // Material/Directionality ancestors to render text/icons at all).
+    // Once boot finishes: render CaphyApp directly, NOT nested inside this
+    // MaterialApp - CaphyApp builds its own MaterialApp/Navigator below
+    // (unchanged from before this splash screen existed), so returning it
+    // straight from build() keeps exactly ONE MaterialApp/Navigator alive
+    // for the app's main lifetime, same as before.
+    if (_booting) {
+      return MaterialApp(
+        title: 'CAPHY',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(brightness: Brightness.dark, scaffoldBackgroundColor: cBg),
+        home: _splashContent(),
+      );
+    }
+    return CaphyApp(initiallyLoggedIn: _loggedInAfterBoot);
+  }
 }
 
 class CaphyApp extends StatefulWidget {
@@ -273,7 +381,7 @@ class _ConnectSignInScreenState extends State<ConnectSignInScreen> {
       backgroundColor: cBg,
       appBar: AppBar(
           backgroundColor: cPanel,
-          title: const Text('Scan your laptop'),
+          title: const Text('How to connect'),
           leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: cText),
               onPressed: () => setState(() {
@@ -285,8 +393,9 @@ class _ConnectSignInScreenState extends State<ConnectSignInScreen> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: Text(
-            'On your laptop, open CAPHY → Settings → Connect Phone, then point '
-            'your camera at the QR code shown there.',
+            '1. Open CAPHY on your laptop.\n'
+            '2. Go to Settings → Connect Phone.\n'
+            '3. Scan the QR code shown.',
             style: const TextStyle(color: cMuted, fontSize: 13, height: 1.5),
           ),
         ),
@@ -352,15 +461,14 @@ class _ConnectSignInScreenState extends State<ConnectSignInScreen> {
               const SizedBox(height: 40),
               const Icon(Icons.qr_code_scanner, color: cTeal, size: 72),
               const SizedBox(height: 20),
-              const Text('Connect to your laptop',
+              const Text('Connect to Your Laptop',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       color: cText, fontSize: 19, fontWeight: FontWeight.w600)),
               const SizedBox(height: 10),
               const Text(
-                'No passwords. On the laptop running CAPHY, sign in once, then '
-                'open Settings → Connect Phone and scan the QR code with this '
-                'app. You\'ll be signed in and connected in one step.',
+                'Sign in on your laptop, open Settings → Connect Phone, then '
+                'scan the QR code.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: cMuted, fontSize: 13, height: 1.5),
               ),
@@ -418,12 +526,25 @@ class _DeviceGateState extends State<DeviceGate> {
 
   Future<void> _check() async {
     final devices = await Api.myDevices();
-    if (devices.isNotEmpty) {
+    bool hasDevice = devices.isNotEmpty;
+    if (hasDevice) {
       await Api.reconnectToPairedDevice();
+    } else if (Store.lastDeviceId != null && Store.hasServerAddress) {
+      // myDevices() came back empty - either genuinely no paired device, OR
+      // (now that it has a real timeout) it just failed/timed out because
+      // there's no internet at all right now. Those two cases must NOT be
+      // treated the same: a phone that has already paired before should
+      // open straight into the dashboard and use its cached LAN address,
+      // not get bounced to onboarding just because it happens to be
+      // offline at this exact moment. The connectivity banner (which does
+      // its own LAN-vs-cloud probing) is what actually tells the user
+      // whether the laptop is reachable right now - this gate only decides
+      // "have we ever paired", which the cached values already answer.
+      hasDevice = true;
     }
     if (!mounted) return;
     setState(() {
-      _hasDevice = devices.isNotEmpty;
+      _hasDevice = hasDevice;
       _checking = false;
     });
   }
@@ -1324,6 +1445,7 @@ class _HomeShellState extends State<HomeShell> {
   int _lastSeenId = 0;      // highest alert id we've already popped
   bool _popupOpen = false;  // don't stack popups
   bool _primed = false;     // skip the first poll so old alerts don't pop
+  bool _checkAlertsInFlight = false;   // same overlapping-timer guard as Api.refreshConnectivity()
 
   @override
   void initState() {
@@ -1336,9 +1458,12 @@ class _HomeShellState extends State<HomeShell> {
     // Auto-detect internet vs LAN-only vs offline, every few seconds, so the
     // app can switch to the local network the moment the internet drops and
     // tell the user (see ModeBanner).
+    // 3s instead of 6s: connectivity changes (internet restored, laptop
+    // back on LAN) should feel near-instant, not take up to 6s to notice
+    // on top of each check's own network timeout.
     Api.refreshConnectivity();
     _connPoll = Timer.periodic(
-        const Duration(seconds: 6), (_) => Api.refreshConnectivity());
+        const Duration(seconds: 3), (_) => Api.refreshConnectivity());
 
     // If Firebase is set up, a tapped background notification still opens it.
     FirebaseMessaging.onMessageOpenedApp
@@ -1353,6 +1478,21 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _checkAlerts() async {
+    // Guards against the exact same overlapping-Timer.periodic-calls issue
+    // just fixed in Api.refreshConnectivity() - Api.alerts() can fall
+    // through to a Firestore cloud read when the LAN path fails, and while
+    // that now has its own timeout, letting multiple ticks pile up while
+    // offline is still wasted work this app doesn't need to do.
+    if (_checkAlertsInFlight) return;
+    _checkAlertsInFlight = true;
+    try {
+      await _checkAlertsOnce();
+    } finally {
+      _checkAlertsInFlight = false;
+    }
+  }
+
+  Future<void> _checkAlertsOnce() async {
     final list = await Api.alerts(limit: 5);
     if (!mounted || list.isEmpty) return;
     final newest = list.first;
@@ -1425,30 +1565,74 @@ class _HomeShellState extends State<HomeShell> {
                       Text(
                         'Person detected'
                         '${a['camera'] != null ? ' on ${a['camera']}' : ''}'
-                        '${a['distance_m'] != null ? ' · ${a['distance_m']} m' : ''}',
+                        '${a['distance_m'] != null ? ' · ${a['distance_m']} m away' : ''}',
                         style: const TextStyle(color: cMuted, fontSize: 12),
                       ),
                     ]),
               ),
-              IconButton(
-                onPressed: close,
-                icon: const Icon(Icons.close, color: cMuted, size: 18),
-                tooltip: 'Dismiss',
-                constraints: const BoxConstraints(),
-                padding: const EdgeInsets.all(6),
+              Material(
+                color: cPanel2,
+                borderRadius: BorderRadius.circular(9),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(9),
+                  onTap: () {
+                    close();
+                    // Acknowledge actually dismisses the alert server-side
+                    // (same call AlertsTab._ack() uses) rather than just
+                    // closing this popup - otherwise "Acknowledge" silently
+                    // did nothing but hide the banner, leaving the alert
+                    // still pending in the Alerts tab, which looked
+                    // acknowledged but wasn't.
+                    Api.dismissAlert(id).timeout(
+                        const Duration(seconds: 18), onTimeout: () => false);
+                  },
+                  child: Container(
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: cLine),
+                    ),
+                    child: const Text('Acknowledge',
+                        style: TextStyle(
+                            color: cTeal2,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
               ),
-              const SizedBox(width: 2),
-              FilledButton(
-                onPressed: () {
-                  close();
-                  _openAlert(id);
-                },
-                style: FilledButton.styleFrom(
-                    backgroundColor: cTeal,
-                    minimumSize: const Size(0, 34),
-                    padding: const EdgeInsets.symmetric(horizontal: 16)),
-                child: const Text('View',
-                    style: TextStyle(color: Colors.black, fontSize: 12.5)),
+              const SizedBox(width: 8),
+              Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(9),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(9),
+                  onTap: () {
+                    close();
+                    _openAlert(id);
+                  },
+                  child: Container(
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: cGrad,
+                      borderRadius: BorderRadius.circular(9),
+                      boxShadow: [
+                        BoxShadow(
+                            color: cTeal.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3)),
+                      ],
+                    ),
+                    child: const Text('View',
+                        style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
               ),
             ]),
           ),
@@ -1484,19 +1668,46 @@ class _HomeShellState extends State<HomeShell> {
           Expanded(child: IndexedStack(index: _i, children: tabs)),
         ]),
       ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: cPanel,
-        indicatorColor: cTeal.withValues(alpha: 0.25),
-        selectedIndex: _i,
-        onDestinationSelected: (v) => setState(() => _i = v),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
-          NavigationDestination(
-              icon: Icon(Icons.notifications_outlined), label: 'Alerts'),
-          NavigationDestination(
-              icon: Icon(Icons.videocam_outlined), label: 'Live'),
-          NavigationDestination(icon: Icon(Icons.person_outline), label: 'Me'),
-        ],
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return TextStyle(
+              fontSize: 11.5,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+              color: selected ? cTeal2 : cMuted,
+            );
+          }),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return IconThemeData(
+                color: selected ? cTeal2 : cMuted, size: selected ? 25 : 23);
+          }),
+        ),
+        child: NavigationBar(
+          backgroundColor: cPanel,
+          indicatorColor: cTeal2.withValues(alpha: 0.18),
+          selectedIndex: _i,
+          onDestinationSelected: (v) => setState(() => _i = v),
+          destinations: const [
+            NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'Home'),
+            NavigationDestination(
+                icon: Icon(Icons.notifications_outlined),
+                selectedIcon: Icon(Icons.notifications),
+                label: 'Alerts'),
+            NavigationDestination(
+                icon: Icon(Icons.videocam_outlined),
+                selectedIcon: Icon(Icons.videocam),
+                label: 'Live'),
+            NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Me'),
+          ],
+        ),
       ),
     );
   }

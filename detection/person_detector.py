@@ -27,10 +27,34 @@ class PersonDetector:
         self.conf = conf
         self.imgsz = imgsz            # smaller = faster inference
 
+        # Ultralytics defaults to CPU unless a device is explicitly given -
+        # it does NOT auto-detect and use an available NVIDIA GPU on its
+        # own. On hardware with a real GPU (e.g. this project's RTX 3060
+        # laptop GPU), running inference on the CPU instead leaves the
+        # single biggest available speedup completely unused, and is very
+        # likely why detection-heavy frames felt slow/laggy even on
+        # otherwise capable hardware - every 8th frame (PERSON_EVERY_N)
+        # was taking far longer than it needed to on the CPU path. This
+        # detects CUDA availability once at startup and pins inference to
+        # the GPU when present, silently falling back to CPU (unchanged
+        # behavior) on machines without one - so this is a pure win where
+        # available and a no-op everywhere else.
+        self.device = "cpu"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                self.device = "cuda:0"
+                print(f"[CAPHY] YOLO person detector using GPU: {torch.cuda.get_device_name(0)}")
+            else:
+                print("[CAPHY] YOLO person detector using CPU (no CUDA GPU detected)")
+        except Exception as e:
+            print(f"[CAPHY] Could not check for GPU, using CPU ({e})")
+
     def detect(self, frame):
         """Return a list of persons: [{'box': (x1,y1,x2,y2), 'conf': float}, ...]."""
         results = self.model(
-            frame, verbose=False, classes=[self.person_class], conf=self.conf, imgsz=self.imgsz)
+            frame, verbose=False, classes=[self.person_class], conf=self.conf,
+            imgsz=self.imgsz, device=self.device)
 
         persons = []
         for r in results:

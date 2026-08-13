@@ -11,21 +11,68 @@ import os
 import shutil
 import socket
 import time
+from functools import lru_cache
 
 import cv2
 
 from storage.database import Database
 
 
-def internet_available(host="8.8.8.8", port=53, timeout=2.0):
-    """True if we can reach the internet (quick DNS-port check)."""
-    try:
-        socket.setdefaulttimeout(timeout)
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((host, port))
-        return True
-    except OSError:
-        return False
+# Cache internet connectivity check for 5 seconds to avoid excessive DNS lookups
+@lru_cache(maxsize=1)
+def _check_internet_cached(cache_key):
+    """Internal cached check - cache_key is current time bucket."""
+    return _internet_check_actual()
+
+
+def _internet_check_actual():
+    """Actual internet check without caching.
+
+    IMPORTANT: this must NEVER call socket.setdefaulttimeout(). That call
+    sets the timeout for every socket created anywhere in this Python
+    process for the rest of its life - not just the one connection below.
+    This function used to do exactly that, on every /api/health poll (as
+    often as every 1.5s) and every Settings page load, which meant Firebase
+    Admin SDK calls, WebRTC signaling, and any other network code running
+    concurrently elsewhere in the app silently inherited a 2-second global
+    timeout it never asked for and this function never restored. That is
+    the most likely explanation for reports of the whole app "freezing" or
+    dashboard tabs endlessly spinning specifically after a connectivity
+    change - a slow-but-legitimate call elsewhere could get cut off by a
+    timeout value that had nothing to do with it. Using socket.settimeout()
+    on the individual socket object instead achieves the exact same
+    connectivity-check behavior (2s timeout on this probe only) with zero
+    effect on anything else running in the process.
+    """
+    hosts = [
+        ("8.8.8.8", 53),      # Google DNS
+        ("1.1.1.1", 53),      # Cloudflare DNS
+        ("8.8.4.4", 53),      # Google DNS secondary
+    ]
+    for host, port in hosts:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2.0)
+                s.connect((host, port))
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def internet_available(use_cache=True):
+    """True if we can reach the internet (tries multiple DNS servers for reliability).
+
+    Args:
+        use_cache: If True, uses 5-second cache to avoid excessive DNS checks.
+                   Set to False to force immediate check.
+    """
+    if not use_cache:
+        return _internet_check_actual()
+
+    # Cache key based on current 5-second time bucket (so cache expires every 5s)
+    cache_key = int(time.time()) // 5
+    return _check_internet_cached(cache_key)
 
 
 class LocalCloudUploader:

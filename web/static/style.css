@@ -31,11 +31,23 @@ a{text-decoration:none;color:inherit}
   display:flex;align-items:center;justify-content:center;
   box-shadow:0 0 14px rgba(96,110,255,.35)}
 .logo svg{display:block}
-/* living CAPHY logo — blink + glance */
-.caphy-logo .eye{transform-box:fill-box;transform-origin:center;animation:caphy-blink 4.2s infinite}
-.caphy-logo .pupil{transform-box:fill-box;transform-origin:center;animation:caphy-glance 4.2s ease-in-out infinite}
-@keyframes caphy-blink{0%,86%,100%{transform:scaleY(1)}90%{transform:scaleY(.08)}94%{transform:scaleY(1)}}
-@keyframes caphy-glance{0%,50%,100%{transform:translateX(0)}25%{transform:translateX(6px)}75%{transform:translateX(-6px)}}
+/* living CAPHY logo — real-eye look: curved almond lid blinks closed, pupil
+   sweeps up / right / down / left in one continuous orbit */
+.caphy-logo .eye{transform-box:view-box;transform-origin:48px 46px;animation:caphy-blink 6s ease-in-out infinite}
+.caphy-logo .pupil{transform-box:view-box;transform-origin:48px 46px;
+  animation:caphy-glance 6s ease-in-out infinite, caphy-pupil-hide 6s ease-in-out infinite}
+@keyframes caphy-blink{0%,90%,100%{transform:scaleY(1)}95%{transform:scaleY(.05)}}
+@keyframes caphy-glance{
+  0%,100%{transform:translate(0,-6px)}
+  12.5%{transform:translate(5px,-4px)}
+  25%{transform:translate(7px,0)}
+  37.5%{transform:translate(5px,4px)}
+  50%{transform:translate(0,6px)}
+  62.5%{transform:translate(-5px,4px)}
+  75%{transform:translate(-7px,0)}
+  87.5%{transform:translate(-5px,-4px)}
+}
+@keyframes caphy-pupil-hide{0%,92%,99%,100%{opacity:1}95%{opacity:0}}
 .brand b{font-size:19px;letter-spacing:3px}
 .brand small{display:block;color:var(--teal2);font-size:9px;letter-spacing:3px;margin-top:1px}
 .nav{margin-top:6px}
@@ -60,8 +72,11 @@ a{text-decoration:none;color:inherit}
 .main{flex:1;margin-left:230px;display:flex;flex-direction:column;min-height:100vh}
 .header{display:flex;justify-content:space-between;align-items:center;
   padding:16px 30px;border-bottom:1px solid var(--line);background:rgba(13,21,28,.6)}
-.header .ht h1{font-size:21px;font-weight:700}
-.header .ht .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.header .ht{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;white-space:nowrap;overflow:hidden}
+.header .ht h1{font-size:21px;font-weight:700;white-space:nowrap;margin:0}
+.header .ht .sub{color:var(--muted);font-size:12.5px;margin:0;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
 .header .hr{display:flex;align-items:center;gap:14px}
 .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line2);
   background:var(--panel);display:flex;align-items:center;justify-content:center;
@@ -76,17 +91,24 @@ a{text-decoration:none;color:inherit}
 
 /* ---------------- header profile dropdown ---------------- */
 .profilewrap{position:relative}
-.profilemenu{position:absolute;top:48px;right:0;background:var(--panel2);
+.profilemenu{position:absolute;top:48px;right:0;background:#15152f !important;
+  backdrop-filter:none !important;-webkit-backdrop-filter:none !important;
   border:1px solid var(--line2);border-radius:12px;padding:10px;min-width:170px;
-  max-width:280px;display:none;z-index:80;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+  max-width:280px;display:none;z-index:9999;box-shadow:0 12px 30px rgba(0,0,0,.6)}
 .profilemenu.show{display:block}
-/* laptop offline banner */
+/* laptop offline banner - kept as a persistent full-width bar (correct for
+   a dashboard you may sit and look at, unlike the phone's transient
+   toast), but with a touch more depth/polish to match the phone app's
+   generally more refined chip/card treatment: a subtle shadow so it reads
+   as a distinct layer rather than flat text on a line. */
 .offlinebar{display:flex;align-items:center;gap:12px;background:rgba(230,150,30,.12);
-  border-bottom:1px solid var(--orange);color:var(--orange);padding:11px 22px;font-size:12.5px;line-height:1.5}
+  border-bottom:1px solid var(--orange);color:var(--orange);padding:11px 22px;font-size:12.5px;
+  line-height:1.5;box-shadow:0 2px 10px rgba(224,164,76,.08)}
 .offlinebar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;flex:0 0 auto}
 .offlinebar b{color:var(--orange)}
-.offlinebar a{color:var(--teal2);margin-left:6px;white-space:nowrap;text-decoration:none}
-.offlinebar a:hover{text-decoration:underline}
+.offlinebar a{color:var(--teal2);margin-left:6px;white-space:nowrap;text-decoration:none;
+  font-weight:600;border-bottom:1px solid transparent;transition:.15s}
+.offlinebar a:hover{border-bottom-color:var(--teal2)}
 /* camera picker (Settings > Cameras) */
 .campick{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--line);
   border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--panel)}
@@ -184,29 +206,110 @@ img.feed{width:100%;border-radius:12px;background:#000;display:block}
 @media(max-width:1000px){.livewrap{grid-template-columns:1fr}}
 .rightcol{display:flex;flex-direction:column;gap:16px}
 
-/* detection overlay on the main feed */
-.detbox{position:absolute;top:12px;left:12px;background:rgba(8,14,18,.82);
+/* detection overlay on the main feed - pushed below the fullscreen button
+   (.fsbtn, top:10px/left:10px, 34px square) instead of sharing its exact
+   top-left corner. Both are absolutely positioned over the video, so
+   before this the much larger detbox (min-width 180px) rendered on top of
+   and completely hid the fullscreen button underneath it. */
+.detbox{position:absolute;top:56px;left:12px;background:rgba(8,14,18,.82);
   border:1px solid var(--line2);border-radius:10px;padding:11px 13px;min-width:180px}
 .detbox .dh{color:var(--teal2);font-size:10px;letter-spacing:2px;margin-bottom:9px}
 .detbox .dr{display:flex;justify-content:space-between;align-items:center;gap:18px;
   font-size:12px;margin:6px 0;color:var(--muted)}
 .detbox .dd{color:var(--orange);font-size:12px;margin-top:8px}
 
+/* Camera Loading / Camera Unavailable overlay - covers the <img> entirely
+   until a real frame is confirmed (see updateCamFeedState() in the Live
+   page script), so a camera still opening the device never looks like a
+   frozen or broken feed. */
+.camstate{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;background:var(--bg2);
+  z-index:2;text-align:center;padding:20px}
+.camstateicon{width:56px;height:56px;border-radius:16px;display:flex;
+  align-items:center;justify-content:center}
+.camstateicon svg{width:26px;height:26px;fill:none;stroke-width:2}
+.camstateicon.loading{background:rgba(63,215,196,.12);border:1px solid rgba(63,215,196,.35)}
+.camstateicon.loading svg{stroke:var(--teal2)}
+.camstateicon.error{background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.35)}
+.camstateicon.error svg{stroke:var(--red)}
+.camspinner{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);
+  border-top-color:var(--teal2);animation:camspin .8s linear infinite}
+@keyframes camspin{to{transform:rotate(360deg)}}
+.camstatetxt{color:var(--muted);font-size:13px;font-weight:600}
+.camstatesub{color:var(--dim);font-size:12px;margin-top:-4px}
+.camretrybtn{display:inline-flex;align-items:center;gap:6px;margin-top:4px;
+  padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);
+  color:var(--teal2);font-size:12.5px;font-weight:600;cursor:pointer;transition:.15s}
+.camretrybtn:hover{border-color:var(--teal2);background:rgba(63,215,196,.08)}
+.camretrybtn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}
+
+/* ---------------- status pill row (System/Camera/Night Vision/Siren/
+   Emergency) - mirrors the phone app's StateChip: soft tinted background
+   + colored border when ON, flat/dim panel look when OFF, rather than
+   plain unstyled text (this row previously had NO CSS at all - setPill()
+   in the page script already toggles an "on" class, this just gives that
+   class something to actually look like). Keeps the same --accent/
+   --accent2/--orange/--red palette already shared with the phone app. */
+.statebar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.sb{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;
+  border-radius:20px;font-size:12px;font-weight:600;
+  background:var(--panel);border:1px solid var(--line2);color:var(--dim);
+  transition:.15s}
+.sb::before{content:'';width:7px;height:7px;border-radius:50%;
+  background:var(--dim);flex-shrink:0;transition:.15s}
+.sb.on{background:rgba(96,110,255,.14);border-color:var(--accent2);color:var(--accent2)}
+.sb.on::before{background:var(--accent2);box-shadow:0 0 6px var(--accent2)}
+/* Emergency and Siren read as danger/warning when on, not the default
+   accent violet - matches the phone's StateChip onColor overrides
+   (cRed for EMERGENCY, cOrange-adjacent urgency for Siren). */
+#sbEmg.on{background:rgba(240,89,107,.14);border-color:var(--red);color:var(--red)}
+#sbEmg.on::before{background:var(--red);box-shadow:0 0 6px var(--red)}
+#sbSiren.on{background:rgba(224,164,76,.14);border-color:var(--orange);color:var(--orange)}
+#sbSiren.on::before{background:var(--orange);box-shadow:0 0 6px var(--orange)}
+
 /* control buttons under the feed */
 .controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
 .ctrlbtn{background:var(--panel);border:1px solid var(--line2);color:var(--text);
-  padding:10px 16px;border-radius:9px;font-size:13px;cursor:pointer;transition:.15s}
+  padding:10px 16px;border-radius:9px;font-size:13px;cursor:pointer;transition:.15s;
+  display:inline-flex;align-items:center;gap:8px}
+.ctrlbtn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
 .ctrlbtn:hover{border-color:var(--teal)}
 .ctrlbtn.active{border-color:var(--teal2);color:var(--teal2)}
 .ctrlbtn.siren{background:var(--orange);border-color:var(--orange);color:#1a1206;font-weight:700}
+/* Arm/Disarm primary button: filled solid accent when ARMED (mirrors the
+   phone's _primaryBtn - a filled teal button, not just a thin outline) so
+   the system's most important state is unmistakable at a glance, not just
+   readable from the small label text next to it. Disarmed keeps the
+   default flat/outline .ctrlbtn look. Uses .active - the class
+   refreshState() already toggles on armBtn (see the page script) - not a
+   new class, so no JS changes needed for this to take effect. */
+.ctrlbtn.primary.active{background:var(--accent);border-color:var(--accent);
+  color:#081226;font-weight:700}
+/* Emergency toggle button: reads red when active (matches the status
+   pill's #sbEmg.on treatment above and the phone's StateChip cRed
+   override) instead of the generic teal .active color every other icon
+   button gets - emergency mode is a distinctly different kind of "on"
+   from night vision/etc, and looked visually identical before this. */
+.ctrlbtn.emg.active{border-color:var(--red);color:var(--red);
+  background:rgba(240,89,107,.14)}
 
-/* right-side camera list */
+/* right-side camera list - every tile is already a LIVE MJPEG feed
+   (/video_feed/{id}), so this reads as a real "watch every camera at
+   once" grid, not a static picker, matching the phone app's default
+   2-up grid view. */
 .camlist{display:flex;flex-direction:column;gap:12px}
 .camitem{background:var(--panel);border:1px solid var(--line);border-left-width:3px;
   border-radius:11px;padding:9px;cursor:pointer;transition:.15s}
 .camitem:hover{border-color:var(--line2)}
 .camitem.active{border-left-color:var(--teal2)}
+.camthumbwrap{position:relative}
 .camthumb{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#000;display:block}
+.camthumbfs{position:absolute;bottom:6px;right:6px;width:26px;height:26px;padding:5px;
+  border:none;border-radius:7px;background:rgba(0,0,0,.55);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:.15s}
+.camthumbfs:hover{background:rgba(0,0,0,.8)}
+.camthumbfs svg{width:100%;height:100%;fill:none;stroke:#fff;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
 .cimeta{display:flex;justify-content:space-between;align-items:center;margin-top:9px}
 .cimeta .cn{font-size:13px;font-weight:700}
 .cimeta .cs{font-size:11px;color:var(--dim);margin-top:1px}
@@ -239,7 +342,9 @@ img.feed{width:100%;border-radius:12px;background:#000;display:block}
 .searchbox input{width:100%;padding-left:38px}
 .fpills{display:flex;gap:8px;flex-wrap:wrap}
 .fpill{padding:7px 15px;border-radius:20px;font-size:12.5px;border:1px solid var(--line2);
-  color:var(--muted);background:var(--panel)}
+  color:var(--muted);background:var(--panel);font-family:inherit;cursor:pointer;
+  display:inline-block;text-decoration:none;line-height:normal}
+.fpill:focus{outline:2px solid var(--teal2);outline-offset:1px}
 .fpill.active{background:rgba(96,110,255,.16);border-color:var(--teal2);color:var(--teal2);font-weight:700}
 .snapav{width:30px;height:30px;border-radius:7px;background:var(--bg2);
   display:flex;align-items:center;justify-content:center;color:var(--orange)}
@@ -382,11 +487,19 @@ body{
   background:linear-gradient(90deg, rgba(96,110,255,.18), rgba(96,110,255,.04));
   box-shadow:inset 0 0 0 1px rgba(96,110,255,.14);
 }
-/* Header as a translucent frosted bar */
+/* Header as a translucent frosted bar.
+   isolation:isolate pins the header (and everything inside it, including
+   the profile dropdown) as its own stacking layer so its z-index is
+   compared as a whole against .content -- otherwise each backdrop-filter
+   card below creates its own stacking context and can visually paint over
+   the dropdown even though .profilemenu has a much higher z-index, because
+   that z-index only wins comparisons *within* the nearest shared stacking
+   context, not globally. */
 .header{
   background:rgba(12,19,34,.55);
   backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
   border-bottom:1px solid var(--glass-line);
+  position:relative; z-index:500; isolation:isolate;
 }
 /* Cards + panels -> slate-blue glass with hairline highlight + soft depth */
 .card, .panel, .modalcard, .loginbox, .setwrap, .tiercard, .detbox{

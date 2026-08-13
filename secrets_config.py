@@ -53,6 +53,67 @@ def get_metered_api_key():
     return _load_keys_file().get("metered_api_key", "")
 
 
+def get_groq_api_key():
+    """Groq API key - primary cloud AI fallback for voice command
+    interpretation when the offline exact-phrase match in voice/intents.json
+    doesn't find anything. Free tier: ~14,400 requests/day for
+    llama-3.1-8b-instant, no card required. Never log or print this value."""
+    env = os.environ.get("CAPHY_GROQ_API_KEY")
+    if env:
+        return env
+    return _load_keys_file().get("groq_api_key", "")
+
+
+def get_groq_api_keys():
+    """List of Groq API keys for automatic failover (voice assistant v2).
+    Tried in order; if one is rate-limited/invalid, the caller rotates to
+    the next. Falls back to the single-key field if the list isn't set, so
+    old code/config keeps working. Never log or print these values.
+
+    Env override: CAPHY_GROQ_API_KEYS as a comma-separated string."""
+    env = os.environ.get("CAPHY_GROQ_API_KEYS")
+    if env:
+        return [k.strip() for k in env.split(",") if k.strip()]
+    keys = _load_keys_file().get("groq_api_keys")
+    if keys:
+        return [k for k in keys if k]
+    single = get_groq_api_key()
+    return [single] if single else []
+
+
+def get_gemini_api_key():
+    """Google Gemini API key - second cloud AI fallback for voice command
+    interpretation, tried after Groq is exhausted/unavailable. Free tier:
+    ~1,500 requests/day for Gemini Flash, no card required. Never log or
+    print this value."""
+    env = os.environ.get("CAPHY_GEMINI_API_KEY")
+    if env:
+        return env
+    return _load_keys_file().get("gemini_api_key", "")
+
+
+def get_smtp_email():
+    """Gmail address CAPHY sends password-reset PIN emails from (SMTP
+    'From' address and login username). Never log or print this value
+    alongside the app password."""
+    env = os.environ.get("CAPHY_SMTP_EMAIL")
+    if env:
+        return env
+    return _load_keys_file().get("smtp_email", "")
+
+
+def get_smtp_app_password():
+    """Gmail App Password (16-char code from
+    myaccount.google.com/apppasswords) used to authenticate SMTP sends for
+    the forgot-password PIN flow. This is NOT the Gmail account password -
+    it only works for SMTP/IMAP and can be revoked independently. Never log
+    or print this value."""
+    env = os.environ.get("CAPHY_SMTP_APP_PASSWORD")
+    if env:
+        return env
+    return _load_keys_file().get("smtp_app_password", "")
+
+
 def get_google_oauth_client_secret():
     """
     Client secret for the Web OAuth client (client_type 3 in

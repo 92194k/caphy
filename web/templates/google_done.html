@@ -11,12 +11,14 @@
       margin:0 auto 16px;font-size:28px}
     .icon.ok{background:rgba(42,157,143,0.15);color:var(--teal)}
     .icon.fail{background:rgba(229,72,77,0.15);color:var(--red)}
+    .title{color:var(--text);font-size:17px;font-weight:700;margin-bottom:8px}
     .msg{color:var(--text);font-size:14px;line-height:1.6}
   </style>
 </head>
 <body>
   <div class="box">
     <div class="icon {{ 'ok' if ok else 'fail' }}">{{ '✓' if ok else '✕' }}</div>
+    <div class="title">{{ "You're signed in!" if ok else "Sign in failed" }}</div>
     <div class="msg">{{ message }}</div>
   </div>
   <script>

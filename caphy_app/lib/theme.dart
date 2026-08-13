@@ -36,8 +36,9 @@ int asInt(dynamic v, [int fallback = 0]) {
   return int.tryParse('${v ?? ''}') ?? fallback;
 }
 
-/// The CAPHY logo — a gradient teal tile with a living camera-eye that blinks
-/// and glances side to side, with a "C" on the pupil.
+/// The CAPHY logo — the brand shield+eye icon, matching the web app's logo
+/// shape, with a living eye that blinks and glances side to side (matches
+/// the animated version shown in the web app's logo-click modal).
 class CaphyLogo extends StatefulWidget {
   final double size;
   final bool animate;
@@ -66,71 +67,92 @@ class _CaphyLogoState extends State<CaphyLogo>
     super.dispose();
   }
 
-  Widget _tile(double lid, double dx) {
-    final s = widget.size;
-    return Container(
-      width: s,
-      height: s,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF5B7BFF), Color(0xFF8B6FFF), Color(0xFFA78BFA)]),
-        borderRadius: BorderRadius.circular(s * 0.24),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(s * 0.24),
-        child: Center(
-          child: SizedBox(
-            width: s * 0.56,
-            height: s * 0.34,
-            child: Stack(alignment: Alignment.center, children: [
-              // almond eye (its height shrinks to blink)
-              Container(
-                width: s * 0.56,
-                height: (s * 0.34) * lid,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A1024),
-                  borderRadius: BorderRadius.circular(s * 0.17),
-                ),
-              ),
-              // round pupil (glances side to side, hides during a blink)
-              Transform.translate(
-                offset: Offset(dx, 0),
-                child: Opacity(
-                  opacity: lid > 0.4 ? 1 : 0,
-                  child: Container(
-                    width: s * 0.20,
-                    height: s * 0.20,
-                    decoration: const BoxDecoration(
-                        color: cTeal2, shape: BoxShape.circle),
-                  ),
-                ),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_c == null) return _tile(1.0, 0.0);
+    if (_c == null) {
+      return CustomPaint(
+        size: Size(widget.size, widget.size),
+        painter: _ShieldPainter(lid: 1.0, dx: 0.0),
+      );
+    }
     return AnimatedBuilder(
       animation: _c!,
       builder: (_, _) {
         // phase from the shared wall clock, so the eye continues seamlessly
         // across screens instead of restarting each time the logo mounts.
         final t = (DateTime.now().millisecondsSinceEpoch % 4200) / 4200.0;
-        final dx = math.sin(t * 2 * math.pi) * widget.size * 0.10; // glance
+        final dx = math.sin(t * 2 * math.pi) * widget.size * 0.09; // glance
         double lid = 1.0;
         final d = (t - 0.9).abs(); // one blink per loop
         if (d < 0.035) lid = 0.08 + (d / 0.035) * 0.92;
-        return _tile(lid, dx);
+        return CustomPaint(
+          size: Size(widget.size, widget.size),
+          painter: _ShieldPainter(lid: lid, dx: dx),
+        );
       },
     );
   }
+}
+
+/// Draws the shield-with-eye brand mark to match the web logo's silhouette:
+/// a pentagon shield (flat top corners, pointed bottom) with a blue->purple
+/// gradient, containing an almond eye whose pupil glances and blinks.
+class _ShieldPainter extends CustomPainter {
+  final double lid; // 1.0 = fully open, ~0.08 = fully closed
+  final double dx; // pupil horizontal offset
+  _ShieldPainter({required this.lid, required this.dx});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    // Shield outline in a 96x96 design space, scaled to the actual size.
+    final sx = w / 96.0, sy = h / 96.0;
+    Offset p(double x, double y) => Offset(x * sx, y * sy);
+
+    final path = Path()
+      ..moveTo(p(48, 6).dx, p(48, 6).dy)
+      ..lineTo(p(82, 18).dx, p(82, 18).dy)
+      ..lineTo(p(82, 44).dx, p(82, 44).dy)
+      ..cubicTo(p(82, 66).dx, p(82, 66).dy, p(66, 82).dx, p(66, 82).dy,
+          p(48, 90).dx, p(48, 90).dy)
+      ..cubicTo(p(30, 82).dx, p(30, 82).dy, p(14, 66).dx, p(14, 66).dy,
+          p(14, 44).dx, p(14, 44).dy)
+      ..lineTo(p(14, 18).dx, p(14, 18).dy)
+      ..close();
+
+    final shieldPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF5B7BFF), Color(0xFFA78BFA)],
+      ).createShader(Rect.fromLTWH(0, 0, w, h));
+    canvas.drawPath(path, shieldPaint);
+
+    canvas.save();
+    canvas.clipPath(path);
+
+    // almond eye (height shrinks to blink)
+    final eyeW = 40.0 * sx, eyeH = 28.0 * sy * lid;
+    final eyeCenter = p(48, 46);
+    final eyeRect = Rect.fromCenter(center: eyeCenter, width: eyeW, height: eyeH);
+    final eyePaint = Paint()..color = const Color(0xFF0A1024);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(eyeRect, Radius.circular(eyeH / 2)), eyePaint);
+
+    // round pupil (glances side to side, hides during a blink)
+    if (lid > 0.4) {
+      final pupilCenter = eyeCenter.translate(dx, 0);
+      canvas.drawCircle(pupilCenter, 8.0 * sx, Paint()..color = cTeal2);
+      canvas.drawCircle(pupilCenter.translate(-1.5 * sx, -1.5 * sy),
+          1.8 * sx, Paint()..color = const Color(0xFFCFE0FF));
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _ShieldPainter oldDelegate) =>
+      oldDelegate.lid != lid || oldDelegate.dx != dx;
 }
 
 /// A larger, tappable CAPHY logo for the login screen — sits inside a soft

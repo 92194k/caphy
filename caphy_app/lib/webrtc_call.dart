@@ -24,6 +24,7 @@ class WebrtcCall {
   final Set<String> _appliedRemoteIce = {};
   Timer? _answerTimeout;
   Timer? _connectTimeout;
+  Timer? _heartbeatTimer;
   bool _gotAnswer = false;
   bool _gotVideo = false;
 
@@ -36,6 +37,20 @@ class WebrtcCall {
   final void Function()? onTurnUnavailable;
 
   bool _configuredIceFromAnswer = false;
+  List? _lastAppliedIceServers;
+
+  bool _iceServersEqual(List? a, List? b) {
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+    // Cheap structural comparison - good enough here since this only
+    // gates whether to bother calling setConfiguration() again, not a
+    // security check. A false negative just means one harmless extra
+    // setConfiguration() call.
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].toString() != b[i].toString()) return false;
+    }
+    return true;
+  }
 
   WebrtcCall({
     required this.deviceId,
@@ -140,6 +155,19 @@ class WebrtcCall {
     });
     _callId = callRef.id;
 
+    // Heartbeat: lets the laptop's call monitor (_monitor_call in
+    // web/webrtc_stream.py) tell "phone is still actively watching" apart
+    // from "phone backgrounded/crashed/left without hanging up cleanly" -
+    // without this the laptop would keep encoding and streaming to a
+    // viewer that's already gone. Firestore rules only allow the phone to
+    // touch its own caller_ice / viewer_heartbeat fields, never
+    // answer/status, so this can't be abused to interfere with the call.
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      callRef.update({
+        'viewer_heartbeat': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      }).catchError((_) {});
+    });
+
     _pc!.onIceCandidate = (RTCIceCandidate candidate) {
       if (candidate.candidate == null) return;
       callRef.update({
@@ -189,28 +217,46 @@ class WebrtcCall {
       return;
     }
 
+    // The laptop proactively closes a call (without a graceful WebRTC
+    // teardown handshake) when its own monitor detects the stream went
+    // stale or the phone's heartbeat stopped (see _monitor_call in
+    // web/webrtc_stream.py) - waiting for the phone's own peer connection
+    // to notice the remote side vanished can take a while (WebRTC has no
+    // fast "the other end hung up" signal by design), so react to this
+    // status write directly instead: treat it the same as a connection
+    // error, which is what drives WebRtcView's auto-reconnect.
+    if (data['status'] == 'closed' && _gotAnswer) {
+      onError?.call('Live view connection was reset - reconnecting…');
+      return;
+    }
+
     // Upgrade from the STUN-only defaults to the laptop's real, freshly-
-    // fetched TURN credentials (see web/webrtc_stream.py) - done once,
-    // right when the answer arrives, before ICE gathering actually needs
-    // relay candidates for the harder NAT cases.
-    if (!_configuredIceFromAnswer) {
-      final rawServers = data['ice_servers'] as List?;
-      if (rawServers != null && rawServers.isNotEmpty) {
-        final iceServers = rawServers.map((e) {
-          final m = e as Map<String, dynamic>;
-          return {
-            'urls': m['urls'],
-            if (m['username'] != null) 'username': m['username'],
-            if (m['credential'] != null) 'credential': m['credential'],
-          };
-        }).toList();
-        try {
-          await _pc!.setConfiguration({'iceServers': iceServers});
-        } catch (_) {
-          // Non-fatal - the connection keeps trying with whatever
-          // configuration it already has (STUN-only defaults).
-        }
+    // fetched TURN credentials (see web/webrtc_stream.py) - happens on the
+    // initial answer, AND again any time the laptop pushes a refreshed set
+    // for a long-lived call (_monitor_call's periodic TURN refresh) - a
+    // stale credential set would otherwise sit unused until the whole call
+    // reconnects from scratch, defeating the point of refreshing early.
+    final rawServers = data['ice_servers'] as List?;
+    if (rawServers != null &&
+        rawServers.isNotEmpty &&
+        (!_configuredIceFromAnswer || !_iceServersEqual(rawServers, _lastAppliedIceServers))) {
+      final iceServers = rawServers.map((e) {
+        final m = e as Map<String, dynamic>;
+        return {
+          'urls': m['urls'],
+          if (m['username'] != null) 'username': m['username'],
+          if (m['credential'] != null) 'credential': m['credential'],
+        };
+      }).toList();
+      try {
+        await _pc!.setConfiguration({'iceServers': iceServers});
+        _lastAppliedIceServers = rawServers;
+      } catch (_) {
+        // Non-fatal - the connection keeps trying with whatever
+        // configuration it already has.
       }
+    }
+    if (!_configuredIceFromAnswer) {
       if (data['turn_available'] == false) {
         onTurnUnavailable?.call();
       }
@@ -244,6 +290,7 @@ class WebrtcCall {
   Future<void> hangUp() async {
     _answerTimeout?.cancel();
     _connectTimeout?.cancel();
+    _heartbeatTimer?.cancel();
     await _callSub?.cancel();
     _callSub = null;
     try {

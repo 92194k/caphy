@@ -45,8 +45,10 @@ dependencies:
   firebase_messaging: ^15.1.5
   google_sign_in: ^6.2.2    # "Sign in with Google" - matches the web dashboard's login
   app_links: ^6.3.2         # catches the magic-link deep link for passwordless email sign-in
-  speech_to_text: ^7.0.0    # push-to-talk microphone (device speech-to-text)
-  flutter_tts: ^4.2.0       # CAPHY speaks its replies (device text-to-speech)
+  speech_to_text: ^7.0.0    # push-to-talk mic on the Ask CAPHY screen (bounded,
+                            # single-shot listening session - NOT always-listening
+                            # wake word; see ask_caphy_screen.dart for why)
+  flutter_tts: ^4.2.0       # CAPHY speaks its replies aloud on the Ask CAPHY screen
   gal: ^2.3.0               # save snapshots/videos into the phone photo gallery
   path_provider: ^2.1.4     # temp dir for downloading before saving to gallery
   mobile_scanner: ^6.0.2    # QR scanner for "Connect Device" laptop pairing
@@ -76,7 +78,7 @@ flutter_launcher_icons:
   image_path: "assets/caphy_icon.png"
   min_sdk_android: 21
   adaptive_icon_background: "#0B1117"
-  adaptive_icon_foreground: "assets/caphy_icon.png"
+  adaptive_icon_foreground: "assets/caphy_icon_foreground.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -90,9 +92,9 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/caphy_icon.png
+    - assets/caphy_icon_transparent.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

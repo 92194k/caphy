@@ -3,25 +3,27 @@
 <head>
   <meta charset="utf-8">
   <title>CAPHY - {{ title }}</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Cpath d='M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z' fill='%235b7bff'/%3E%3Cellipse cx='48' cy='46' rx='20' ry='14' fill='%230a1024'/%3E%3Ccircle cx='48' cy='46' r='6' fill='%23a78bfa'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/caphy_favicon_64.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_ver }}">
 </head>
 <body>
   <div class="side">
     <div class="brand">
-      <div class="logo">
+      <div class="logo" onclick="showLogoAnimation();" style="cursor:pointer;" title="Click to see CAPHY">
         <svg class="caphy-logo" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
           <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#a78bfa"></stop><stop offset="1" stop-color="#5b7bff"></stop>
+            <stop offset="0" stop-color="#5b7bff"></stop><stop offset="1" stop-color="#a78bfa"></stop>
           </linearGradient>
-          <clipPath id="cc"><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z"></path></clipPath></defs>
+          <clipPath id="cc"><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z"></path></clipPath>
+          <clipPath id="ce"><path d="M22 46 C30 32 66 32 74 46 C66 60 30 60 22 46 Z"></path></clipPath></defs>
           <path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z" fill="url(#cg)"></path>
-          <path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="3"></path>
           <g clip-path="url(#cc)">
-            <ellipse class="eye" cx="48" cy="46" rx="20" ry="14" fill="#0a1024"></ellipse>
-            <g class="pupil">
-              <circle cx="48" cy="46" r="8" fill="#a78bfa"></circle>
-              <circle cx="45" cy="43" r="1.6" fill="#cfe0ff"></circle>
+            <path class="eye" d="M22 46 C30 32 66 32 74 46 C66 60 30 60 22 46 Z" fill="#0a1024"></path>
+            <g clip-path="url(#ce)">
+              <g class="pupil">
+                <circle cx="48" cy="46" r="12" fill="#a78bfa"></circle>
+                <circle cx="52" cy="41" r="2.5" fill="#cfe0ff"></circle>
+              </g>
             </g>
           </g>
         </svg>
@@ -33,8 +35,7 @@
       <a href="{{ href }}" class="{{ 'active' if page == href else '' }}">
         {% if href == '/' %}<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         {% elif href == '/live' %}<svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>
-        {% elif href == '/alerts' %}<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-        {% elif href == '/history' %}<svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        {% elif href == '/history' %}<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
         {% elif href == '/logs' %}<svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         {% elif href == '/settings' %}<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         {% endif %}
@@ -58,10 +59,10 @@
         <a href="/settings?tab=offline">How to connect &rarr;</a></div>
     </div>
     <div class="header">
-      <div class="ht"><h1>{{ title }}</h1>{% if subtitle %}<div class="sub">{{ subtitle }}</div>{% endif %}</div>
+      <div class="ht"><h1>{{ title }}</h1>{% if subtitle %}<div class="sub">{{ subtitle|safe }}</div>{% endif %}</div>
       <div class="hr">
         <span class="pill pg dotb">LIVE &middot; {{ ncam }} CAM</span>
-        <a class="iconbtn" href="/alerts" title="Alerts">
+        <a class="iconbtn" href="/history" title="Alert History">
           {% if nalerts and nalerts > 0 %}<span class="badge">{{ nalerts if nalerts < 100 else '99+' }}</span>{% endif %}
           <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
         </a>
@@ -93,10 +94,37 @@
     </div>
   </div>
 
+  <!-- Logo animation modal -->
+  <div class="logobg" id="logoModal" onclick="if(event.target===this) closeLogoAnimation()">
+    <div class="logomodal">
+      <svg class="caphy-logo-large" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" width="220" height="220">
+        <defs><linearGradient id="cg2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#5b7bff"></stop><stop offset="1" stop-color="#a78bfa"></stop>
+        </linearGradient>
+        <clipPath id="cc2"><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z"></path></clipPath>
+        <clipPath id="ce2"><path d="M22 46 C30 32 66 32 74 46 C66 60 30 60 22 46 Z"></path></clipPath></defs>
+        <path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z" fill="url(#cg2)"></path>
+        <g clip-path="url(#cc2)">
+          <path class="eye" d="M22 46 C30 32 66 32 74 46 C66 60 30 60 22 46 Z" fill="#0a1024"></path>
+          <g clip-path="url(#ce2)">
+            <g class="pupil">
+              <circle cx="48" cy="46" r="12" fill="#a78bfa"></circle>
+              <circle cx="52" cy="41" r="2.5" fill="#cfe0ff"></circle>
+            </g>
+          </g>
+        </g>
+      </svg>
+      <div class="caphy-wordmark" id="caphyWordmark" aria-label="CAPHY">
+        <span style="animation-delay:.05s">C</span><span style="animation-delay:.15s">A</span><span style="animation-delay:.25s">P</span><span style="animation-delay:.35s">H</span><span style="animation-delay:.45s">Y</span>
+      </div>
+      <div class="caphy-tagline">AI-Intelligent Security System</div>
+    </div>
+  </div>
+
   <script>
     // resume the logo animation at the current wall-clock phase, so it doesn't
     // restart from zero every time you switch pages
-    (function(){var d=-(Date.now()%4200)+'ms';
+    (function(){var d=-(Date.now()%6000)+'ms';
       document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
         .forEach(function(e){e.style.animationDelay=d;});})();
 
@@ -174,6 +202,96 @@
     document.addEventListener('keydown', function(e){
       if(e.key === 'Escape') closeModal(false);
     });
+
+    // ---- logo animation modal ----
+    let _logoCloseTimer = null;
+    function showLogoAnimation(){
+      const modal = document.getElementById('logoModal');
+      if(!modal) return;
+      if(_logoCloseTimer){ clearTimeout(_logoCloseTimer); _logoCloseTimer = null; }
+      modal.classList.remove('closing');
+      modal.classList.add('open');
+      // Sync the logo animation to current time
+      var d=-(Date.now()%6000)+'ms';
+      document.querySelectorAll('.caphy-logo-large .eye,.caphy-logo-large .pupil')
+        .forEach(function(e){e.style.animationDelay=d;});
+      // Replay the "CAPHY" letter-by-letter reveal every time the modal opens -
+      // re-triggering a CSS animation needs the element removed from the
+      // document flow for a tick (just changing style doesn't restart it).
+      const word = document.getElementById('caphyWordmark');
+      if(word){
+        word.classList.remove('play');
+        void word.offsetWidth;   // force reflow so the browser "forgets" the animation ran
+        word.classList.add('play');
+      }
+    }
+    function closeLogoAnimation(){
+      const modal = document.getElementById('logoModal');
+      if(!modal || !modal.classList.contains('open')) return;
+      modal.classList.add('closing');
+      modal.classList.remove('open');
+      // wait for the fade/scale-out transition to finish before fully hiding,
+      // so closing is just as smooth as opening instead of an abrupt cut
+      _logoCloseTimer = setTimeout(function(){
+        modal.classList.remove('closing');
+      }, 250);
+    }
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'Escape') closeLogoAnimation();
+    });
   </script>
+  <style>
+    /* Logo animation modal */
+    .logobg{position:fixed;top:0;left:0;width:100%;height:100%;
+      background:rgba(10,16,22,.97);backdrop-filter:blur(8px);z-index:9998;
+      display:flex;align-items:center;justify-content:center;
+      opacity:0;visibility:hidden;pointer-events:none;
+      transition:opacity .25s ease,visibility 0s linear .25s}
+    .logobg.open{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .25s ease}
+    .logobg.closing{opacity:0;visibility:visible;pointer-events:none;transition:opacity .25s ease}
+    .logomodal{display:flex;flex-direction:column;align-items:center;justify-content:center;
+      opacity:0;transform:translateY(8px);
+      transition:opacity .3s ease .05s,transform .3s ease .05s}
+    .logobg.open .logomodal{opacity:1;transform:translateY(0)}
+    .caphy-logo-large{filter:drop-shadow(0 0 32px rgba(139,111,255,.55))}
+    .caphy-logo-large .eye{transform-box:view-box;transform-origin:48px 46px;animation:blink 6s ease-in-out infinite}
+    .caphy-logo-large .pupil{transform-box:view-box;transform-origin:48px 46px;
+      animation:saccade 6s ease-in-out infinite, pupilhide 6s ease-in-out infinite}
+    @keyframes blink{
+      0%,90%,100%{transform:scaleY(1)}
+      95%{transform:scaleY(.05)}
+    }
+    @keyframes saccade{
+      0%,100%{transform:translate(0,-6px)}
+      12.5%{transform:translate(5px,-4px)}
+      25%{transform:translate(7px,0)}
+      37.5%{transform:translate(5px,4px)}
+      50%{transform:translate(0,6px)}
+      62.5%{transform:translate(-5px,4px)}
+      75%{transform:translate(-7px,0)}
+      87.5%{transform:translate(-5px,-4px)}
+    }
+    @keyframes pupilhide{
+      0%,92%,99%,100%{opacity:1}
+      95%{opacity:0}
+    }
+
+    /* CAPHY wordmark - letters fade + slide up into place, one after another */
+    .caphy-wordmark{margin-top:28px;display:flex;gap:6px;justify-content:center}
+    .caphy-wordmark span{
+      display:inline-block;font-size:56px;font-weight:800;letter-spacing:2px;
+      line-height:1;background:linear-gradient(135deg,#a78bfa,#5b7bff);
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+      opacity:0;transform:translateY(18px) scale(.9);
+    }
+    .caphy-wordmark.play span{
+      animation:wordmarkIn .55s cubic-bezier(.2,.7,.3,1.3) forwards;
+    }
+    @keyframes wordmarkIn{
+      to{opacity:1;transform:translateY(0) scale(1)}
+    }
+    .caphy-tagline{margin-top:12px;text-align:center;color:var(--muted);
+      font-size:14px;font-weight:600;letter-spacing:.3px}
+  </style>
 </body>
 </html>

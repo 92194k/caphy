@@ -98,7 +98,7 @@ def accuracy(data):
     print("                     person   no person")
     print(f"  ACTUAL person       {tp:6}   {fn:9}   <- FN = missed intruder")
     print(f"         no person    {fp:6}   {tn:9}")
-    print(f"                      ^ FP = false alarm\n")
+    print("                      ^ FP = false alarm\n")
 
     precision = tp / (tp + fp) if (tp + fp) else 0.0
     recall = tp / (tp + fn) if (tp + fn) else 0.0

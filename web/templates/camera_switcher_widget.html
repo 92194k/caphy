@@ -1,0 +1,156 @@
+<!-- Camera Switcher Widget for Live Dashboard -->
+<!-- Add this to your live.html dashboard to switch cameras on-the-fly -->
+
+<div id="camera-switcher-widget" style="display: flex; align-items: center; gap: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; margin-bottom: 15px;">
+
+    <label for="camera-select" style="font-weight: 600; color: #333; margin: 0;">
+        🎥 Camera:
+    </label>
+
+    <select id="camera-select"
+            style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; cursor: pointer; background: white; min-width: 250px;">
+        <option value="">-- Loading cameras --</option>
+    </select>
+
+    <button id="refresh-cameras-btn"
+            onclick="refreshCameraList()"
+            style="padding: 8px 15px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+        🔄 Refresh
+    </button>
+
+    <span id="camera-status" style="font-size: 12px; color: #666;">Detecting cameras...</span>
+</div>
+
+<script>
+// Load available cameras on page load
+document.addEventListener('DOMContentLoaded', function() {
+    refreshCameraList();
+
+    // Listen for camera changes
+    document.getElementById('camera-select').addEventListener('change', function(e) {
+        if (this.value) {
+            switchCamera(this.value);
+        }
+    });
+});
+
+async function refreshCameraList() {
+    const select = document.getElementById('camera-select');
+    const status = document.getElementById('camera-status');
+
+    try {
+        const response = await fetch('/api/detector/cameras');
+        const cameras = await response.json();
+
+        let html = '<option value="">-- Select Camera --</option>';
+
+        // Add local cameras
+        if (cameras.local && cameras.local.length > 0) {
+            html += '<optgroup label="Local Cameras">';
+            cameras.local.forEach(cam => {
+                html += `<option value="${cam.source}">📌 ${cam.name}</option>`;
+            });
+            html += '</optgroup>';
+        }
+
+        // Add network cameras
+        if (cameras.network && cameras.network.length > 0) {
+            html += '<optgroup label="Network Cameras">';
+            cameras.network.forEach(cam => {
+                html += `<option value="${cam.source}">🌐 ${cam.name}</option>`;
+            });
+            html += '</optgroup>';
+        }
+
+        select.innerHTML = html;
+
+        // Load previously selected camera
+        const savedResponse = await fetch('/api/detector/cameras/saved');
+        const saved = await savedResponse.json();
+        if (saved.saved_camera) {
+            select.value = saved.saved_camera;
+            status.textContent = `✓ Ready (${cameras.total} cameras found)`;
+            status.style.color = '#48bb78';
+        } else {
+            status.textContent = `${cameras.total} cameras found`;
+            status.style.color = '#666';
+        }
+
+    } catch (error) {
+        select.innerHTML = '<option value="">❌ Error loading cameras</option>';
+        status.textContent = 'Error loading cameras';
+        status.style.color = '#f56565';
+        console.error('Camera list error:', error);
+    }
+}
+
+async function switchCamera(cameraSource) {
+    const status = document.getElementById('camera-status');
+
+    try {
+        status.textContent = 'Testing camera...';
+        status.style.color = '#f59e0b';
+
+        // Test connection
+        const testResponse = await fetch('/api/detector/cameras/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ camera: cameraSource })
+        });
+
+        const testResult = await testResponse.json();
+
+        if (testResult.connected) {
+            // Save camera selection
+            const saveResponse = await fetch('/api/detector/cameras/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera: cameraSource })
+            });
+
+            const saveResult = await saveResponse.json();
+
+            if (saveResult.ok) {
+                status.textContent = '✓ Camera switched! Page will reload...';
+                status.style.color = '#48bb78';
+
+                // Reload to apply camera change
+                setTimeout(() => { window.location.reload(); }, 1500);
+            } else {
+                status.textContent = '❌ Failed to save camera';
+                status.style.color = '#f56565';
+            }
+        } else {
+            status.textContent = '❌ Camera not responding: ' + (testResult.error || 'unknown error');
+            status.style.color = '#f56565';
+            document.getElementById('camera-select').value = ''; // Reset selection
+        }
+    } catch (error) {
+        status.textContent = '❌ Error switching camera';
+        status.style.color = '#f56565';
+        console.error('Switch error:', error);
+        document.getElementById('camera-select').value = ''; // Reset selection
+    }
+}
+</script>
+
+<style>
+#camera-switcher-widget select:hover {
+    border-color: #667eea;
+}
+
+#camera-switcher-widget select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+#refresh-cameras-btn:hover {
+    background: #5568d3;
+    transform: translateY(-1px);
+}
+
+#refresh-cameras-btn:active {
+    transform: translateY(0);
+}
+</style>

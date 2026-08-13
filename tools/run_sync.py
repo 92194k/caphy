@@ -16,8 +16,6 @@ import config
 from storage.sync import SyncManager
 
 if __name__ == "__main__":
-    uploader_factory = None
-
     have_firebase = bool(getattr(config, "FIREBASE_BUCKET", None)) and \
                     __import__("os").path.exists(getattr(config, "FIREBASE_KEY_PATH", "firebase_key.json"))
 
@@ -41,6 +39,7 @@ if __name__ == "__main__":
     else:
         print("[CAPHY] Firebase not configured (missing firebase_key.json or "
               "FIREBASE_BUCKET) - using local cloud_sim folder instead.")
+        uploader_factory = None
 
 
     class _NullUploader:

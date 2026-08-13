@@ -23,7 +23,7 @@
     <div class="sub">A browser window opened to sign in with Google.<br>
       Finish signing in there, then come back to this window.</div>
     <div class="error" id="error"></div>
-    <div class="retry" id="retry" onclick="window.location.href='/login'">← Back to login</div>
+    <div class="retry" id="retry" onclick="window.location.href='/login'">← Back to Sign In</div>
   </div>
 
   <script>
@@ -38,7 +38,7 @@
         if (d.done) {
           if (d.error) {
             document.getElementById('spinner').style.display = 'none';
-            document.getElementById('msg').textContent = 'Sign-in failed';
+            document.getElementById('msg').textContent = 'Sign in failed';
             document.getElementById('error').textContent = d.error;
             document.getElementById('retry').style.display = 'block';
             return;

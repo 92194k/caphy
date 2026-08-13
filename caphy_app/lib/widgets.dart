@@ -62,6 +62,20 @@ class _MjpegViewState extends State<MjpegView> {
     widget.onFailed?.call();
   }
 
+  /// Manual retry (from the "Camera Unavailable" button) - resets every
+  /// piece of state a fresh _connect() expects, exactly like
+  /// didUpdateWidget already does when the url/active flag changes, so
+  /// retrying looks identical to a normal reconnect rather than a special
+  /// case that could leave stale state behind.
+  void _retry() {
+    _stop();
+    _buf.clear();
+    _frame = null;
+    setState(() => _error = false);
+    _failedReported = false;
+    _connect();
+  }
+
   Future<void> _connect() async {
     // If no first frame arrives quickly, treat the local path as unusable
     // and let live_tab fall back to WebRTC (this is the Wi-Fi "spinner
@@ -142,15 +156,149 @@ class _MjpegViewState extends State<MjpegView> {
       return const Center(
           child: Text('Camera is off', style: TextStyle(color: cDim)));
     }
-    if (_frame != null) {
-      return Image.memory(_frame!, fit: widget.fit, gaplessPlayback: true);
-    }
+    // Three distinct, deliberate states - never a bare frozen frame while
+    // the stream is still starting up. This is what stops the first-open
+    // "camera looks frozen/broken" impression: until a real decoded frame
+    // has actually arrived, the video surface is fully covered by one of
+    // the two states below, never a stale/blank image surface.
     if (_error) {
-      return const Center(
-          child: Text('connecting to camera...',
-              style: TextStyle(color: cDim)));
+      return _CameraUnavailable(onRetry: _retry);
     }
-    return const Center(child: CircularProgressIndicator(color: cTeal));
+    if (_frame == null) {
+      return const _CameraLoading();
+    }
+    // Live frame is ready - crossfade in rather than a hard cut, so the
+    // switch from "Camera Loading..." to real video reads as intentional
+    // rather than a flicker/glitch.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      child: Image.memory(_frame!,
+          key: const ValueKey('liveframe'),
+          fit: widget.fit,
+          gaplessPlayback: true),
+    );
+  }
+}
+
+/// "Camera Loading..." placeholder shown from the moment the stream widget
+/// mounts until the first real decoded frame arrives - covers the entire
+/// preview area so nothing that could look like a frozen/broken feed is
+/// ever visible during startup, exactly what panelists would otherwise
+/// mistake for an error on first opening the Live tab.
+class _CameraLoading extends StatefulWidget {
+  const _CameraLoading();
+  @override
+  State<_CameraLoading> createState() => _CameraLoadingState();
+}
+
+class _CameraLoadingState extends State<_CameraLoading>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1400))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: cBg,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FadeTransition(
+            opacity: Tween(begin: 0.35, end: 0.9).animate(
+                CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: cTeal2.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: cTeal2.withValues(alpha: 0.35)),
+              ),
+              child: const Icon(Icons.videocam_outlined,
+                  color: cTeal2, size: 28),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: cTeal2),
+          ),
+          const SizedBox(height: 10),
+          const Text('Camera Loading...',
+              style: TextStyle(
+                  color: cMuted, fontSize: 13, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown only once the connection has genuinely failed (bad status, dropped
+/// stream, or no first frame within the timeout) - distinct wording and
+/// look from the loading state above, so it never reads as "still trying"
+/// when it has actually given up, and gives a clear way to try again
+/// without leaving the Live tab or restarting the app.
+class _CameraUnavailable extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _CameraUnavailable({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: cBg,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: cRed.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: cRed.withValues(alpha: 0.35)),
+            ),
+            child: const Icon(Icons.videocam_off_outlined,
+                color: cRed, size: 28),
+          ),
+          const SizedBox(height: 14),
+          const Text('Camera Unavailable',
+              style: TextStyle(
+                  color: cText, fontSize: 14, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          const Text('Could not connect to this camera.',
+              style: TextStyle(color: cMuted, fontSize: 12.5)),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh, size: 16, color: cTeal2),
+            label: const Text('Retry', style: TextStyle(color: cTeal2)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: cLine),
+              backgroundColor: cPanel2,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -267,56 +415,221 @@ Future<bool> saveVideoUrlToGallery(String url, {String prefix = 'caphy'}) async 
 
 /// Brief message shown at the TOP of the screen (not the bottom), so it never
 /// covers the mic or the controls on the voice screen.
+// Kept as a thin wrapper so every existing call site (live_tab.dart,
+// me_tab.dart, etc.) keeps working unchanged - the real widget is
+// _TopToast below, a proper animated overlay instead of the old
+// insta-appear/insta-disappear flat-colored box. That old version also
+// treated "success" and "error" inconsistently (dark card vs. solid red
+// fill), which is part of what read as "shitty" - now both states share
+// one consistent glass-card look and only the accent color/icon changes.
+//
+// ONE toast at a time, globally. Rapid taps (e.g. tap a button, tap it
+// again to cancel, tap again to retry - exactly what the arm/siren/
+// emergency/camera "cancel on retap" buttons now do) used to call this
+// every time, and EVERY call inserted a brand new OverlayEntry that only
+// removed itself after its own 2.2s timer. Several of those stacking up
+// at the same fixed top position, each independently animating in/out,
+// is what made the top of the screen become an unresponsive stack of
+// full-width Containers absorbing taps meant for whatever was underneath
+// (the AppBar, the status row) - it read exactly like "click twice and
+// the screen freezes." Now a new call immediately retires whatever toast
+// is currently showing before inserting the new one, so there is never
+// more than one on screen and never more than one pending removal timer.
+OverlayEntry? _activeToastEntry;
+
 void showTopToast(BuildContext context, String message, {bool error = false}) {
+  // Retire whatever's currently showing FIRST, synchronously, so its
+  // removal isn't racing the new one's insertion.
+  _activeToastEntry?.remove();
+  _activeToastEntry = null;
+
   final overlay = Overlay.of(context);
-  final entry = OverlayEntry(
-    builder: (ctx) => Positioned(
-      top: MediaQuery.of(ctx).padding.top + 12,
-      left: 16,
-      right: 16,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: error ? cRed : cPanel,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: error ? cRed : cLine),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.4),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4))
-            ],
-          ),
-          child: Row(children: [
-            Icon(error ? Icons.error_outline : Icons.check_circle_outline,
-                color: error ? Colors.white : cTeal2, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(message,
-                  style: TextStyle(
-                      color: error ? Colors.white : cText, fontSize: 13.5)),
-            ),
-          ]),
-        ),
-      ),
+  late OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (ctx) => _TopToast(
+      message: message,
+      error: error,
+      onDone: () {
+        if (entry.mounted) entry.remove();
+        if (identical(_activeToastEntry, entry)) _activeToastEntry = null;
+      },
     ),
   );
+  _activeToastEntry = entry;
   overlay.insert(entry);
-  Future.delayed(const Duration(seconds: 2), entry.remove);
+}
+
+class _TopToast extends StatefulWidget {
+  final String message;
+  final bool error;
+  final VoidCallback onDone;
+  const _TopToast(
+      {required this.message, required this.error, required this.onDone});
+
+  @override
+  State<_TopToast> createState() => _TopToastState();
+}
+
+class _TopToastState extends State<_TopToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  late final Animation<Offset> _slide;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 260));
+    _slide = Tween(begin: const Offset(0, -0.35), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _c, curve: Curves.easeOutCubic));
+    _fade = CurvedAnimation(parent: _c, curve: Curves.easeOut);
+    _c.forward();
+    Future.delayed(const Duration(milliseconds: 2200), () async {
+      if (!mounted) return;
+      await _c.reverse();
+      widget.onDone();
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.error ? cRed : cTeal2;
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      left: 16,
+      right: 16,
+      child: FadeTransition(
+        opacity: _fade,
+        child: SlideTransition(
+          position: _slide,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: cPanel,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cLine),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6)),
+                  BoxShadow(
+                      color: accent.withValues(alpha: 0.18),
+                      blurRadius: 22,
+                      spreadRadius: -4),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Solid accent spine instead of a per-side Border (which
+                    // throws with a borderRadius - see the alert-row fix
+                    // elsewhere in this app) - also just reads as more
+                    // deliberate/"advanced" than a plain outline.
+                    Container(width: 4, color: accent),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+                        child: Row(children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: accent.withValues(alpha: 0.16),
+                            ),
+                            child: Icon(
+                                widget.error
+                                    ? Icons.error_outline
+                                    : Icons.check_circle_outline,
+                                color: accent,
+                                size: 17),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(widget.message,
+                                style: const TextStyle(
+                                    color: cText,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Auto-switching connectivity banner. Watches Api.connectivityMode and:
 ///   - shows nothing when online (cloud features available),
-///   - shows an amber "Offline · Local Wi-Fi" bar when there's no internet
-///     but the laptop is reachable on the LAN (live view + controls still
-///     work, just not the from-anywhere features),
-///   - shows a red "No connection" bar when nothing is reachable.
+///   - shows an amber "Offline mode · Local Wi‑Fi" bar when there's no
+///     internet but the laptop IS reachable on the LAN (live view +
+///     controls still work, just not the from-anywhere features) - this is
+///     "Offline Mode",
+///   - shows a red "Can't reach your laptop" bar when nothing is reachable
+///     at all (different Wi‑Fi, laptop off, etc.) - this is "Laptop
+///     Unreachable", a distinctly worse situation than Offline Mode since
+///     NOTHING works until it's fixed,
+///   - shows a teal "Back online" bar with a button when internet returns
+///     after either of the above - this does NOT auto-clear; the user taps
+///     it to confirm they've seen it (see Api.acknowledgeReconnect()).
 /// This is what makes the app auto-detect a dropped internet connection and
-/// fall back to the local network without the user doing anything.
-class ModeBanner extends StatelessWidget {
+/// fall back to the local network without the user doing anything, while
+/// still giving them a deliberate "you're back" moment instead of a banner
+/// that silently vanishes and might go unnoticed.
+class ModeBanner extends StatefulWidget {
   const ModeBanner({super.key});
+
+  @override
+  State<ModeBanner> createState() => _ModeBannerState();
+}
+
+class _ModeBannerState extends State<ModeBanner> {
+  bool _reconnecting = false;
+  bool _connectingLocally = false;
+
+  Future<void> _tapReconnect() async {
+    if (_reconnecting) return;
+    setState(() => _reconnecting = true);
+    try {
+      await Api.acknowledgeReconnect();
+    } finally {
+      if (mounted) setState(() => _reconnecting = false);
+    }
+  }
+
+  /// "Connect Locally" - re-runs the same LAN self-heal that
+  /// isLanReachable() does (pull the laptop's latest last_lan_ip from
+  /// Firestore, try it, adopt it if it works), but as an explicit,
+  /// user-triggered action from the red "can't reach" state rather than
+  /// waiting for the next background poll. Also available from the Me tab.
+  Future<void> _tapConnectLocally() async {
+    if (_connectingLocally) return;
+    setState(() => _connectingLocally = true);
+    try {
+      await Api.reconnectToPairedDevice();
+      await Api.refreshConnectivity();
+    } finally {
+      if (mounted) setState(() => _connectingLocally = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -324,86 +637,179 @@ class ModeBanner extends StatelessWidget {
       valueListenable: Api.connectivityMode,
       builder: (context, mode, _) {
         if (mode == 'online') return const SizedBox.shrink();
+
+        // One compact row for every state: icon, one short label, and (if
+        // relevant) a small trailing action. No subtitle line, no repeated
+        // text in the button itself - the label already says what's
+        // happening, the button just says what tapping it does.
+        if (mode == 'reconnected') {
+          return _bar(
+            color: cTeal,
+            icon: Icons.wifi,
+            label: 'Back online',
+            action: _reconnecting ? null : _tapReconnect,
+            actionLabel: 'Reconnect',
+            actionBusy: _reconnecting,
+          );
+        }
+
         final lan = mode == 'lan';
-        final color = lan ? cOrange : cRed;
-        return Container(
-          width: double.infinity,
-          color: color.withValues(alpha: 0.14),
-          padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
-          child: Row(children: [
-            Icon(lan ? Icons.wifi_tethering : Icons.cloud_off,
-                color: color, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(lan ? 'Offline mode · Local Wi‑Fi' : 'No connection',
-                      style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12.5)),
-                  Text(
-                    lan
-                        ? 'No internet detected — connected directly to your laptop over local Wi‑Fi. Live view and controls work; from‑anywhere features are paused.'
-                        : 'Can\'t reach CAPHY. Make sure the laptop is on, and that you have internet or are on the same Wi‑Fi as the laptop.',
-                    style: const TextStyle(color: cMuted, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-          ]),
+        return _bar(
+          color: lan ? cOrange : cRed,
+          icon: lan ? Icons.wifi_tethering : Icons.cloud_off,
+          label: lan ? 'Offline mode · Local Wi‑Fi' : 'Can\'t reach your laptop',
+          action: lan ? null : (_connectingLocally ? null : _tapConnectLocally),
+          actionLabel: 'Connect locally',
+          actionBusy: _connectingLocally,
         );
       },
     );
   }
+
+  Widget _bar({
+    required Color color,
+    required IconData icon,
+    required String label,
+    required VoidCallback? action,
+    required String actionLabel,
+    required bool actionBusy,
+  }) {
+    // Was a flat full-width color-wash strip with a bare TextButton -
+    // reads as a raised card now (icon in its own colored chip, a pill
+    // action button instead of a plain text link) so it matches the same
+    // glass-card language as the toast/alert popup instead of looking like
+    // a separate, cheaper component.
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      decoration: BoxDecoration(
+        color: cPanel2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+              color: color.withValues(alpha: 0.12),
+              blurRadius: 14,
+              spreadRadius: -4),
+        ],
+      ),
+      child: Row(children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withValues(alpha: 0.16),
+          ),
+          child: Icon(icon, color: color, size: 16),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(label,
+              style: TextStyle(
+                  color: cText, fontWeight: FontWeight.w600, fontSize: 12.8)),
+        ),
+        if (action != null || actionBusy) ...[
+          const SizedBox(width: 8),
+          Material(
+            color: color.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: action,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                child: actionBusy
+                    ? SizedBox(
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: color))
+                    : Text(actionLabel,
+                        style: TextStyle(
+                            color: color,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11.5)),
+              ),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
 }
 
-/// Red bar shown whenever the app cannot reach the CAPHY system.
-///
-/// Without this, an unreachable server and a genuinely empty system look
-/// identical - both render an empty list - which is impossible to diagnose
-/// during a live demo.
-class OfflineBanner extends StatelessWidget {
-  const OfflineBanner({super.key});
+// NOTE: OfflineBanner (a second, separately-driven red "can't reach" bar)
+// used to live here and was rendered inside the Home/Live/Alerts tab
+// bodies, on top of ModeBanner which already sits above all tabs in
+// HomeShell and covers the exact same "can't reach" state (plus the
+// amber/teal states OfflineBanner didn't have). The two were driven by
+// two different signals (Api.online vs Api.connectivityMode) that don't
+// always transition together, so both could show red at once - the
+// reported "two red bars" bug. Removed rather than kept as a second
+// signal to reconcile, since ModeBanner is the more complete, more
+// accurate widget and nothing is lost by relying on it alone.
+
+/// Compact alert thumbnail used in the alert list rows and the home
+/// dashboard's Recent Alerts section: shows the server-annotated snapshot
+/// (bounding box already burned in server-side) with a small tier badge in
+/// the corner. Falls back to a generic person icon if there's no snapshot
+/// path or the image fails to load - never leaves a blank box.
+class AlertThumbnail extends StatelessWidget {
+  final String? snapshot;
+  final int tier;
+  final double size;
+  const AlertThumbnail(
+      {super.key, required this.snapshot, required this.tier, this.size = 56});
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: Api.online,
-      builder: (context, online, _) {
-        if (online) return const SizedBox.shrink();
-        return Container(
-          width: double.infinity,
-          color: cRed.withValues(alpha: 0.15),
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-          child: Row(children: [
-            const Icon(Icons.cloud_off, color: cRed, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Can\'t reach CAPHY',
-                        style: TextStyle(
-                            color: cRed,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13)),
-                    Text(
-                      Store.hasServerAddress
-                          ? 'Not reachable on this Wi-Fi and no recent '
-                              'check-in from the laptop over the internet - '
-                              'make sure it\'s powered on and connected.'
-                          : 'No recent check-in from the laptop over the '
-                              'internet - make sure it\'s powered on and '
-                              'connected.',
-                      style: const TextStyle(color: cMuted, fontSize: 11.5),
-                    ),
-                  ]),
-            ),
-          ]),
+    final c = tierColor(tier);
+    Widget fallback() => Container(
+          color: cTeal2.withValues(alpha: 0.15),
+          alignment: Alignment.center,
+          child: Icon(Icons.person, color: cTeal2, size: size * 0.42),
         );
-      },
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: (snapshot == null || snapshot!.isEmpty)
+                ? fallback()
+                : Image.network(
+                    Api.mediaUrl(snapshot!),
+                    width: size,
+                    height: size,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => fallback(),
+                    loadingBuilder: (ctx, child, progress) {
+                      if (progress == null) return child;
+                      return fallback();
+                    },
+                  ),
+          ),
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: c,
+                shape: BoxShape.circle,
+                border: Border.all(color: cPanel, width: 1.5),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -416,6 +822,11 @@ class StateChip extends StatelessWidget {
   final String offText;
   final Color? onColor;
   final IconData? icon;
+  // Compact mode: smaller padding/font and no icon, meant for use inside
+  // an Expanded slot in a fixed-width row (see live_tab.dart's status
+  // row) where several chips need to share one line on any phone width
+  // without wrapping or truncating.
+  final bool compact;
 
   const StateChip({
     super.key,
@@ -425,11 +836,52 @@ class StateChip extends StatelessWidget {
     this.offText = 'OFF',
     this.onColor,
     this.icon,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = on ? (onColor ?? cTeal2) : cDim;
+    if (compact) {
+      // Was one line ("System DISARMED") with overflow:ellipsis, which cut
+      // the state word off mid-word ("DISARM…") on a normal phone width
+      // once 3-4 chips shared a row. Two lines - a small label on top, the
+      // actual ON/OFF word on its own line below in FittedBox - means the
+      // state word always renders in FULL (shrinking its font slightly if
+      // it must) instead of ever being truncated, which is the one piece
+      // of information this chip exists to show.
+      return Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        decoration: BoxDecoration(
+          color: on ? c.withValues(alpha: 0.14) : cPanel,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: on ? c : cLine, width: on ? 1.4 : 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: TextStyle(
+                    color: c.withValues(alpha: 0.75),
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2)),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(on ? onText : offText,
+                  maxLines: 1,
+                  style: TextStyle(
+                      color: c, fontSize: 12, fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(

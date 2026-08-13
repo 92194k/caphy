@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'api.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 class MeTab extends StatefulWidget {
   final VoidCallback onLogout;
@@ -14,6 +15,7 @@ class _MeTabState extends State<MeTab> {
   List<dynamic> _cams = [];
   List<Map<String, dynamic>> _devices = [];
   final Map<int, TextEditingController> _ctl = {};
+  bool _connectingLocally = false;
 
   @override
   void initState() {
@@ -48,8 +50,13 @@ class _MeTabState extends State<MeTab> {
     super.dispose();
   }
 
-  void _toast(String m) => ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(backgroundColor: cPanel, content: Text(m, style: const TextStyle(color: cText))));
+  // Was a plain default SnackBar (flat gray bar, bottom of screen) - now
+  // uses the same animated top-toast every other tab's action feedback
+  // uses (live_tab.dart), so "Renamed to...", "Connected locally", etc.
+  // all look and feel consistent instead of Me being the one screen with
+  // Flutter's stock unstyled snackbar.
+  void _toast(String m, {bool error = false}) =>
+      showTopToast(context, m, error: error);
 
   @override
   Widget build(BuildContext context) {
@@ -60,9 +67,16 @@ class _MeTabState extends State<MeTab> {
         children: [
           panel(
             child: Row(children: [
-              const CircleAvatar(
-                  backgroundColor: cBg,
-                  child: Icon(Icons.person, color: cTeal2)),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: cTeal2.withValues(alpha: 0.15),
+                  border: Border.all(color: cTeal2.withValues(alpha: 0.4)),
+                ),
+                child: const Icon(Icons.person, color: cTeal2, size: 24),
+              ),
               const SizedBox(width: 14),
               // Expanded so a long email/username can't push past the row -
               // it wraps to a second line (up to 2) and then ellipsises,
@@ -214,7 +228,8 @@ class _MeTabState extends State<MeTab> {
                       final name = _ctl[id]!.text.trim();
                       if (name.isEmpty) return;
                       final ok = await Api.renameCamera(id, name);
-                      _toast(ok ? 'Renamed to "$name"' : 'Rename failed');
+                      _toast(ok ? 'Renamed to "$name"' : 'Rename failed',
+                          error: !ok);
                     },
                     child: const Text('Save',
                         style: TextStyle(color: Colors.black)),
@@ -262,6 +277,46 @@ class _MeTabState extends State<MeTab> {
                   Store.hasServerAddress ? 'Reconnect Device' : 'Connect Device',
                   style: const TextStyle(
                       color: Colors.black, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // "Connect Locally": for when you're already paired but the
+          // laptop's local IP has changed (new network, DHCP lease
+          // renewal) - re-pulls the laptop's latest LAN address from its
+          // Firestore heartbeat and retries, without going through the
+          // whole QR re-pairing flow. Same self-heal isLanReachable()
+          // already runs automatically in the background; this is just an
+          // explicit, immediate "try it now" for the user.
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                  foregroundColor: cTeal,
+                  side: const BorderSide(color: cTeal),
+                  padding: const EdgeInsets.symmetric(vertical: 12)),
+              onPressed: _connectingLocally
+                  ? null
+                  : () async {
+                      setState(() => _connectingLocally = true);
+                      final found = await Api.reconnectToPairedDevice();
+                      await Api.refreshConnectivity();
+                      if (!mounted) return;
+                      setState(() => _connectingLocally = false);
+                      final ok = found && Store.hasServerAddress;
+                      _toast(
+                          ok
+                              ? 'Connected locally'
+                              : 'Could not find your laptop on this network',
+                          error: !ok);
+                    },
+              icon: _connectingLocally
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.wifi_tethering),
+              label: const Text('Connect Locally',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
           const SizedBox(height: 26),

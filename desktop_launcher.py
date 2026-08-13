@@ -33,7 +33,9 @@ except ImportError:
     sys.exit(1)
 
 from identity import get_device_identity
-from web.server import app, start_workers, resolve_cameras, start_auto_arm_scheduler
+from web.server import (app, start_workers, resolve_cameras,
+                        start_auto_arm_scheduler, start_cloud_sync_retry,
+                        start_lan_discovery_beacon)
 
 
 def run_flask():
@@ -48,6 +50,15 @@ def run_flask():
     instead of this launcher."""
     start_workers(resolve_cameras())
     start_auto_arm_scheduler()
+    start_cloud_sync_retry()
+    start_lan_discovery_beacon()
+    # NOTE: host="127.0.0.1" only accepts connections from THIS machine -
+    # the phone cannot reach this launcher's Flask server over LAN at all
+    # (compare app.py, which correctly uses host="0.0.0.0"). This is a
+    # pre-existing limitation of this particular launcher, not something
+    # touched by the connectivity fixes above - flagging it here since it
+    # would silently defeat local/offline mode for anyone using THIS
+    # specific launcher rather than app.py.
     app.run(host="127.0.0.1", port=5000, threaded=True, debug=False, use_reloader=False)
 
 
@@ -96,7 +107,7 @@ if __name__ == "__main__":
     device = get_device_identity()
     print(f"[CAPHY Desktop] Device ID: {device['device_id']}")
     print(f"[CAPHY Desktop] Hostname: {device['hostname']}")
-    print(f"[CAPHY Desktop] Starting Flask...")
+    print("[CAPHY Desktop] Starting Flask...")
 
     # Start Flask in background.
     flask_thread = threading.Thread(target=run_flask, daemon=True)

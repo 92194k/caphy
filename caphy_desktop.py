@@ -36,8 +36,8 @@ def _open_console_window(url):
     # 1) native window (nice, app-like) - but only if the backend loads.
     try:
         import webview  # pywebview
-        window = webview.create_window("CAPHY Security Console", url,
-                                       width=1200, height=800, resizable=True)
+        webview.create_window("CAPHY Security Console", url,
+                              width=1200, height=800, resizable=True)
         webview.start()
         return  # window closed -> exit
     except Exception as e:
@@ -65,7 +65,7 @@ def main():
 
     # Import AFTER chdir so any import-time paths resolve against the workdir.
     from web.server import (app, start_workers, resolve_cameras,
-                            start_auto_arm_scheduler)
+                            start_auto_arm_scheduler, start_lan_discovery_beacon)
 
     from identity import get_device_identity
     dev = get_device_identity()
@@ -74,6 +74,13 @@ def main():
     def run_server():
         start_workers(resolve_cameras())      # also starts cloud services
         start_auto_arm_scheduler()
+        start_lan_discovery_beacon()
+        # NOTE: host="127.0.0.1" only accepts connections from THIS machine
+        # - the phone cannot reach this launcher's Flask server over LAN at
+        # all (compare app.py, which correctly uses host="0.0.0.0"). Same
+        # pre-existing limitation as desktop_launcher.py - flagging it here
+        # rather than silently leaving local/offline mode broken for
+        # whoever runs the packaged/frozen build via this entry point.
         # threaded so the UI (window/browser) and the server run together;
         # use_reloader off so it doesn't try to spawn a second frozen process.
         app.run(host="127.0.0.1", port=5000, threaded=True,

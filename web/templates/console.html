@@ -125,14 +125,14 @@ body{height:100vh;overflow:hidden;display:flex;flex-direction:column;margin:0}
 <body>
 <div class="topbar">
   <div class="tb-brand">
-    <div class="logo"><svg class="caphy-logo" viewBox="0 0 96 96" width="100%" height="100%"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#5b7bff"/></linearGradient><clipPath id="tc"><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z"/></clipPath></defs><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z" fill="url(#tg)"/><g clip-path="url(#tc)"><ellipse class="eye" cx="48" cy="46" rx="20" ry="14" fill="#0a1024"/><g class="pupil"><circle cx="48" cy="46" r="8" fill="#a78bfa"/><circle cx="45" cy="43" r="1.6" fill="#cfe0ff"/></g></g></svg></div>
+    <div class="logo"><img class="caphy-logo" src="{{ url_for('static', filename='img/caphy_icon_256.png') }}" alt="CAPHY" width="100%" height="100%"></div>
     <div><b>CAPHY</b><small>AI SECURITY</small></div>
   </div>
   <div class="topstats">
-    <div class="tstat a1"><div class="k">Total Alerts</div><div class="v" id="stTotal">–</div><div class="f" id="stToday">–</div></div>
-    <div class="tstat a4"><div class="k">Active Cameras</div><div class="v" id="stCams">–</div><div class="f" id="stCamsF">–</div></div>
-    <div class="tstat a2"><div class="k">Current Threat</div><div class="v" id="stThreat">–</div><div class="f" id="stThreatF">–</div></div>
-    <div class="tstat a3"><div class="k">Pending Sync</div><div class="v" id="stPending">–</div><div class="f">offline queue</div></div>
+    <div class="tstat a1"><div class="k">Alerts Today</div><div class="v" id="stTotal">–</div><div class="f" id="stToday">–</div></div>
+    <div class="tstat a4"><div class="k">Cameras Online</div><div class="v" id="stCams">–</div><div class="f" id="stCamsF">–</div></div>
+    <div class="tstat a2"><div class="k">Current Status</div><div class="v" id="stThreat">–</div><div class="f" id="stThreatF">–</div></div>
+    <div class="tstat a3"><div class="k">Pending Uploads</div><div class="v" id="stPending">–</div><div class="f">offline queue</div></div>
   </div>
   <div class="topright">
     <div class="armstate"><span class="dot off" id="armDot"></span><span id="armLbl">—</span><small id="whoami">{{ user }}</small></div>
@@ -149,7 +149,9 @@ body{height:100vh;overflow:hidden;display:flex;flex-direction:column;margin:0}
     <div class="cph">
       <h2>Live Feed</h2>
       <div class="camselect">
-        <select id="camSel" onchange="selectCam(this.value)"></select>
+        <select id="camSel" onchange="handleCamSelect(this.value)" style="flex:1"></select>
+        <button id="refreshCamsBtn" onclick="refreshCameras()" title="Scan for new cameras" style="background:var(--panel);border:1px solid var(--line2);color:var(--muted);padding:4px 8px;border-radius:7px;font-size:11px;cursor:pointer">🔄 Scan</button>
+        <span id="camStatus" style="font-size:10px;color:var(--dim);min-width:120px;text-align:right"></span>
         <span class="pill p3" id="recPill" style="display:none">● REC</span>
         <span class="link" onclick="openPage('mLive','/live')">Open Live →</span>
       </div>
@@ -159,7 +161,7 @@ body{height:100vh;overflow:hidden;display:flex;flex-direction:column;margin:0}
         <div class="dh">DETECTION — <span id="camName">—</span></div>
         <div class="dr"><span>Factor 1 · Motion</span><span class="dot off" id="dMotion"></span></div>
         <div class="dr"><span>Factor 2 · Person</span><span class="dot off" id="dPerson"></span></div>
-        <div class="dd">Est. distance <span id="dDist">–</span> m</div>
+        <div class="dd">Est. distance <span id="dDist">–</span> m away</div>
       </div>
     </div>
     <div class="statebar">
@@ -176,7 +178,7 @@ body{height:100vh;overflow:hidden;display:flex;flex-direction:column;margin:0}
       <button class="ctrlbtn wide siren" id="sirenBtn" onclick="toggleSiren()">Trigger Siren</button>
     </div>
     <div class="tflog">
-      <div class="th">TWO-FACTOR LOG</div>
+      <div class="th">Activity Log</div>
       <div id="tflog"></div>
     </div>
   </div>
@@ -191,14 +193,14 @@ body{height:100vh;overflow:hidden;display:flex;flex-direction:column;margin:0}
   </div>
 
   <div class="cpanel threat">
-    <div class="cph"><h2>Threat Activity — 24h</h2><span style="color:var(--dim);font-size:10px">hover bars</span></div>
+    <div class="cph"><h2>Threat Activity</h2><span style="color:var(--dim);font-size:10px">Last 24 hours</span></div>
     <div class="chart" id="chart"></div>
     <div class="axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
   </div>
 
   <div class="cpanel logs logpanel">
-    <div class="cph"><h2>caphy.log <span style="color:var(--muted);font-weight:400;font-size:10px">live tail</span></h2>
-      <div class="logfilters"><button class="fbtn active" data-f="ALL" onclick="setLogFilter('ALL',this)">ALL</button><button class="fbtn" data-f="DETECT" onclick="setLogFilter('DETECT',this)">DETECT</button><button class="fbtn" data-f="ALERT" onclick="setLogFilter('ALERT',this)">ALERT</button><button class="fbtn" data-f="SYNC" onclick="setLogFilter('SYNC',this)">SYNC</button></div>
+    <div class="cph"><h2>Live Log</h2>
+      <div class="logfilters"><button class="fbtn active" data-f="ALL" onclick="setLogFilter('ALL',this)">All</button><button class="fbtn" data-f="DETECT" onclick="setLogFilter('DETECT',this)">Detection</button><button class="fbtn" data-f="ALERT" onclick="setLogFilter('ALERT',this)">Alerts</button><button class="fbtn" data-f="SYNC" onclick="setLogFilter('SYNC',this)">Sync</button></div>
     </div>
     <div class="cbody"><div class="log" id="logtail"></div></div>
   </div>
@@ -219,17 +221,129 @@ const CAMS = {{ cams_json|safe }};
 let sel = CAMS.length ? CAMS[0].cam : 0;
 let ST = {};
 
-// ---- camera selector + feed ----
+// ---- camera selector + feed + auto-detection ----
 (function initCams(){
   const s=document.getElementById('camSel');
   CAMS.forEach(c=>{const o=document.createElement('option');o.value=c.cam;o.textContent=c.name;s.appendChild(o);});
   if(CAMS.length){ selectCam(sel); }
+  // Load any saved camera from auto-detection
+  loadSavedCamera();
 })();
+
+function handleCamSelect(value){
+  if(!value) return;
+  // If it's a number (CAPHY camera), use regular select
+  if(!isNaN(value)){
+    selectCam(value);
+  }else{
+    // If it's a string (detected camera), test and switch
+    selectCamWithDetection(value);
+  }
+}
+
 function selectCam(id){
   sel=+id;
   document.getElementById('mainFeed').src='/video_feed/'+sel;
   const c=CAMS.find(x=>x.cam===sel);
   document.getElementById('camName').textContent=c?c.name:('Cam '+sel);
+}
+
+// ---- Camera Auto-Detection & Switching ----
+async function loadSavedCamera(){
+  try{
+    const r=await fetch('/api/detector/cameras/saved');
+    const d=await r.json();
+    if(d.saved_camera){
+      // Camera was saved by detector - try to use it
+      document.getElementById('camStatus').textContent='✓ Saved camera loaded';
+      document.getElementById('camStatus').style.color='var(--green)';
+    }
+  }catch(e){
+    // Silent fail - just use default
+  }
+}
+
+async function refreshCameras(){
+  const btn=document.getElementById('refreshCamsBtn');
+  const status=document.getElementById('camStatus');
+  const sel=document.getElementById('camSel');
+
+  btn.disabled=true;
+  btn.textContent='🔄 Scanning...';
+  status.textContent='Scanning...';
+  status.style.color='var(--orange)';
+
+  try{
+    const r=await fetch('/api/detector/cameras');
+    const cams=await r.json();
+    const total=(cams.local?.length||0)+(cams.network?.length||0);
+
+    // Rebuild dropdown with detected cameras
+    const current=sel.value;
+    sel.innerHTML='<option value="">-- Select Camera --</option>';
+
+    // Add CAPHY managed cameras
+    CAMS.forEach(c=>{const o=document.createElement('option');o.value=c.cam;o.textContent='[CAPHY] '+c.name;sel.appendChild(o);});
+
+    // Add local cameras
+    if(cams.local&&cams.local.length){
+      const grp=document.createElement('optgroup');grp.label='Local Cameras';
+      cams.local.forEach(c=>{const o=document.createElement('option');o.value=c.source;o.textContent='📌 '+c.name;grp.appendChild(o);});
+      sel.appendChild(grp);
+    }
+
+    // Add network cameras (V380, etc)
+    if(cams.network&&cams.network.length){
+      const grp=document.createElement('optgroup');grp.label='Network Cameras';
+      cams.network.forEach(c=>{const o=document.createElement('option');o.value=c.source;o.textContent='🌐 '+c.name;grp.appendChild(o);});
+      sel.appendChild(grp);
+    }
+
+    status.textContent=`✓ Found ${total} cameras`;
+    status.style.color='var(--green)';
+
+  }catch(e){
+    status.textContent='❌ Scan failed';
+    status.style.color='var(--red)';
+    console.error('Camera scan error:',e);
+  }finally{
+    btn.disabled=false;
+    btn.textContent='🔄 Scan';
+  }
+}
+
+async function selectCamWithDetection(source){
+  const status=document.getElementById('camStatus');
+  status.textContent='Testing...';
+  status.style.color='var(--orange)';
+
+  try{
+    // Test if camera works
+    const r=await fetch('/api/detector/cameras/test',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({camera:source})
+    });
+    const result=await r.json();
+
+    if(result.connected){
+      // Save this camera
+      await fetch('/api/detector/cameras/select',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({camera:source})
+      });
+      status.textContent='✓ Camera switched';
+      status.style.color='var(--green)';
+    }else{
+      status.textContent='❌ '+result.error;
+      status.style.color='var(--red)';
+    }
+  }catch(e){
+    status.textContent='❌ Switch failed';
+    status.style.color='var(--red)';
+    console.error('Camera switch error:',e);
+  }
 }
 
 // ---- popups (existing pages loaded in an iframe, so all their JS keeps working) ----
@@ -324,8 +438,8 @@ async function refreshAlerts(){
     if(!j.alerts.length){list.innerHTML='';empty.style.display='block';return;}
     empty.style.display='none';
     list.innerHTML=j.alerts.slice(0,8).map(a=>{
-      const event=a.tier?'Person confirmed':'Movement';const cam=a.camera||'Unknown';
-      return '<div class="arow t'+(a.tier||1)+'"><div class="av">!</div><div class="txt"><div class="tt">'+event+' '+tpill(a.tier)+'</div><div class="ss">'+cam+' · '+(a.distance_m||'-')+' m</div></div><button class="ackbtn" onclick="ack('+a.id+')">Ack</button></div>';
+      const event=a.tier?'Person detected':'Movement';const cam=a.camera||'Unknown';
+      return '<div class="arow t'+(a.tier||1)+'"><div class="av">!</div><div class="txt"><div class="tt">'+event+' '+tpill(a.tier)+'</div><div class="ss">'+cam+' · '+(a.distance_m||'-')+' m away</div></div><button class="ackbtn" onclick="ack('+a.id+')">Ack</button></div>';
     }).join('');
   }catch(e){}
 }
@@ -334,15 +448,15 @@ async function ackAll(){try{await fetch('/api/alerts/dismiss_all',{method:'POST'
 (function stream(){try{const es=new EventSource('/api/alerts/stream');es.onmessage=refreshAlerts;}catch(e){}})();
 
 // ---- state (arm/camera/nv/siren/emergency) ----
-function setSb(el,label,on,onT,offT){el.textContent=label+' '+(on?onT:offT);el.classList.toggle('on',!!on);}
+function setSb(el,label,on,onT,offT){el.textContent=label+' ['+(on?onT:offT)+']';el.classList.toggle('on',!!on);}
 async function refreshState(){
   try{
     const r=await fetch('/api/state'); ST=await r.json();
-    setSb(document.getElementById('sbArm'),'System',ST.armed,'ARMED','DISARMED');
-    setSb(document.getElementById('sbCam'),'Camera',ST.camera_on,'ON','OFF');
-    setSb(document.getElementById('sbNv'),'Night vision',ST.night_vision,'ON','OFF');
-    setSb(document.getElementById('sbSiren'),'Siren',ST.siren,'ON','OFF');
-    const emg=document.getElementById('sbEmg');setSb(emg,'Emergency',ST.emergency,'ACTIVE','OFF');emg.classList.toggle('red',ST.emergency);
+    setSb(document.getElementById('sbArm'),'System',ST.armed,'Armed','Disarmed');
+    setSb(document.getElementById('sbCam'),'Camera',ST.camera_on,'On','Off');
+    setSb(document.getElementById('sbNv'),'Night Vision',ST.night_vision,'On','Off');
+    setSb(document.getElementById('sbSiren'),'Siren',ST.siren,'On','Off');
+    const emg=document.getElementById('sbEmg');setSb(emg,'Emergency',ST.emergency,'Active','Off');emg.classList.toggle('red',ST.emergency);
     document.getElementById('armDot').className='dot '+(ST.armed?'armed':'off');
     document.getElementById('armLbl').textContent=ST.armed?'ARMED':'DISARMED';
     document.getElementById('armBtnLbl').textContent=ST.armed?'Disarm':'Arm';
@@ -358,7 +472,7 @@ async function toggleArm(){try{await fetch('/api/arm',{method:'POST',headers:{'C
 async function toggleCam(){try{await fetch('/api/camera/power',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!ST.camera_on})});}catch(e){}refreshState();}
 async function toggleNV(){try{await fetch('/api/nightvision/'+sel,{method:'POST'});}catch(e){}refreshState();}
 async function toggleSiren(){try{await fetch('/api/siren',{method:'POST'});}catch(e){}refreshState();}
-async function toggleEmg(){if(!ST.emergency&&!confirm('Activate Emergency Mode? This arms the system, sounds the siren, and pushes an alert to everyone.'))return;try{await fetch('/api/emergency',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!ST.emergency})});}catch(e){}refreshState();}
+async function toggleEmg(){if(!ST.emergency&&!confirm('Activate Emergency Mode?\n\nThis will:\n• Turn on the camera\n• Arm the system\n• Sound the siren\n• Send an alert to everyone on your account.\n\nProceed?'))return;try{await fetch('/api/emergency',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!ST.emergency})});}catch(e){}refreshState();}
 let recOn=false;
 async function toggleRec(){try{const r=await fetch('/api/record/'+sel,{method:'POST'});const j=await r.json();recOn=j.recording;document.getElementById('recBtn').classList.toggle('active',recOn);}catch(e){}}
 async function snap(){try{const r=await fetch('/api/snapshot/'+sel,{method:'POST'});const j=await r.json();if(j.ok&&j.url)window.open(j.url,'_blank');}catch(e){}}

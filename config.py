@@ -11,8 +11,8 @@ EXTRA_CAMERAS     = [        # network (WiFi/IP) cameras added by URL
 ]
 CAMERAS           = [0, 1]   # used ONLY if AUTO_SCAN_CAMERAS = False (manual list)
 CAMERA_NAMES      = ["Cam 0", "Cam 1"]   # display names per camera slot - rename freely (e.g. "Front Gate")
-FRAME_WIDTH   = 640    # safe, widely-supported resolution (480x360 is non-standard and breaks some cams)
-FRAME_HEIGHT  = 480
+FRAME_WIDTH   = 960    # sharper than 640x480 without the CPU cost of full 1080p -
+FRAME_HEIGHT  = 720    # keeps YOLO/motion detection running in real time, no lag
 
 # ---- Factor 1: Motion (pixel-change via MOG2 background subtraction) ----
 MOTION_MIN_AREA    = 1500
@@ -40,12 +40,54 @@ TIER_HYSTERESIS = 0.12    # a threshold must be crossed by this fraction before
                           # the tier changes. RAISE if the tier still wobbles;
                           # LOWER if Tier 3 / the siren triggers too late.
 
-# ---- Tier behavior (redesigned) ----
+# ---- Tier behavior (armed/disarmed x tier response table) ----
+# Disarmed:
+#   Tier 1: snapshot + log only (no video)
+#   Tier 2: snapshot + notification; a short 3-5s clip ONLY if the person
+#           remains in view that long (see DWELL_BEFORE_RECORD_SEC below) -
+#           someone briefly passing through only ever gets a snapshot
+#   Tier 3: snapshot + siren + continuous video (until person leaves) + notification
+# Armed:
+#   Tier 1: snapshot + short video clip + urgent notification
+#   Tier 2: snapshot + continuous video + siren
+#   Tier 3: snapshot + siren + continuous video (until person leaves) + urgent notification (max response)
 SNAPSHOT_TIERS   = [1, 2, 3]   # tiers that save a snapshot (used as the app image)
-RECORD_TIERS     = [2, 3]      # tiers that record video until the person leaves
-SIREN_TIERS      = [3]         # tiers that sound the siren
-PRESENCE_GRACE_SEC = 1.5       # keep recording this long after the person disappears
-HIGHEST_SECURITY = False       # if True, ANY confirmed person triggers the full Tier-3 response
+RECORD_TIERS     = [1, 2, 3]   # tiers that CAN record video at all - armed/disarmed narrows this further per-tier (see AlertManager._recording_allowed_for_tier); Tier 1 disarmed still never actually records
+SIREN_TIERS      = [3]         # tiers that sound the siren when DISARMED - armed mode adds Tier 2 (see server.py's siren gate)
+PRESENCE_GRACE_SEC = 1.5       # keep recording this long after the person disappears (for Tier 2/3)
+TIER2_RECORD_DURATION = 5      # Tier 2 in disarmed mode: max recording duration once it starts (seconds)
+TIER1_ARMED_RECORD_DURATION = 4  # Tier 1 in armed mode: fixed short clip length (seconds) - not continuous
+
+# How long (seconds) a person must remain continuously in view before a
+# recording is allowed to start at all, for tiers where recording is
+# conditional on sustained presence (Tier 2 disarmed, per the table above).
+# Someone just walking past the camera - in frame for barely a second or
+# two - only ever gets a snapshot, never a video, which is most of what
+# used to fill storage with near-identical short clips of nothing.
+DWELL_BEFORE_RECORD_SEC = 2.5
+
+# Once a recording finishes for an ongoing visit, how long to wait before
+# allowing ANOTHER recording to start for what's effectively the same
+# presence (tier hasn't escalated) - stops a person who lingers near a
+# recording-duration boundary from generating a new clip every few seconds.
+# An escalation to a higher tier always bypasses this and starts recording
+# immediately regardless of cooldown, since a bigger threat should never be
+# silently throttled.
+RECORDING_COOLDOWN_SEC = 45
+
+# While a person remains continuously present and alerts keep being
+# generated for them (each one already rate-limited by ALERT_COOLDOWN_SEC),
+# only save another SNAPSHOT at most this often - not on every single
+# alert. Keeps the alert history from filling with dozens of near-identical
+# photos of someone who's just standing/sitting in frame.
+PRESENCE_SNAPSHOT_INTERVAL_SEC = 45
+
+# Kept for backward compatibility with Worker/_set_camera/_emergency code paths
+# that still reference config.HIGHEST_SECURITY as their default. The actual
+# "every tier behaves like Tier 3" behavior now lives in the ARM button /
+# TierEngine armed mode (see detection/tier_engine.py) - this flag is no
+# longer surfaced in Settings and should stay False.
+HIGHEST_SECURITY = False
 
 # ---- Auto-arm at night ----
 # Enable the switch in Settings -> Detection. The system arms itself at
@@ -56,6 +98,21 @@ AUTO_ARM_END_HOUR   = 6    # 6:00 AM
 # Seconds after arming during which no alert fires - lets you arm while still
 # in view without instantly triggering yourself.
 ARM_GRACE_SEC = 8
+
+# Seconds after DISARMING during which Tier 3 does not escalate (no siren,
+# no urgent push) - lets you walk right past the camera after turning the
+# system off without it treating you, the owner, as an intruder. A Tier 3
+# snapshot + log still happens (so the alert history stays complete), just
+# without the alarm response. Separate from ARM_GRACE_SEC above, which
+# covers the opposite moment (just armed, still in view).
+DISARM_GRACE_SEC = 45
+
+# Seconds after a camera (re)starts during which detections are computed
+# (so MOG2 keeps learning the background) but never saved as an alert. Without
+# this, the very first frame(s) after starting the app can be flagged as
+# "motion" before MOG2 has any real background to compare against, causing a
+# false snapshot/alert even when nobody is there.
+STARTUP_WARMUP_SEC = 3.0
 
 # ---- Evaluation / data collection (thesis Chapter 4) ----
 # Turn ON while running a test scenario, OFF for normal use.
@@ -165,13 +222,6 @@ CLAHE_CLIP        = 2.5
 CLAHE_TILE        = 8
 NIGHT_GAMMA       = 1.4
 
-# ---- Voice ----
-# Voice lives ONLY in the phone app. The app runs speech-to-text on the device,
-# POSTs the words to /api/voice, and speaks the reply with its own TTS.
-# This PC has no microphone loop and no text-to-speech - nothing to configure.
-# The phrases CAPHY understands are in voice/intents.json, served to the app
-# by GET /api/intents.
-
 # ---- Mobile push (Firebase) ----
 FIREBASE_KEY  = "firebase_key.json"
 PUSH_TOPIC    = "caphy_alerts"
@@ -189,6 +239,20 @@ PERSON_EVERY_N = 8     # run YOLO every Nth frame (higher = smoother video, less
 PERSON_IMGSZ   = 256   # YOLO input size (lower = much faster; 320 fastest, 640 most accurate)
 CAP_BUFFERSIZE = 1     # keep only the newest frame (kills lag/delay build-up)
 JPEG_QUALITY   = 55    # MJPEG stream quality 1-100 (low = lightest stream)
+
+# Tries RTSP cameras (IP cameras like Tapo) with low-latency FFmpeg options
+# (TCP transport, no internal buffering) first, which can noticeably cut
+# live-view delay. SAFE to leave on: Worker._open_capture() now PROBES the
+# tuned connection (same first-frame-timing check already used for the
+# DirectShow/MSMF webcam fallback) and automatically falls back to a plain,
+# untouched connection for that camera if the tuned one fails to open or is
+# slow - so a camera/network combo that doesn't like these options just
+# quietly runs at default speed instead of breaking live view. (An earlier
+# version of this forced the options globally with no fallback, which DID
+# break live view - "stuck on Camera loading.../black screen" - on at least
+# one real Tapo setup. That version is gone; this is the self-correcting
+# replacement.) Set False to skip the attempt entirely for every camera.
+RTSP_LOW_LATENCY = True
 
 # ---- Firebase Storage (real photos on phone) ----
 FIREBASE_BUCKET = "caphy-c6b77.firebasestorage.app"    # e.g. "caphy-xxxx.appspot.com"  (from Firebase Console -> Storage)

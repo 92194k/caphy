@@ -73,7 +73,6 @@ class _HomeTabState extends State<HomeTab> {
         ],
       ),
       body: Column(children: [
-        const OfflineBanner(),
         Expanded(
           child: RefreshIndicator(
         onRefresh: _loadAll,
@@ -81,21 +80,22 @@ class _HomeTabState extends State<HomeTab> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Row(children: [
-              Expanded(
-                  child: _statCard('Cameras', '$online / $total',
-                      online > 0 ? cGreen : cDim)),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: _statCard(
-                      'Current Threat',
-                      maxTier > 0 ? 'Tier $maxTier' : 'Clear',
-                      maxTier > 0 ? tierColor(maxTier) : cTeal)),
-            ]),
-            const SizedBox(height: 18),
-            const Text('Cameras',
-                style: TextStyle(
-                    color: cText, fontSize: 15, fontWeight: FontWeight.bold)),
+            // ---- big-picture status: current threat tier front and
+            // center (it's the thing worth glancing at first), camera
+            // online count right beside it for quick context.
+            _statusHero(maxTier),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Cameras',
+                    style: TextStyle(
+                        color: cText, fontSize: 15, fontWeight: FontWeight.bold)),
+                Text('$online of $total cameras online',
+                    style: TextStyle(
+                        color: online > 0 ? cGreen : cDim, fontSize: 12.5)),
+              ],
+            ),
             const SizedBox(height: 10),
             if (_stats.isEmpty)
               panel(
@@ -134,26 +134,50 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  Widget _statCard(String label, String value, Color accent) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: cPanel2,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cLine),
+  /// Big status banner: current threat tier (or "All Clear") is the
+  /// dominant element - a security app's single most important glance -
+  /// with the camera online count as a smaller secondary line underneath,
+  /// instead of two equal-weight stat cards competing for attention.
+  Widget _statusHero(int maxTier) {
+    final clear = maxTier == 0;
+    final accent = clear ? cTeal : tierColor(maxTier);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cPanel2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+      ),
+      child: Row(children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(clear ? Icons.shield_outlined : Icons.warning_amber,
+              color: accent, size: 26),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label.toUpperCase(),
-                style: const TextStyle(
-                    color: cMuted, fontSize: 10, letterSpacing: 1)),
-            const SizedBox(height: 8),
-            Text(value,
-                style: TextStyle(
-                    color: accent, fontSize: 24, fontWeight: FontWeight.bold)),
-          ],
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('CURRENT STATUS',
+                  style: const TextStyle(
+                      color: cMuted, fontSize: 10.5, letterSpacing: 1.2)),
+              const SizedBox(height: 4),
+              Text(clear ? 'All Clear' : 'Tier $maxTier Alert',
+                  style: TextStyle(
+                      color: accent, fontSize: 20, fontWeight: FontWeight.bold)),
+            ],
+          ),
         ),
-      );
+      ]),
+    );
+  }
 
   Widget _cameraRow(dynamic s) {
     final online = s['online'] == true;
@@ -185,29 +209,67 @@ class _HomeTabState extends State<HomeTab> {
     final tier = asInt(a['tier'], 1);
     final id = asInt(a['id']);
     final event = (a['event'] ?? 'Alert #$id').toString();
-    final sub = '${a['distance_m'] ?? '-'} m'
+    final sub = '${a['distance_m'] ?? '-'} m away'
         '${a['camera'] != null ? ' · ${a['camera']}' : ''}'
         ' · ${_time(a['timestamp'])}';
-    return Card(
-      color: cPanel,
-      margin: const EdgeInsets.only(bottom: 9),
-      shape: RoundedRectangleBorder(
-        side: BorderSide(color: cLine),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => AlertDetailScreen(id: id))),
-        leading: CircleAvatar(
-          backgroundColor: tierColor(tier).withValues(alpha: 0.2),
-          child: Text('$tier',
-              style: TextStyle(
-                  color: tierColor(tier), fontWeight: FontWeight.bold)),
+    final accent = tierColor(tier);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => AlertDetailScreen(id: id))),
+          child: Container(
+            decoration: BoxDecoration(
+              color: cPanel2.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(16),
+              // A Border with different colors per side (accent left edge,
+              // faint the rest) combined with borderRadius throws "A
+              // borderRadius can only be given on borders with uniform
+              // colors" at paint time - Flutter silently drops the whole
+              // card's content when that happens (no red error screen,
+              // just an empty box), which is exactly why every alert row
+              // was rendering blank despite the data being there. Fixed by
+              // using one uniform, near-invisible border here and drawing
+              // the tier-colored accent separately below as a plain
+              // rectangle instead of a border side.
+              border: Border.all(color: const Color(0x22789AD2)),
+            ),
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                child: Container(width: 3, height: 68, color: accent),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(children: [
+                    AlertThumbnail(
+                        snapshot: a['snapshot']?.toString(), tier: tier, size: 52),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(event,
+                              style: const TextStyle(
+                                  color: cText, fontWeight: FontWeight.w600, fontSize: 14.5)),
+                          const SizedBox(height: 3),
+                          Text(sub,
+                              style: const TextStyle(color: cMuted, fontSize: 12.5)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.chevron_right, color: cDim, size: 20),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
         ),
-        title: Text(event,
-            style: const TextStyle(color: cText, fontWeight: FontWeight.w600)),
-        subtitle: Text(sub, style: const TextStyle(color: cMuted)),
-        trailing: const Icon(Icons.chevron_right, color: cDim),
       ),
     );
   }

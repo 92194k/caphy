@@ -919,14 +919,15 @@ class Api {
     return [];
   }
 
-  /// Send a spoken command. Fixed commands only - CAPHY does not converse.
-  /// Anything unrecognized comes back with ok:false and a "did not understand"
-  /// reply, which the app speaks.
+  /// Send a spoken command/question to the CAPHY Assistant (v2 - talk/know/do
+  /// via assistant_ai). Hits /api/assistant, which replaced the old
+  /// /api/voice endpoint; that route no longer exists on the backend, so
+  /// this must send {"text": ...} to match what api_assistant() reads.
   static Future<Map<String, dynamic>> voice(String command,
       {String lang = 'en'}) async {
     try {
-      final r = await http.post(_u('/api/voice'),
-          headers: _h, body: jsonEncode({'command': command, 'lang': lang}));
+      final r = await http.post(_u('/api/assistant'),
+          headers: _h, body: jsonEncode({'text': command, 'lang': lang}));
       _reachable();
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
     } catch (e) {

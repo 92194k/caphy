@@ -134,9 +134,11 @@ service cloud.firestore {
                    && request.resource.data.caller_uid == request.auth.uid
                    && get(/databases/$(database)/documents/devices/$(request.resource.data.device_id)).data.owner_uid == request.auth.uid
                    && request.resource.data.status == "pending";
-      // The phone may only append/update its OWN ice candidates - it can
-      // never touch answer/ice_servers/status (those are the laptop's /
-      // Admin SDK's fields to write).
+      // The phone may only append/update its OWN ice candidates and its
+      // own viewer_heartbeat timestamp (written every ~12s while it's
+      // actively watching - see webrtc_call.dart / _monitor_call in
+      // web/webrtc_stream.py) - it can never touch answer/ice_servers/
+      // status (those are the laptop's / Admin SDK's fields to write).
       allow update: if request.auth != null
                    && resource.data.caller_uid == request.auth.uid
                    && request.resource.data.caller_uid == resource.data.caller_uid

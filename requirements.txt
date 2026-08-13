@@ -13,8 +13,8 @@ pygame-ce>=2.5           # siren.py plays assets/siren.mp3 with smooth fade in/o
 # ---- optional ----
 psutil>=5.9            # battery / power-save reporting
 firebase-admin>=6.5    # push notifications to the phone, Firestore device registry
-requests>=2.31         # desktop_launcher.py executes remote (cloud-queued) commands
-                        # against its own local Flask API
+requests>=2.31         # web/server.py (remote cloud-queued commands) and
+                        # assistant_ai/groq_client.py (cloud voice fallback)
 aiortc>=1.9             # true live video streaming to the phone when it's off
                         # the laptop's WiFi (web/webrtc_stream.py). Optional at
                         # runtime - if this fails to install, CAPHY still runs
@@ -22,9 +22,24 @@ aiortc>=1.9             # true live video streaming to the phone when it's off
                         # snapshots, arm/disarm, alerts are all unaffected).
                         # Most platforms get a prebuilt wheel via pip; if not,
                         # see https://github.com/aiortc/aiortc#installation
+pygrabber>=0.2; sys_platform == 'win32'
+                        # Windows-only, optional. Reads the REAL DirectShow
+                        # device names (e.g. "DroidCam Video", "Iriun Webcam",
+                        # "Camera (NVIDIA Broadcast)") for the Settings ->
+                        # Cameras picker, matching what Windows/browsers show
+                        # instead of a generic "USB Camera 1" guess (see
+                        # web/server.py camera_label()). If this fails to
+                        # install or isn't present, CAPHY falls back to the
+                        # generic labels automatically - camera detection and
+                        # streaming both keep working either way.
 
 # NOTE: no speech packages here on purpose.
 # Voice lives entirely in the Flutter app (speech_to_text + flutter_tts, see
 # caphy_app/pubspec.yaml). The PC does not listen and does not speak, so vosk,
 # pyttsx3, gTTS and playsound are NOT needed.
 # sounddevice stays because the software siren uses it to make a tone.
+
+# NOTE: CAPHY Assistant (assistant_ai/) matches phrases with Python's built-in
+# difflib - no rapidfuzz/fuzzywuzzy dependency. That keeps the assistant
+# zero-install and 100% offline: nothing to pip install, nothing that can
+# fail to build on a teammate's machine.

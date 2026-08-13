@@ -14,8 +14,6 @@ Usage:
 
 import firebase_admin
 from firebase_admin import messaging
-import config
-import json
 
 # Initialize Firebase (should be done by firebase_auth.py first)
 try:

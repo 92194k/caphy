@@ -54,8 +54,6 @@ from datetime import datetime, timezone
 import firebase_admin
 from firebase_admin import firestore
 
-import config
-
 _db = None
 
 
@@ -410,3 +408,70 @@ def complete_command(device_id: str, command_id: str, result: dict, ok: bool = T
         "status": "done" if ok else "error",
         "result": result,
     })
+
+
+def claim_command(device_id: str, command_id: str) -> bool:
+    """Atomically flips a command from 'pending' to 'executing'. Returns True
+    if THIS call won the claim, False if it was already claimed/finished by
+    someone else (a duplicate snapshot event, a reconnect replaying the same
+    doc, etc). Must be called before executing a command, and is what makes
+    the realtime listener safe to fire more than once for the same doc -
+    Firestore listeners are explicitly allowed to redeliver events (e.g. on
+    reconnect), so "receive the event" and "execute the command" must not be
+    the same step."""
+    db = _get_firestore()
+    ref = db.collection("commands").document(device_id).collection("queue").document(command_id)
+
+    @firestore.transactional
+    def _txn(transaction):
+        snap = ref.get(transaction=transaction)
+        if not snap.exists:
+            return False
+        if snap.to_dict().get("status") != "pending":
+            return False
+        transaction.update(ref, {
+            "status": "executing",
+            "claimed_at": firestore.SERVER_TIMESTAMP,
+        })
+        return True
+
+    transaction = db.transaction()
+    try:
+        return _txn(transaction)
+    except Exception:
+        return False
+
+
+def watch_pending_commands(device_id: str, on_command):
+    """Realtime replacement for pending_commands()'s poll loop. Attaches a
+    Firestore on_snapshot listener to the pending-commands query and calls
+    on_command(cmd_dict) for each newly-pending doc as soon as Firestore
+    pushes the change - no fixed poll interval, so the laptop reacts within
+    the underlying Firestore watch stream's own latency (typically well
+    under a second) instead of waiting for the next 1s tick.
+
+    Returns the Watch object; call .unsubscribe() on it to stop listening.
+
+    NOTE: on_snapshot delivers the FULL current result set on every change,
+    not just the diff, and can redeliver documents (e.g. right after
+    reconnecting). on_command is expected to call claim_command() itself
+    before doing any real work, so redelivery is a no-op rather than a
+    double-execution."""
+    db = _get_firestore()
+    q = (db.collection("commands").document(device_id).collection("queue")
+         .where("status", "==", "pending"))
+
+    def _cb(col_snapshot, changes, read_time):
+        for change in changes:
+            if change.type.name in ("ADDED", "MODIFIED"):
+                doc = change.document
+                d = doc.to_dict()
+                if d is None:
+                    continue
+                d["id"] = doc.id
+                try:
+                    on_command(d)
+                except Exception as e:
+                    print(f"[CAPHY] Command listener callback error: {e}")
+
+    return q.on_snapshot(_cb)

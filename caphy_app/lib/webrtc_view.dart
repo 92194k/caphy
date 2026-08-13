@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'theme.dart';
@@ -25,6 +26,27 @@ class _WebRtcViewState extends State<WebRtcView> {
   String _status = 'Connecting…';
   bool _errored = false;
   bool _turnUnavailable = false;
+  bool _reconnecting = false;
+
+  // Auto-reconnect: commercial cameras (Ring, Tapo, etc) never show the
+  // user a dead "connection failed, tap to retry" screen - they silently
+  // retry in the background. A terminal failure here (the laptop's own
+  // WebRTC layer already gives a "disconnected" state 8s to self-heal
+  // before it ever reaches this point - see web/webrtc_stream.py) means
+  // starting a brand-new call from scratch, since aiortc has no
+  // restartIce()-equivalent to fall back to. Capped + backed off so a
+  // genuinely broken network (laptop off, no internet at all) doesn't spin
+  // forever chewing battery/data.
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 5;
+  Timer? _reconnectTimer;
+  bool _disposed = false;
+  // Guards against two overlapping _connect() calls creating two
+  // simultaneous WebrtcCall/RTCPeerConnection instances - e.g. the
+  // laptop's proactive "closed" write and the phone's own answer-timeout
+  // both firing onError close together would otherwise each schedule
+  // their own reconnect independently of each other.
+  bool _connecting = false;
 
   @override
   void initState() {
@@ -33,6 +55,8 @@ class _WebRtcViewState extends State<WebRtcView> {
   }
 
   Future<void> _connect() async {
+    if (_connecting) return;
+    _connecting = true;
     await _renderer.initialize();
     _call = WebrtcCall(
       deviceId: widget.deviceId,
@@ -42,7 +66,12 @@ class _WebRtcViewState extends State<WebRtcView> {
         setState(() {
           _renderer.srcObject = stream;
           _status = 'Live';
+          _reconnecting = false;
         });
+        // A frame actually arrived - this attempt succeeded, so future
+        // failures start counting from zero again rather than inheriting
+        // whatever attempt count got us here.
+        _reconnectAttempts = 0;
       },
       onConnectionState: (state) {
         if (!mounted) return;
@@ -54,13 +83,50 @@ class _WebRtcViewState extends State<WebRtcView> {
           _errored = true;
           _status = err;
         });
+        _scheduleReconnect();
       },
       onTurnUnavailable: () {
         if (!mounted) return;
         setState(() => _turnUnavailable = true);
       },
     );
-    await _call!.start();
+    try {
+      await _call!.start();
+    } finally {
+      // Setup (offer created, doc written, listener attached) is done -
+      // from here on the call's own callbacks (onError/onRemoteStream)
+      // drive what happens next, so it's safe to allow another _connect()
+      // call again (e.g. from a reconnect timer that fires later).
+      _connecting = false;
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed) return;
+    if (_connecting) return;   // a connect attempt is already in flight
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      // Give up auto-retrying, but the error message + a manual path
+      // (didUpdateWidget / re-opening the tab) is still there - this just
+      // stops silently hammering a laptop that's genuinely offline.
+      return;
+    }
+    _reconnectAttempts++;
+    // Backoff: 2s, 4s, 8s, 16s, 30s(capped) - fast enough to recover from
+    // a brief hiccup quickly, but backs off instead of hammering a truly
+    // dead connection every couple seconds.
+    final delaySec = (2 << (_reconnectAttempts - 1)).clamp(2, 30);
+    setState(() {
+      _reconnecting = true;
+      _status = 'Reconnecting… (attempt $_reconnectAttempts/$_maxReconnectAttempts)';
+    });
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(Duration(seconds: delaySec), () async {
+      if (_disposed || !mounted) return;
+      await _call?.hangUp();
+      _renderer.srcObject = null;
+      setState(() => _errored = false);
+      await _connect();
+    });
   }
 
   String _friendlyState(String raw) {
@@ -68,7 +134,12 @@ class _WebRtcViewState extends State<WebRtcView> {
       return 'Live';
     }
     if (raw.contains('connecting')) return 'Connecting…';
-    if (raw.contains('Fail')) return 'Connection failed — check your internet';
+    if (raw.contains('Fail')) {
+      _scheduleReconnect();
+      return _reconnecting
+          ? 'Reconnecting… (attempt $_reconnectAttempts/$_maxReconnectAttempts)'
+          : 'Connection failed — check your internet';
+    }
     if (raw.contains('Dis') || raw.contains('closed')) return 'Disconnected';
     return 'Connecting…';
   }
@@ -77,11 +148,15 @@ class _WebRtcViewState extends State<WebRtcView> {
   void didUpdateWidget(covariant WebRtcView old) {
     super.didUpdateWidget(old);
     if (old.deviceId != widget.deviceId || old.cam != widget.cam) {
+      _reconnectTimer?.cancel();
+      _reconnectAttempts = 0;
+      _connecting = false;   // force-allow the fresh connect below
       _call?.hangUp();
       _renderer.srcObject = null;
       setState(() {
         _status = 'Connecting…';
         _errored = false;
+        _reconnecting = false;
       });
       _connect();
     }
@@ -89,6 +164,8 @@ class _WebRtcViewState extends State<WebRtcView> {
 
   @override
   void dispose() {
+    _disposed = true;
+    _reconnectTimer?.cancel();
     _call?.hangUp();
     _renderer.dispose();
     super.dispose();
@@ -111,7 +188,13 @@ class _WebRtcViewState extends State<WebRtcView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!_errored)
+                // Reconnecting is shown the same as normal connecting
+                // (spinner, muted text) rather than the harsher red error
+                // icon - this is the "quietly trying again in the
+                // background" behavior Ring/Tapo use instead of putting a
+                // scary error in front of the user for what's usually a
+                // brief, self-resolving blip.
+                if (!_errored || _reconnecting)
                   const CircularProgressIndicator(color: cTeal)
                 else
                   const Icon(Icons.wifi_off, color: cRed, size: 32),
@@ -120,7 +203,9 @@ class _WebRtcViewState extends State<WebRtcView> {
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(_status,
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: _errored ? cRed : cMuted, fontSize: 12)),
+                      style: TextStyle(
+                          color: (_errored && !_reconnecting) ? cRed : cMuted,
+                          fontSize: 12)),
                 ),
               ],
             ),

@@ -69,13 +69,13 @@ CAPHY does not chat. The PC never listens and never speaks.
 | Step | Where |
 |---|---|
 | Hearing you | Phone - device speech-to-text (`speech_to_text`) |
-| Understanding the words | PC - `POST /api/voice`, matched against `voice/intents.json` |
-| Doing the action | PC - `_do_action()` in `web/server.py` |
+| Understanding the words | PC - `POST /api/assistant`, classified talk/know/do via `assistant_ai/router.py` |
+| Doing the action | PC - closed action whitelist in `assistant_ai/actions.py`, calling back into `_do_action()` in `web/server.py` |
 | Speaking the reply | Phone - device text-to-speech (`flutter_tts`) |
 
-There is **one** voice endpoint: `POST /api/voice`. Anything that isn't a known
-command comes back as "Sorry, I did not understand that command" (or the
-Tagalog equivalent), which the app speaks.
+There is **one** voice endpoint: `POST /api/assistant`. Anything that isn't a
+recognized command or guidance question comes back with a generic capability
+summary (English or Tagalog), which the app speaks.
 
 The PC has no microphone loop, no Vosk, no pyttsx3. Those packages are not in
 `requirements.txt` and are not needed.

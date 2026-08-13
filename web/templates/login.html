@@ -7,7 +7,8 @@
   <style>
     body{align-items:center;justify-content:center}
     .box{background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:38px;width:370px}
-    .box .logo{width:56px;height:56px;border-radius:14px;margin:0 auto 12px}
+    .box .logo{width:56px;height:56px;border-radius:14px;margin:0 auto 12px;
+      filter:drop-shadow(0 0 22px rgba(139,111,255,.55))}
     .remember{display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:12.5px}
     .remember label{display:flex;align-items:center;gap:8px;color:var(--muted);margin:0;cursor:pointer}
     .remember input{width:16px;height:16px;padding:0;accent-color:var(--teal)}
@@ -20,16 +21,20 @@
   <div class="box">
     <div style="text-align:center;margin-bottom:6px">
       <div class="logo" style="overflow:hidden">
-        <svg class="caphy-logo" viewBox="24 24 72 72" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+        <svg class="caphy-logo" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
           <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#2A9D8F"></stop><stop offset="1" stop-color="#217C72"></stop>
+            <stop offset="0" stop-color="#5b7bff"></stop><stop offset="1" stop-color="#a78bfa"></stop>
           </linearGradient>
-          <clipPath id="lc"><rect x="24" y="24" width="72" height="72" rx="17"></rect></clipPath></defs>
-          <rect x="24" y="24" width="72" height="72" rx="17" fill="url(#lg)"></rect>
+          <clipPath id="lc"><path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z"></path></clipPath>
+          <clipPath id="le"><rect x="26" y="36" width="44" height="20" rx="10"></rect></clipPath></defs>
+          <path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z" fill="url(#lg)"></path>
           <g clip-path="url(#lc)">
-            <ellipse class="eye" cx="60" cy="60" rx="21" ry="13" fill="#08110f"></ellipse>
-            <g class="pupil">
-              <circle cx="60" cy="60" r="8.5" fill="#3dd7c4"></circle>
+            <rect class="eye" x="26" y="36" width="44" height="20" rx="10" fill="#0a1024"></rect>
+            <g clip-path="url(#le)">
+              <g class="pupil">
+                <circle cx="48" cy="46" r="9" fill="#a78bfa"></circle>
+                <circle cx="51" cy="43" r="2" fill="#cfe0ff"></circle>
+              </g>
             </g>
           </g>
         </svg>
@@ -54,7 +59,7 @@
     <div style="color:var(--dim);font-size:11px;text-align:center;margin-top:16px">Default: admin / admin</div>
   </div>
   <script>
-    (function(){var d=-(Date.now()%4200)+'ms';
+    (function(){var d=-(Date.now()%5000)+'ms';
       document.querySelectorAll('.caphy-logo .eye,.caphy-logo .pupil')
         .forEach(function(e){e.style.animationDelay=d;});})();
   </script>

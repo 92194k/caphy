@@ -22,7 +22,6 @@ Usage:
 """
 
 import os
-import json
 from datetime import datetime
 import firebase_admin
 from firebase_admin import auth, credentials
@@ -126,19 +125,29 @@ class FirebaseAuthManager:
         except Exception as e:
             raise ValueError(f"Invalid or expired token: {e}")
 
-    def create_user_email_password(self, email: str, password: str) -> str:
+    def create_user_email_password(self, email: str, password: str, display_name: str = "") -> str:
         """
         Create a new Firebase user (email+password).
 
         Args:
             email: User email
             password: User password (min 6 chars)
+            display_name: Optional name captured at signup - stored as the
+                Firebase Auth displayName, the same field the phone app's
+                QR-based sign-in reads for free afterward (it's a real
+                Firebase Auth session, so user.displayName just comes along
+                with it - no separate sync needed). Used by the voice
+                assistant to greet the user by name on "Hey CAPHY" (see
+                assistant/engine.py).
 
         Returns:
             Firebase UID
         """
         try:
-            user = auth.create_user(email=email, password=password)
+            kwargs = {"email": email, "password": password}
+            if display_name and display_name.strip():
+                kwargs["display_name"] = display_name.strip()
+            user = auth.create_user(**kwargs)
             return user.uid
         except auth.EmailAlreadyExistsError:
             raise ValueError(f"Email {email} already registered")
@@ -193,8 +202,6 @@ class FirebaseAuthManager:
 # ===== Usage example (for testing) =====
 
 if __name__ == "__main__":
-    from datetime import datetime
-
     # Initialize
     auth_mgr = FirebaseAuthManager()
 

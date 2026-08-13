@@ -180,6 +180,7 @@ class WorkerVideoTrack(VideoStreamTrack):
         self.worker = worker
         self._interval = 1.0 / fps
         self._timestamp = 0
+        self.last_sent_at = time.time()
 
     async def recv(self):
         frame = self.worker.get_frame()
@@ -193,6 +194,15 @@ class WorkerVideoTrack(VideoStreamTrack):
         self._timestamp += int(90000 * self._interval)   # 90kHz clock, WebRTC convention
         video_frame.pts = self._timestamp
         video_frame.time_base = fractions.Fraction(1, 90000)
+
+        # Staleness detection: connectionState can claim "connected" while
+        # the actual media flow has silently stalled (the ICE layer doesn't
+        # always notice this promptly). Tracking the last time THIS track
+        # actually produced a frame lets a separate monitor (see
+        # CallListener._monitor_call) catch that specific failure mode and
+        # proactively recover instead of leaving the phone staring at a
+        # frozen frame indefinitely.
+        self.last_sent_at = time.time()
 
         await asyncio.sleep(self._interval)
         return video_frame
@@ -282,16 +292,52 @@ class CallListener:
             pc = RTCPeerConnection(configuration=config_rtc)
             self._active_pcs[call_id] = pc
 
-            pc.addTrack(WorkerVideoTrack(worker))
+            video_track = WorkerVideoTrack(worker)
+            pc.addTrack(video_track)
 
             @pc.on("connectionstatechange")
             async def on_state_change():
-                if pc.connectionState in ("failed", "closed", "disconnected"):
+                # "disconnected" is a TRANSIENT ICE state, not a terminal
+                # one - it fires on brief packet loss, a NAT rebind, or a
+                # momentary Wi-Fi/cellular handoff, and the connection
+                # commonly self-heals back to "connected" within a few
+                # seconds if left alone. Previously this tore the peer
+                # connection down (and killed the video track) the instant
+                # "disconnected" appeared, which is exactly what made a
+                # brief network blip look like the live view "connects then
+                # goes black" - the phone's own log showed CONNECTED ->
+                # DISCONNECTED -> FAILED, where FAILED was very likely just
+                # the consequence of the laptop closing the connection
+                # here, not an independent unrecoverable failure. Only
+                # "failed" (ICE genuinely gave up) and "closed" are treated
+                # as terminal now; "disconnected" gets a grace window to
+                # recover on its own first.
+                if pc.connectionState == "failed" or pc.connectionState == "closed":
                     self._active_pcs.pop(call_id, None)
                     try:
                         call_ref.update({"status": "closed"})
                     except Exception:
                         pass
+                elif pc.connectionState == "disconnected":
+                    print(f"[CAPHY WebRTC] Call {call_id} connection state "
+                          f"'disconnected' - giving it 8s to self-recover "
+                          f"before tearing down.")
+                    await asyncio.sleep(8)
+                    if pc.connectionState == "disconnected":
+                        print(f"[CAPHY WebRTC] Call {call_id} did not "
+                              f"recover - closing.")
+                        self._active_pcs.pop(call_id, None)
+                        try:
+                            call_ref.update({"status": "closed"})
+                        except Exception:
+                            pass
+                        try:
+                            await pc.close()
+                        except Exception:
+                            pass
+                    else:
+                        print(f"[CAPHY WebRTC] Call {call_id} recovered to "
+                              f"'{pc.connectionState}' on its own.")
 
             offer = data.get("offer") or {}
             await pc.setRemoteDescription(RTCSessionDescription(sdp=offer.get("sdp", ""),
@@ -319,7 +365,19 @@ class CallListener:
             # Relay caller's ICE candidates already queued, and keep
             # watching for late-arriving ones for a short window (WebRTC
             # candidates can trickle in after the offer/answer exchange).
-            await self._relay_ice(pc, call_ref, duration_sec=20)
+            # Runs concurrently with the call-health monitor below, which
+            # covers the REST of the call's lifetime (staleness detection,
+            # heartbeat, TURN credential refresh) - _relay_ice only needs
+            # ~20s since ICE candidates stop trickling in well before then.
+            ice_task = asyncio.ensure_future(self._relay_ice(pc, call_ref, duration_sec=20))
+            monitor_task = asyncio.ensure_future(
+                self._monitor_call(call_id, pc, call_ref, video_track, ice_raw))
+            await ice_task
+            # Let the monitor keep running in the background for the rest
+            # of the call - it exits on its own once the connection closes
+            # (see _monitor_call's loop condition). Referencing it here
+            # only to avoid an "unused variable" lint concern; no await.
+            _ = monitor_task
 
         except Exception as e:
             print(f"[CAPHY WebRTC] Failed to answer call {call_id}: {e}")
@@ -371,3 +429,128 @@ class CallListener:
             except Exception:
                 pass
             await asyncio.sleep(1)
+
+    async def _monitor_call(self, call_id, pc, call_ref, video_track, initial_ice_raw):
+        """
+        Runs for the lifetime of one call, alongside connectionstatechange
+        (which reacts to ICE-layer state) and _relay_ice (which only runs
+        for the first ~20s). This covers three things aiortc's own state
+        machine does NOT catch on its own:
+
+        1. STALENESS: aiortc has no restartIce()/iceRestart support (unlike
+           browser WebRTC) - the only real recovery mechanism available is
+           a brand-new offer/answer, i.e. a fresh reconnect. So instead of
+           waiting for connectionState to eventually notice a stuck stream
+           (which it doesn't always do promptly - "connected" can persist
+           even after media stops flowing), this watches
+           video_track.last_sent_at directly: if no frame has actually
+           been produced in STALE_AFTER_SEC, it proactively closes the
+           call so the phone's own auto-reconnect logic (webrtc_view.dart)
+           kicks in immediately, rather than the user staring at a frozen
+           frame indefinitely.
+        2. PHONE HEARTBEAT: the phone writes call_ref.viewer_heartbeat
+           every ~12s while it's actually still watching (see
+           webrtc_call.dart). If that goes stale, the viewer is gone
+           (backgrounded app, force-closed, etc) - free the camera/CPU
+           work of encoding a stream nobody's receiving.
+        3. TURN CREDENTIAL REFRESH: Metered credentials are cached ~30 min
+           (see get_ice_servers_cached). A call that outlives that window
+           would otherwise keep using increasingly-stale credentials if a
+           reconnect were ever needed mid-call - this periodically pushes
+           fresh ones into the call doc so the phone's setConfiguration()
+           call (webrtc_call.dart's _onCallDocUpdate) stays current.
+        """
+        # STALE_AFTER_SEC was originally 15s, checked on a single reading -
+        # that turned out to be too aggressive for real cross-network/TURN-
+        # relayed connections, where aiortc's own internal pacing and
+        # backpressure can legitimately pause recv() calls for well over
+        # 15s on a connection that is NOT actually broken (mobile data
+        # jitter, the phone briefly falling behind on decode, etc). That
+        # false-positive was itself causing "camera goes black" - the
+        # laptop was proactively killing perfectly healthy connections.
+        # Raised substantially AND now requires staleness to be observed on
+        # two consecutive checks (not just one instantaneous reading)
+        # before acting, so a single slow tick can't trigger a teardown -
+        # only a genuinely stuck stream, sustained across two checks
+        # roughly CHECK_INTERVAL_SEC apart, does.
+        STALE_AFTER_SEC = 45
+        HEARTBEAT_STALE_AFTER_SEC = 40
+        TURN_REFRESH_INTERVAL_SEC = 20 * 60
+        CHECK_INTERVAL_SEC = 5
+
+        last_turn_push = time.time()
+        last_ice_raw = initial_ice_raw
+        consecutive_stale_checks = 0
+
+        while call_id in self._active_pcs:
+            await asyncio.sleep(CHECK_INTERVAL_SEC)
+            if pc.connectionState in ("closed", "failed"):
+                return   # connectionstatechange's own handler is tearing this down
+
+            now = time.time()
+
+            # 1. Staleness - only meaningful once the connection has ever
+            # actually gone live in the first place (avoid false-positives
+            # while the initial handshake/candidate exchange is still in
+            # progress).
+            if pc.connectionState == "connected":
+                stale = now - getattr(video_track, "last_sent_at", now)
+                if stale > STALE_AFTER_SEC:
+                    consecutive_stale_checks += 1
+                else:
+                    consecutive_stale_checks = 0
+                if consecutive_stale_checks >= 2:
+                    print(f"[CAPHY WebRTC] Call {call_id} media appears stuck "
+                          f"(no frame sent in {stale:.0f}s despite "
+                          f"connectionState=connected, confirmed on "
+                          f"{consecutive_stale_checks} consecutive checks) - "
+                          f"closing so the phone can reconnect fresh.")
+                    self._active_pcs.pop(call_id, None)
+                    try:
+                        call_ref.update({"status": "closed"})
+                    except Exception:
+                        pass
+                    try:
+                        await pc.close()
+                    except Exception:
+                        pass
+                    return
+            else:
+                consecutive_stale_checks = 0
+
+            # 2. Phone heartbeat staleness
+            try:
+                snap = call_ref.get()
+                data = snap.to_dict() or {}
+                hb = data.get("viewer_heartbeat")
+                if hb is not None:
+                    hb_age = now - hb if isinstance(hb, (int, float)) else None
+                    if hb_age is not None and hb_age > HEARTBEAT_STALE_AFTER_SEC:
+                        print(f"[CAPHY WebRTC] Call {call_id} viewer heartbeat "
+                              f"stale ({hb_age:.0f}s) - assuming the phone left, "
+                              f"freeing this stream.")
+                        self._active_pcs.pop(call_id, None)
+                        try:
+                            call_ref.update({"status": "closed"})
+                        except Exception:
+                            pass
+                        try:
+                            await pc.close()
+                        except Exception:
+                            pass
+                        return
+            except Exception:
+                pass   # don't let a Firestore hiccup kill a healthy call
+
+            # 3. TURN credential refresh for long-lived calls
+            if now - last_turn_push > TURN_REFRESH_INTERVAL_SEC:
+                try:
+                    fresh_raw, fresh_ok = get_ice_servers_cached()
+                    if fresh_raw != last_ice_raw:
+                        call_ref.update({"ice_servers": fresh_raw, "turn_available": fresh_ok})
+                        last_ice_raw = fresh_raw
+                        print(f"[CAPHY WebRTC] Call {call_id} pushed refreshed "
+                              f"TURN credentials.")
+                except Exception:
+                    pass
+                last_turn_push = now
