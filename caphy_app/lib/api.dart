@@ -231,9 +231,13 @@ class Api {
       // 45-second-old cloud heartbeat - there's nothing left for `cloud`
       // to prove here.
       if (net) {
-        if (current != 'online') connectivityMode.value = 'online';
+        if (current != 'online') {
+          connectivityMode.value = 'online';
+          _flushPendingDeletesOnReconnect(current);
+        }
       } else if (current != 'lan') {
         connectivityMode.value = 'lan';
+        _flushPendingDeletesOnReconnect(current);
       }
       return;
     }
@@ -241,7 +245,10 @@ class Api {
     if (net && cloud) {
       // No LAN, but the laptop IS reachable through the cloud (Remote
       // Online Mode - different networks, or mobile data).
-      if (current != 'online') connectivityMode.value = 'online';
+      if (current != 'online') {
+        connectivityMode.value = 'online';
+        _flushPendingDeletesOnReconnect(current);
+      }
       return;
     }
 
@@ -250,6 +257,19 @@ class Api {
     // whether the phone's own internet is up or down, because that was
     // never the actual question ("can we reach the laptop").
     if (current != 'offline') connectivityMode.value = 'offline';
+  }
+
+  // Fire-and-forget: whenever connectivity moves INTO a mode that can
+  // actually reach the laptop (from a worse mode - offline, or unset at
+  // startup), retry any deletes that got queued while unreachable. Never
+  // awaited from the connectivity check itself - a slow/stuck delete
+  // retry must not delay or block the connectivity state transition that
+  // triggered it.
+  static void _flushPendingDeletesOnReconnect(String previousMode) {
+    if (previousMode == 'offline' || previousMode == '') {
+      // ignore: discarded_futures
+      flushPendingDeletes();
+    }
   }
 
   /// Is the laptop reachable through Firestore right now (recent
@@ -662,24 +682,54 @@ class Api {
           .limit(limit)
           .get()
           .timeout(const Duration(seconds: 4));
-      return q.docs.map((d) {
-        final m = d.data();
-        return {
-          'id': m['alert_id'],
-          'tier': m['tier'] ?? 1,
-          'event': m['event'],
-          'distance_m': m['distance_m'],
-          'confidence': m['confidence'],
-          'camera': m['camera'],
-          'timestamp': m['timestamp'],
-          // Cloud alerts carry a full https snapshot URL (Firebase Storage
-          // signed URL); LAN alerts carry a path relative to the laptop.
-          'snapshot': m['snapshot_url'],
-          'snapshot_url': m['snapshot_url'],
-          'has_video': m['has_video'] ?? false,
-          'remote': true,
-        };
-      }).toList();
+
+      // Reconciliation against hard-delete tombstones (see
+      // storage/database.py's deleted_alerts table and cloud_alerts.py's
+      // delete_alert()/_write_tombstone()). Off-LAN, this alerts
+      // collection is the ONLY thing the phone reads - if a delete's
+      // direct doc-removal write to Firestore failed for any reason
+      // (laptop briefly offline mid-delete, a transient Firestore error)
+      // while the tombstone write succeeded (or vice versa - either can
+      // independently fail), this is what stops a deleted alert from
+      // reappearing forever for a phone reading cross-network. Best-
+      // effort and bounded by its own short timeout - a failure here
+      // just means tombstone filtering is skipped for this one refresh,
+      // not that the whole alerts load fails.
+      Set<dynamic> deletedIds = {};
+      try {
+        final tq = await _fs
+            .collection('deleted_alerts')
+            .where('owner_uid', isEqualTo: uid)
+            .limit(2000)
+            .get()
+            .timeout(const Duration(seconds: 3));
+        deletedIds = tq.docs.map((d) => d.data()['alert_id']).toSet();
+      } catch (_) {
+        // Tombstone fetch failing is not fatal - see comment above.
+      }
+
+      return q.docs
+          .map((d) {
+            final m = d.data();
+            return {
+              'id': m['alert_id'],
+              'tier': m['tier'] ?? 1,
+              'event': m['event'],
+              'distance_m': m['distance_m'],
+              'confidence': m['confidence'],
+              'camera': m['camera'],
+              'timestamp': m['timestamp'],
+              // Cloud alerts carry a full https snapshot URL (Firebase
+              // Storage signed URL); LAN alerts carry a path relative to
+              // the laptop.
+              'snapshot': m['snapshot_url'],
+              'snapshot_url': m['snapshot_url'],
+              'has_video': m['has_video'] ?? false,
+              'remote': true,
+            };
+          })
+          .where((a) => !deletedIds.contains(a['id']))
+          .toList();
     } catch (e) {
       lastError = 'Could not load alerts: $e';
       return [];
@@ -1314,13 +1364,47 @@ class Api {
     return false;
   }
 
-  static Future<bool> nightVision(int cam) async {
-    try {
-      final r = await http.post(_u('/api/nightvision/$cam'), headers: _h);
-      return r.statusCode == 200 && jsonDecode(r.body)['on'] == true;
-    } catch (_) {
-      return false;
+  /// Toggle night vision for a camera. Returns the new on/off state, or
+  /// null if the command could not be delivered at all (mirrors siren()'s
+  /// true/false/null shape - see its comment - false and "failed" must not
+  /// be conflated, or successfully turning night vision OFF would show as
+  /// an error).
+  ///
+  /// Was the ONE control button on the whole Live tab with no timeout at
+  /// all on its network call and no cross-network/cloud fallback -
+  /// arm/disarm, siren, snapshot, and record all already had a timeout +
+  /// fallback (see siren()/record() above). On a slow connection or with
+  /// the laptop briefly unreachable, this call could hang indefinitely -
+  /// no timeout meant nothing ever gave up - and the caller (live_tab.dart)
+  /// had no pending/cancel state for this button either, so a slow tap
+  /// looked and felt exactly like the whole app freezing: no spinner, no
+  /// error, nothing tappable-feeling, until the OS-level socket eventually
+  /// gave up on its own (which is why it "recovered after a delay" instead
+  /// of ever actually crashing). Same timeout-then-cloud-fallback pattern
+  /// as siren()/record() now, plus live_tab.dart got its own pending/
+  /// cancel-on-retap handling to match every other button there.
+  static Future<bool?> nightVision(int cam) async {
+    if (lastLanOk) {
+      try {
+        final r = await http.post(_u('/api/nightvision/$cam'), headers: _h)
+            .timeout(const Duration(seconds: 5));
+        _reachable();
+        if (r.statusCode == 200) return jsonDecode(r.body)['on'] == true;
+      } catch (e) {
+        _unreachable(e);
+        // fall through to cloud
+      }
     }
+    if (Store.lastDeviceId != null) {
+      final result = await sendRemoteCommand(
+          Store.lastDeviceId!, 'nightvision', args: {'cam': cam});
+      if (result != null && result['status'] == 'done') {
+        final body = result['result'];
+        if (body is Map && body.containsKey('on')) return body['on'] == true;
+        return true; // delivered but shape unknown - treat as success, state unclear
+      }
+    }
+    return null;
   }
 
   /// Toggles the manual siren override. Returns the NEW siren state (true =
@@ -1418,7 +1502,17 @@ class Api {
   /// Groq call), so those still fail if the laptop itself is off/down -
   /// but now they fail through the SAME reliable path as everything else,
   /// not a dead end.
-  static Future<Map<String, dynamic>> assistant(String text) async {
+  /// history: recent prior turns as [{"role": "user"|"assistant", "text": "..."}],
+  /// oldest first - sent so the server can build a real back-and-forth
+  /// conversation for Groq instead of treating every message as the first
+  /// one ever asked (see assistant_ai/router.py's _build_messages). Optional
+  /// and capped by the caller (ask_caphy_screen.dart keeps only the last
+  /// few turns) - this endpoint itself also caps it server-side as a
+  /// backstop.
+  static Future<Map<String, dynamic>> assistant(String text,
+      {List<Map<String, String>>? history}) async {
+    final body = <String, dynamic>{'text': text};
+    if (history != null && history.isNotEmpty) body['history'] = history;
     try {
       // Short timeout on the direct attempt, same reasoning as state()'s
       // 3s timeout above: on mobile data the saved LAN address isn't
@@ -1430,7 +1524,7 @@ class Api {
       // typically well under a second, so 4s is still generous there while
       // cutting the cross-network dead-wait by more than half.
       final r = await http
-          .post(_u('/api/assistant'), headers: _h, body: jsonEncode({'text': text}))
+          .post(_u('/api/assistant'), headers: _h, body: jsonEncode(body))
           .timeout(const Duration(seconds: 4));
       _reachable();
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
@@ -1688,16 +1782,92 @@ class Api {
     return false;
   }
 
+  // ---- Offline delete queue -------------------------------------------
+  // A delete that fails outright (phone genuinely offline, laptop
+  // unreachable AND no paired device to route a remote command to) used
+  // to just fail silently from the user's perspective - the alert stayed
+  // in the list with no indication it would ever actually go away, and
+  // the user had to remember to retry it themselves later. This is a real
+  // persisted queue (survives app restarts, not just in-memory) that a
+  // failed delete gets added to, and that gets drained automatically the
+  // next time the app has ANY working connection - the user taps delete
+  // once, ever, regardless of how many attempts it actually takes.
+  static const _pendingDeletesKey = 'pendingDeleteAlertIds';
+
+  static List<int> get _pendingDeletes {
+    final raw = Store._p.getStringList(_pendingDeletesKey) ?? const [];
+    return raw.map(int.tryParse).whereType<int>().toList();
+  }
+
+  static Future<void> _setPendingDeletes(List<int> ids) => Store._p.setStringList(
+      _pendingDeletesKey, ids.map((e) => e.toString()).toList());
+
+  static Future<void> _queuePendingDelete(int id) async {
+    final ids = _pendingDeletes;
+    if (!ids.contains(id)) {
+      ids.add(id);
+      await _setPendingDeletes(ids);
+    }
+  }
+
+  static Future<void> _unqueuePendingDelete(int id) async {
+    final ids = _pendingDeletes;
+    if (ids.remove(id)) await _setPendingDeletes(ids);
+  }
+
+  /// True if `id` has a delete queued but not yet confirmed - the alert
+  /// list UI uses this to grey out / show "deleting..." on a row that's
+  /// waiting for connectivity, instead of it looking like the delete tap
+  /// did nothing at all.
+  static bool isDeletePending(int id) => _pendingDeletes.contains(id);
+
+  /// Drains the offline delete queue: retries every still-pending delete
+  /// id via the SAME path deleteAlert() itself uses (LAN, then cross-
+  /// network command), removing each from the queue only on confirmed
+  /// success. Call this whenever connectivity is regained - api.dart's
+  /// connectivity listener and alerts_tab.dart's periodic refresh both
+  /// do. Safe to call anytime (including with an empty queue, or while
+  /// fully offline - each attempt just re-fails and stays queued).
+  static Future<void> flushPendingDeletes() async {
+    final ids = _pendingDeletes;
+    for (final id in ids) {
+      final ok = await _deleteAlertAttempt(id);
+      if (ok) await _unqueuePendingDelete(id);
+    }
+  }
+
   /// Permanently deletes an alert (and its snapshot/video on the laptop) -
   /// different from dismissAlert(), which only hides it. Same LAN-then-
-  /// cross-network-queue fallback pattern as every other alert action here.
+  /// cross-network-queue fallback pattern as every other alert action
+  /// here. On total failure (not just a slow retry-able blip, but no path
+  /// reached the laptop at all), the id is queued for automatic retry via
+  /// flushPendingDeletes() instead of the delete just silently never
+  /// happening - the caller still gets `false` back for this specific
+  /// call (so it can show "queued, will retry" rather than claiming
+  /// success it can't back up), but the alert WILL disappear once
+  /// connectivity allows, with no further action needed from the user.
   static Future<bool> deleteAlert(int id) async {
+    final ok = await _deleteAlertAttempt(id);
+    if (ok) {
+      await _unqueuePendingDelete(id);
+    } else {
+      await _queuePendingDelete(id);
+    }
+    return ok;
+  }
+
+  static Future<bool> _deleteAlertAttempt(int id) async {
     if (lastLanOk) {
       try {
         final r = await http.post(_u('/api/alert/$id/delete'), headers: _h)
             .timeout(const Duration(seconds: 8));
         _reachable();
         if (r.statusCode == 200) return true;
+        // 404 (alert_not_found) or 409 (alert_already_deleted) both mean
+        // this id is already gone server-side - not a failure from the
+        // caller's point of view, since the end state (alert doesn't
+        // exist) is exactly what was asked for.
+        if (r.statusCode == 404 || r.statusCode == 409) return true;
         lastError = '/api/alert/$id/delete returned HTTP ${r.statusCode}';
       } catch (e) {
         lastError = '/api/alert/$id/delete LAN request failed: $e';

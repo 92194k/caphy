@@ -11,8 +11,42 @@ EXTRA_CAMERAS     = [        # network (WiFi/IP) cameras added by URL
 ]
 CAMERAS           = [0, 1]   # used ONLY if AUTO_SCAN_CAMERAS = False (manual list)
 CAMERA_NAMES      = ["Cam 0", "Cam 1"]   # display names per camera slot - rename freely (e.g. "Front Gate")
-FRAME_WIDTH   = 960    # sharper than 640x480 without the CPU cost of full 1080p -
-FRAME_HEIGHT  = 720    # keeps YOLO/motion detection running in real time, no lag
+FRAME_WIDTH   = 1920   # native 1080p capture - sharper snapshots/recordings.
+FRAME_HEIGHT  = 1080   # NOTE: if this is changed again, DISTANCE_K below MUST be
+                        # rescaled by the same ratio (new_height / 720), since
+                        # distance = DISTANCE_K / box_height_px - a taller frame
+                        # gives every person a taller box in pixels at the SAME
+                        # real-world distance, which would otherwise make
+                        # everyone read as closer than they really are and skew
+                        # every Tier 1/2/3 threshold. Test actual detection FPS
+                        # after this change - this is more CPU-expensive per
+                        # frame for YOLO/motion than 960x720 was.
+
+# ---- Live-view streaming (MJPEG /video_feed AND WebRTC - see
+# web/server.py's Worker._store(), the one place both paths get their
+# frame from) ----
+# Deliberately separate from FRAME_WIDTH/HEIGHT above: those feed YOLO/
+# OpenCV detection and the 3-Tier distance estimate (bounding-box height
+# in pixels), which stays at full resolution regardless of this setting -
+# lowering FRAME_WIDTH/HEIGHT would need every Tier 1/2/3 distance
+# threshold recalibrated, since a person's box gets fewer pixels tall at
+# a lower capture resolution. STREAM_WIDTH/HEIGHT only affects the copy
+# of the (already-detected, already-annotated) frame that gets encoded
+# and sent to viewers - detection itself never sees this resolution.
+#
+# 640x360 chosen specifically: keeps a 16:9 aspect ratio for a
+# mobile-friendly picture (960x720 is 4:3, so this letterboxes/crops
+# slightly - a known, accepted tradeoff, not a bug), and roughly a 3x
+# reduction in pixel count vs 960x720 at the same JPEG quality, which is
+# the actual lever for cutting per-frame bytes on a slow mobile-data
+# connection - this is the fix for "video lags when phone is on mobile
+# data and laptop is on WiFi", not a detection-accuracy change.
+#
+# Set STREAM_WIDTH/HEIGHT = FRAME_WIDTH/HEIGHT (960/720) to disable
+# downscaling entirely and stream at full detection resolution, e.g. for
+# an A/B comparison while gathering Chapter 4 latency numbers.
+STREAM_WIDTH  = 640
+STREAM_HEIGHT = 360
 
 # ---- Factor 1: Motion (pixel-change via MOG2 background subtraction) ----
 MOTION_MIN_AREA    = 1500
@@ -26,7 +60,7 @@ PERSON_CLASS_ID = 0
 PERSON_CONF     = 0.50
 
 # ---- Threat tiers (distance in meters) ----
-DISTANCE_K      = 900.0
+DISTANCE_K      = 1350.0  # = 900.0 * (1080/720), rescaled for the FRAME_HEIGHT=1080 bump above - keeps the same real-world meter readings as before
 TIER1_MIN_DIST  = 4.5     # farther than this -> Tier 1
 TIER3_MAX_DIST  = 2.5     # closer than this  -> Tier 3
 
@@ -239,6 +273,14 @@ PERSON_EVERY_N = 8     # run YOLO every Nth frame (higher = smoother video, less
 PERSON_IMGSZ   = 256   # YOLO input size (lower = much faster; 320 fastest, 640 most accurate)
 CAP_BUFFERSIZE = 1     # keep only the newest frame (kills lag/delay build-up)
 JPEG_QUALITY   = 55    # MJPEG stream quality 1-100 (low = lightest stream)
+# Separate, higher quality specifically for saved snapshots (manual
+# Live-tab snapshots AND automatic alert snapshots) - these are kept as
+# evidence and re-viewed later/uploaded to Firebase, so they deserve
+# noticeably better quality than the live MJPEG stream, which only ever
+# needs to look good for a moment on a phone screen. 85 keeps files
+# small (well under half the size of OpenCV's uncompressed-ish default
+# of 95) while still being clearly readable evidence.
+SNAPSHOT_JPEG_QUALITY = 85
 
 # Tries RTSP cameras (IP cameras like Tapo) with low-latency FFmpeg options
 # (TCP transport, no internal buffering) first, which can noticeably cut

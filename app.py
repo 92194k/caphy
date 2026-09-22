@@ -13,6 +13,22 @@ POSTs the words to /api/assistant, and speaks the reply with its own text-to-spe
 This PC never listens and never talks - no microphone, no Vosk, no TTS.
 """
 import sys
+
+# Chdir into the same stable, per-user writable folder every other CAPHY
+# entry point uses (%LOCALAPPDATA%\CAPHY), BEFORE importing anything that
+# reads config-derived paths at import time (web.server imports config,
+# which computes DB_PATH/YOLO_MODEL/FIREBASE_KEY/the Flask session secret
+# key as plain relative strings resolved against the current working
+# directory). Without this, "python app.py" used yet a THIRD working
+# directory (wherever it happened to be launched from) - its own separate
+# database, and its own separate Flask secret key regenerated every run,
+# on top of the desktop_launcher.py/caphy_desktop.py divergence already
+# fixed. All three entry points must agree, or "the web system thru VS
+# Code must work like the desktop app" (and vice versa) keeps breaking in
+# a new place every time.
+from resource_path import use_writable_workdir
+use_writable_workdir()
+
 from identity import get_device_identity
 from web.server import (app, start_workers, resolve_cameras,
                         start_auto_arm_scheduler, start_cloud_sync_retry,

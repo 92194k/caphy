@@ -20,7 +20,7 @@ suggested owner. Fill in the **Owner** column with real names, then branch per m
 | 4 | **Mobile app** | `caphy_app/lib/` (main, api, home_tab, alerts_tab, live_tab, me_tab, theme) | Flutter app: login, Home, Alerts, Live, Me + controls | Teammate A |
 | 5 | **Model training & data** | `training/` (collect_data, auto_label, split_dataset, data.yaml), `runs/` | Dataset collection, labeling, YOLOv8 fine-tuning | Teammate B |
 | 6 | **Calibration** | `tools/calibrate.py`, distance constants in `config.py` | Daylight distance calibration for the 3 tiers | Teammate B |
-| 7 | **Voice control** | `voice/`, `tools/run_voice.py`, Vosk models | Bilingual (EN/TL) offline voice commands | Teammate C |
+| 7 | **Voice control** | `assistant_ai/` (Groq-based, via the phone app's Ask CAPHY screen) | Voice/chat assistant for security commands and Q&A | Teammate C |
 | 8 | **Peripherals** | `siren.py`, `power.py`, `tools/` (cam_test, mic_test, battery_status, list_cameras) | Software siren, battery/power-save, diagnostics | Teammate C |
 | 9 | **Docs & thesis** | `docs/`, `README.md`, Chapters 1–3 | Architecture docs, setup guide, thesis write-up | Teammate D |
 

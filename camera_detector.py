@@ -1,20 +1,20 @@
 """Camera auto-detection and selection for CAPHY.
 
-Scans for local cameras (USB, built-in) and network cameras (V380 at 161.248.58.9).
+Scans for local cameras (USB, built-in) only. Network/IP camera scanning
+(a V380 at a hardcoded survey-site IP, 161.248.58.9) was removed
+2026-08-31 - config.py's own comment already said "V380 Pro removed: it
+has no ONVIF/RTSP option, so it cannot stream to CAPHY. Use a phone as
+the 2nd camera instead", but this file's scan_network_cameras() kept
+trying to connect to that dead IP on every camera-list refresh anyway,
+which just wasted a few seconds per call for zero benefit. If IP-camera
+support is wanted again later, add a real ONVIF/RTSP discovery flow
+rather than restoring a scan hardcoded to one specific site's IP address.
 Saves selected camera to camera_config.json for offline use.
 """
 import cv2
 import json
 import os
 from datetime import datetime
-
-# V380 IP from survey setup
-V380_IP = "161.248.58.9"
-V380_URLS = [
-    f"rtsp://{V380_IP}:554/stream",
-    f"rtsp://{V380_IP}:554/11",
-    f"http://{V380_IP}:80/video"
-]
 
 CONFIG_FILE = "camera_config.json"
 
@@ -40,41 +40,15 @@ def scan_local_cameras():
     return cameras
 
 
-def scan_network_cameras():
-    """Scan for IP cameras (V380, etc)"""
-    cameras = []
-    for url in V380_URLS:
-        try:
-            cap = cv2.VideoCapture(url)
-            cap.set(cv2.CAP_PROP_CONNECT_TIMEOUT, 2000)
-
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if ret and frame is not None:
-                    cameras.append({
-                        "url": url,
-                        "name": f"V380 IP Camera ({V380_IP})",
-                        "type": "IP Camera",
-                        "source": url
-                    })
-                    cap.release()
-                    break  # Found working V380, stop searching
-            cap.release()
-        except Exception:
-            pass
-
-    return cameras
-
-
 def get_all_cameras():
-    """Return all available cameras"""
+    """Return all available cameras (local USB/built-in only - see the
+    module docstring for why network/IP camera scanning was removed)."""
     local = scan_local_cameras()
-    network = scan_network_cameras()
 
     return {
         "local": local,
-        "network": network,
-        "total": len(local) + len(network)
+        "network": [],
+        "total": len(local)
     }
 
 

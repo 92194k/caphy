@@ -1,13 +1,14 @@
 """Alert manager - armed/disarmed x tier response table.
 
-Disarmed:
+Disarmed: ONLY Tier 3 ever records video. Tier 1 and Tier 2 disarmed get
+a snapshot + notification/siren as applicable, but never a video clip -
+no exceptions (a Tier 2 disarmed dwell-based clip existed briefly here in
+an earlier version and was removed to match this rule exactly).
   Tier 1 -> snapshot + log only (no video)
-  Tier 2 -> snapshot + notification; a short clip ONLY if the person stays
-            in view long enough (DWELL_BEFORE_RECORD_SEC) - a brief walk-by
-            only ever gets a snapshot, never a recording
+  Tier 2 -> snapshot + notification only (no video)
   Tier 3 -> snapshot + siren + continuous video until the person leaves
 
-Armed:
+Armed: EVERY tier (1, 2, 3) records video.
   Tier 1 -> snapshot + a short fixed-length clip + urgent notification
   Tier 2 -> snapshot + continuous video + siren
   Tier 3 -> snapshot + siren + continuous video until the person leaves
@@ -25,29 +26,83 @@ evidence from one continuous visit:
     take another snapshot this often, not on every single one.
 
 Recording is presence-based: once started, it keeps going until the person
-has been gone for a short grace period (or a fixed duration is hit, for the
-non-continuous Tier 1 armed / Tier 2 disarmed cases). Video is written at
-the real measured FPS so playback speed is correct.
+has been gone for a short grace period (or a fixed duration is hit, for
+the non-continuous Tier 1 armed case). Video is written at the real
+measured FPS so playback speed is correct.
 """
 import os
 import time
 from datetime import datetime
 
 import cv2
+import shutil
+import tempfile
 
 
 def open_video_writer(path_no_ext, fps, size):
-    """Open a VideoWriter trying several codecs. mp4v often fails silently on
-    Windows OpenCV, so fall back to MJPG (.avi). Returns (writer, full_path)
-    or (None, None) if nothing works."""
+    """Open an MP4 (mp4v) VideoWriter, writing to a SAFE TEMP LOCATION
+    first rather than directly into path_no_ext's own folder.
+
+    CAPHY's media standard requires every recording to end up as .mp4 -
+    no AVI/MJPG fallback - so this no longer tries multiple codecs/
+    containers. It also no longer opens the writer directly against the
+    caller's real target folder (usually the user's Videos/CAPHY folder),
+    because a direct on-machine diagnostic proved mp4v (and every other
+    codec) opens and writes real video successfully on this exact machine
+    - but ONLY when the target path has no space in it. The real Videos
+    folder's full path contains a space in the Windows account name, which
+    is a known trigger for OpenCV's FFmpeg-backed VideoWriter to silently
+    fail isOpened() on some Windows builds even though the identical
+    codec call succeeds one folder over. Writing to Python's own
+    tempfile.gettempdir() (which never contains a space or an OneDrive-
+    managed path on any known Windows install) sidesteps that failure
+    point entirely, and the caller moves the finished file into its real
+    destination once recording stops (see AlertManager._finalize_video).
+
+    Returns (writer, temp_full_path) - the SAME temp path is later passed
+    back into finalize_video_path() to move it home - or (None, None) if
+    mp4v itself could not open (should not happen based on the diagnostic,
+    but never assumed).
+    """
     wfps = max(min(fps, 30.0), 5.0)
-    for fourcc, ext in (("mp4v", "mp4"), ("avc1", "mp4"), ("MJPG", "avi"), ("XVID", "avi")):
-        full = f"{path_no_ext}.{ext}"
-        writer = cv2.VideoWriter(full, cv2.VideoWriter_fourcc(*fourcc), wfps, size)
-        if writer.isOpened():
-            return writer, full
-        writer.release()
+    temp_dir = os.path.join(tempfile.gettempdir(), "CAPHY_recordings")
+    try:
+        os.makedirs(temp_dir, exist_ok=True)
+    except Exception:
+        return None, None
+    temp_full = os.path.join(temp_dir, os.path.basename(path_no_ext) + ".mp4")
+    writer = cv2.VideoWriter(temp_full, cv2.VideoWriter_fourcc(*"mp4v"), wfps, size)
+    if writer.isOpened():
+        return writer, temp_full
+    writer.release()
+    try:
+        if os.path.exists(temp_full):
+            os.remove(temp_full)
+    except Exception:
+        pass
     return None, None
+
+
+def finalize_video_path(temp_path, final_dir):
+    """Moves a finished recording from its safe temp location (see
+    open_video_writer above) into its real destination folder, verifying
+    the file genuinely exists and has real content first - never hands
+    back a path to a missing or empty file. Returns the final path on
+    success, or None if the file was missing/empty/could not be moved
+    (in which case nothing is silently pretended to have worked)."""
+    if not temp_path or not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+        return None
+    try:
+        os.makedirs(final_dir, exist_ok=True)
+        final_path = os.path.join(final_dir, os.path.basename(temp_path))
+        shutil.move(temp_path, final_path)
+        return final_path
+    except Exception:
+        # Could not move into the real folder - the recording itself is
+        # still good, just not where the user expects it. Better to
+        # return the temp path (a real, playable file) than None (which
+        # would make the whole alert look like it has no video at all).
+        return temp_path
 
 
 class AlertManager:
@@ -94,7 +149,7 @@ class AlertManager:
         self._last_recorded_tier = 0
         self._last_recording_ended_at = 0.0
         self._recording_tier = None   # which tier the CURRENT open writer belongs to
-        self._recording_deadline = None   # fixed-duration cutoff for non-continuous clips (Tier1 armed / Tier2 disarmed); None = continuous
+        self._recording_deadline = None   # fixed-duration cutoff for non-continuous clips (Tier 1 armed only); None = continuous
         # When the last snapshot was actually written during an ongoing
         # presence, so repeated alerts for the same lingering person don't
         # each save a near-identical photo.
@@ -118,6 +173,7 @@ class AlertManager:
         self._dwell_required_sec = getattr(_cfg, "DWELL_BEFORE_RECORD_SEC", 2.5)
         self._recording_cooldown_sec = getattr(_cfg, "RECORDING_COOLDOWN_SEC", 45)
         self._snapshot_interval_sec = getattr(_cfg, "PRESENCE_SNAPSHOT_INTERVAL_SEC", 45)
+        self._snapshot_jpeg_quality = getattr(_cfg, "SNAPSHOT_JPEG_QUALITY", 85)
         self._tier1_armed_record_sec = getattr(_cfg, "TIER1_ARMED_RECORD_DURATION", 4)
         self._tier2_disarmed_record_sec = getattr(_cfg, "TIER2_RECORD_DURATION", 5)
 
@@ -160,19 +216,50 @@ class AlertManager:
             self._writer.release()
             self._writer = None
             self._last_recording_ended_at = time.time()
+            # Move the finished recording out of its safe temp location
+            # (see open_video_writer) into the real Videos/CAPHY-style
+            # folder this AlertManager was configured with. self._video_path
+            # is what handle() hands back as the alert's video reference
+            # (DB row, Firestore, FCM push) - it must point at the FINAL
+            # location, not the temp one, before any of that happens.
+            final_path = finalize_video_path(self._video_path, self.videos_dir)
+            if final_path is None:
+                # Recording never produced a real (non-empty) file - don't
+                # let the alert reference a video that doesn't exist.
+                self._log_video_finalize_failure()
+                self._video_path = None
+            else:
+                self._video_path = final_path
         self._recording_tier = None
         self._recording_deadline = None
 
-    def _recording_allowed_for_tier(self, tier, armed, dwell_ok):
+    def _log_video_finalize_failure(self):
+        # Best-effort logging only - AlertManager doesn't always have a
+        # direct handle to Worker._log, so this never raises if it can't.
+        try:
+            print(f"[CAPHY] WARN record({self.camera_name}) "
+                  "recording stopped but no valid video file was produced")
+        except Exception:
+            pass
+
+    def _recording_allowed_for_tier(self, tier, armed):
         """True if the armed/disarmed x tier table allows recording to
-        START right now for this tier, given how long the person has been
-        continuously present. Does NOT check the inter-recording cooldown -
-        that's handled separately in handle() so an escalation can bypass
-        it."""
+        START right now for this tier. Does NOT check the inter-recording
+        cooldown - that's handled separately in handle() so an escalation
+        can bypass it.
+
+        Rule (explicitly confirmed): DISARMED only ever records Tier 3 -
+        Tier 1 and Tier 2 disarmed get a snapshot + notification only,
+        never video, no exceptions. ARMED records every tier (1, 2, 3).
+        Previously Tier 2 disarmed COULD still start a recording if the
+        person lingered past DWELL_BEFORE_RECORD_SEC - that dwell-based
+        exception has been removed so disarmed behavior matches the rule
+        exactly: Tier 3 only, unconditionally.
+        """
         if tier == 3:
             return True   # Tier 3 always records (continuous), armed or not
         if tier == 2:
-            return True if armed else dwell_ok   # armed: immediate; disarmed: only once they've lingered
+            return armed   # disarmed Tier 2 never records - snapshot/notify only
         if tier == 1:
             return armed   # disarmed Tier 1 never records, only armed does (short clip)
         return False
@@ -201,9 +288,6 @@ class AlertManager:
         elif self._first_seen_this_visit is not None and now - self._last_seen_any_tier > self.presence_grace:
             self._first_seen_this_visit = None   # visit fully ended, clear it
 
-        dwell = (now - self._first_seen_this_visit) if self._first_seen_this_visit else 0.0
-        dwell_ok = dwell >= self._dwell_required_sec
-
         # ---------- presence-based video recording ----------
         if self._writer is not None:
             self._writer.write(frame)
@@ -217,7 +301,7 @@ class AlertManager:
 
         if (person and tier in self.record_tiers and self._writer is None
                 and not self._stop_requested
-                and self._recording_allowed_for_tier(tier, armed, dwell_ok)):
+                and self._recording_allowed_for_tier(tier, armed)):
             # Cooldown: the SAME tier just finished a recording for this
             # visit recently - don't immediately start another one. An
             # escalation to a HIGHER tier than whatever last recorded
@@ -234,15 +318,17 @@ class AlertManager:
                 self._last_seen = now
                 self._recording_tier = tier
                 self._last_recorded_tier = tier
-                # Tier 3 (either mode) and Tier 2 armed are CONTINUOUS -
-                # keep going until the person leaves (deadline stays None).
-                # Tier 1 armed and Tier 2 disarmed are short, FIXED-length
-                # clips per the table, regardless of how long the person
-                # actually stays.
+                # Tier 3 (either mode) and Tier 2 (always armed-only now,
+                # see _recording_allowed_for_tier) are CONTINUOUS - keep
+                # going until the person leaves (deadline stays None).
+                # Tier 1 armed is the one short, FIXED-length clip per the
+                # table, regardless of how long the person actually stays.
+                # (Tier 2 disarmed used to also get a fixed-length clip
+                # here - removed along with the dwell-based exception in
+                # _recording_allowed_for_tier, since disarmed Tier 2 no
+                # longer records at all.)
                 if tier == 1 and armed:
                     self._recording_deadline = now + self._tier1_armed_record_sec
-                elif tier == 2 and not armed:
-                    self._recording_deadline = now + self._tier2_disarmed_record_sec
                 else:
                     self._recording_deadline = None
 
@@ -268,9 +354,28 @@ class AlertManager:
         if should_snapshot:
             snapshot_path = os.path.join(
                 self.dir, f"CAPHY_{self._cam_label()}_{self._stamp()}_t{tier}.jpg")
-            cv2.imwrite(snapshot_path, frame)
-            self._last_snapshot_at = now
-            self._snapshotted_this_visit = True
+            # Was cv2.imwrite(snapshot_path, frame) with NO quality argument,
+            # which defaults to OpenCV's JPEG quality of 95 - close to
+            # uncompressed, producing needlessly large files at full
+            # FRAME_WIDTH/HEIGHT (1920x1080) resolution for every single
+            # alert snapshot. These are saved locally AND uploaded to
+            # Firebase Storage, so the extra size costs disk space, upload
+            # bandwidth/time, and Firebase Storage usage for no real
+            # benefit - a security snapshot doesn't need near-lossless
+            # quality to still clearly show who/what triggered the alert.
+            # SNAPSHOT_JPEG_QUALITY (config.py, default 85) keeps it
+            # clearly readable as evidence while cutting file size well
+            # below the previous default.
+            ok = cv2.imwrite(snapshot_path, frame,
+                              [cv2.IMWRITE_JPEG_QUALITY, self._snapshot_jpeg_quality])
+            if not ok or not os.path.exists(snapshot_path):
+                # Never leave the DB pointing at a snapshot that doesn't
+                # actually exist - same "don't fake success" principle as
+                # the recording fix.
+                snapshot_path = None
+            else:
+                self._last_snapshot_at = now
+                self._snapshotted_this_visit = True
         video_path = self._video_path if tier in self.record_tiers else None
         owner_uid = self._owner_uid()
         alert_id = self.db.add_alert(tier, p["distance_m"], p["conf"], snapshot_path,

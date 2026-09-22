@@ -36,7 +36,17 @@ datas += [
     ('web/templates', 'web/templates'),
     ('web/static', 'web/static'),
     ('assets', 'assets'),
-    ('voice/intents.json', 'voice'),
+    # models/caphy_person_best.pt is the ACTUAL detection model
+    # (config.py's YOLO_MODEL) - yolov8n.pt above is just the base/generic
+    # weights kept for reference. Bundle the real one so the built .exe
+    # doesn't silently fall back to worse detection on a machine that
+    # doesn't happen to have this file lying around outside the bundle.
+    ('models/caphy_person_best.pt', 'models'),
+    # voice/intents.json REMOVED 2026-08-31 - that folder (a legacy,
+    # unused Vosk-based voice prototype) was deleted; voice/chat is now
+    # phone-side ("Ask CAPHY") talking to assistant_ai/ over Groq, which
+    # needs no bundled data file. Leaving this line in would make the
+    # build fail outright (PyInstaller errors on a missing source path).
     ('firebase_key.json', '.'),
     ('caphy_keys.json', '.'),
 ]
@@ -78,8 +88,11 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,                 # UPX often breaks torch/opencv DLLs - keep off
-    console=True,              # keep a console while testing so errors show;
-                               # flip to False once it runs cleanly
+    console=False,             # no visible terminal - caphy_desktop.py opens a
+                               # pywebview window (falling back to a browser tab)
+                               # instead, so a console window isn't needed once the
+                               # app has been test-run once via `python caphy_desktop.py`
+                               # with console=True and confirmed to start cleanly.
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,

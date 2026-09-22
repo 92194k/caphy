@@ -153,8 +153,30 @@ class _MjpegViewState extends State<MjpegView> {
   @override
   Widget build(BuildContext context) {
     if (!widget.active) {
-      return const Center(
-          child: Text('Camera is off', style: TextStyle(color: cDim)));
+      // Was a bare, unstyled Text with no icon - the ONLY unstyled state
+      // in the whole Live tab, and visually nothing like the "Not
+      // connected" state _buildOfflineSlot shows for a camera that's
+      // never paired at all (icon + name + two lines, on a solid panel
+      // background). Both are "no video on this tile right now", just for
+      // different reasons (manually toggled off vs. never connected), so
+      // they should look like the same design language, not two
+      // different ad-hoc treatments a viewer has to mentally reconcile.
+      return Container(
+        color: cPanel2,
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.videocam_off, color: cMuted, size: 26),
+            SizedBox(height: 8),
+            Text('Camera is off',
+                style: TextStyle(color: cMuted, fontSize: 12.5, fontWeight: FontWeight.w600)),
+            SizedBox(height: 2),
+            Text('Detection paused',
+                style: TextStyle(color: cDim, fontSize: 11)),
+          ],
+        ),
+      );
     }
     // Three distinct, deliberate states - never a bare frozen frame while
     // the stream is still starting up. This is what stops the first-open
@@ -259,46 +281,96 @@ class _CameraUnavailable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: cBg,
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: cRed.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: cRed.withValues(alpha: 0.35)),
-            ),
-            child: const Icon(Icons.videocam_off_outlined,
-                color: cRed, size: 28),
+    // This renders inside a 2-up GridView tile on the Live tab (see
+    // live_tab.dart's childAspectRatio: 16/14) - a fixed, fairly short
+    // height. The full-size version below (56px icon box + heading +
+    // subtext + button, ~170px+ tall) overflowed that tile by exactly the
+    // "BOTTOM OVERFLOWED BY n PIXELS" amount reported. Rather than re-tune
+    // the grid's aspect ratio again (already adjusted once, see the
+    // comment above it in live_tab.dart, and any tile size still has to
+    // work for BOTH the single-camera "big" view and the 2-up grid),
+    // this now measures the space it's actually given with
+    // LayoutBuilder and renders a compact one-line version when there
+    // isn't room for the full layout - so it degrades gracefully instead
+    // of overflowing, at any tile size.
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact = constraints.maxHeight < 170;
+      if (compact) {
+        return Container(
+          color: cBg,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.videocam_off_outlined, color: cRed, size: 22),
+              const SizedBox(height: 6),
+              const Text('Camera Unavailable',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: cText, fontSize: 12, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 26,
+                child: OutlinedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh, size: 13, color: cTeal2),
+                  label: const Text('Retry',
+                      style: TextStyle(color: cTeal2, fontSize: 11.5)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: cLine),
+                    backgroundColor: cPanel2,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          const Text('Camera Unavailable',
-              style: TextStyle(
-                  color: cText, fontSize: 14, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          const Text('Could not connect to this camera.',
-              style: TextStyle(color: cMuted, fontSize: 12.5)),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh, size: 16, color: cTeal2),
-            label: const Text('Retry', style: TextStyle(color: cTeal2)),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: cLine),
-              backgroundColor: cPanel2,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+        );
+      }
+      return Container(
+        color: cBg,
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: cRed.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: cRed.withValues(alpha: 0.35)),
+              ),
+              child: const Icon(Icons.videocam_off_outlined,
+                  color: cRed, size: 28),
             ),
-          ),
-        ],
-      ),
-    );
+            const SizedBox(height: 14),
+            const Text('Camera Unavailable',
+                style: TextStyle(
+                    color: cText, fontSize: 14, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('Could not connect to this camera.',
+                style: TextStyle(color: cMuted, fontSize: 12.5)),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 16, color: cTeal2),
+              label: const Text('Retry', style: TextStyle(color: cTeal2)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: cLine),
+                backgroundColor: cPanel2,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
   }
 }
 
@@ -498,9 +570,39 @@ class _TopToastState extends State<_TopToast>
     super.dispose();
   }
 
+  // Picks a message-specific icon/accent so the toast reads at a glance
+  // instead of every success message looking identical (plain checkmark,
+  // one flat purple). Falls back to a generic check/error icon when the
+  // message doesn't match a known pattern - this is just a display hint,
+  // it never changes what the toast actually says.
+  IconData get _icon {
+    if (widget.error) return Icons.error_outline;
+    final m = widget.message.toLowerCase();
+    if (m.contains('night vision')) return Icons.nightlight_round;
+    if (m.contains('camera')) return Icons.videocam;
+    if (m.contains('cam ') || m.contains('cam1') || m.contains('cam 1') || m.contains('cam 2')) {
+      return Icons.videocam;
+    }
+    if (m.contains('siren') || m.contains('emergency')) return Icons.campaign;
+    if (m.contains('arm')) return Icons.shield;
+    if (m.contains('alert')) return Icons.notifications_active;
+    if (m.contains('cancel')) return Icons.undo;
+    return Icons.check_circle_outline;
+  }
+
+  Color get _accent {
+    if (widget.error) return cRed;
+    final m = widget.message.toLowerCase();
+    if (m.contains('siren') || m.contains('emergency')) return cRed;
+    if (m.contains('night vision')) return cPurple;
+    if (m.contains('camera') || m.contains('cam ')) return cBlue;
+    if (m.contains('alert')) return cOrange;
+    return cTeal2;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final accent = widget.error ? cRed : cTeal2;
+    final accent = _accent;
     return Positioned(
       top: MediaQuery.of(context).padding.top + 12,
       left: 16,
@@ -529,9 +631,21 @@ class _TopToastState extends State<_TopToast>
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
+                // IntrinsicHeight gives this Row's stretch children a real,
+                // finite height to stretch to. Without it, this Row sits
+                // inside a Positioned(top/left/right, no bottom) inside the
+                // Overlay's Stack, which passes down an UNBOUNDED height -
+                // combined with crossAxisAlignment.stretch (which forces
+                // every child to fill the Row's height), that threw
+                // "BoxConstraints forces an infinite height" on every frame
+                // the toast was shown. That per-frame rendering exception is
+                // what actually made the app look "frozen"/unresponsive to
+                // taps whenever ANY button called showTopToast(...) - not a
+                // real UI-thread hang.
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                     // Solid accent spine instead of a per-side Border (which
                     // throws with a borderRadius - see the alert-row fix
                     // elsewhere in this app) - also just reads as more
@@ -542,18 +656,16 @@ class _TopToastState extends State<_TopToast>
                         padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
                         child: Row(children: [
                           Container(
-                            width: 30,
-                            height: 30,
+                            width: 32,
+                            height: 32,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: accent.withValues(alpha: 0.16),
+                              color: accent.withValues(alpha: 0.18),
+                              border: Border.all(
+                                  color: accent.withValues(alpha: 0.4),
+                                  width: 1),
                             ),
-                            child: Icon(
-                                widget.error
-                                    ? Icons.error_outline
-                                    : Icons.check_circle_outline,
-                                color: accent,
-                                size: 17),
+                            child: Icon(_icon, color: accent, size: 17),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -566,7 +678,8 @@ class _TopToastState extends State<_TopToast>
                         ]),
                       ),
                     ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -850,13 +963,26 @@ class StateChip extends StatelessWidget {
       // state word always renders in FULL (shrinking its font slightly if
       // it must) instead of ever being truncated, which is the one piece
       // of information this chip exists to show.
+      // ON state now reads as clearly "live"/active at a glance: a
+      // stronger fill (0.14 -> 0.22 alpha), a soft color-matched glow
+      // (boxShadow), and a small solid dot next to the state word - not
+      // just a slightly brighter border like before, which looked nearly
+      // identical to the OFF state from a normal viewing distance.
       return Container(
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         decoration: BoxDecoration(
-          color: on ? c.withValues(alpha: 0.14) : cPanel,
+          color: on ? c.withValues(alpha: 0.22) : cPanel,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: on ? c : cLine, width: on ? 1.4 : 1),
+          border: Border.all(color: on ? c : cLine, width: on ? 1.6 : 1),
+          boxShadow: on
+              ? [
+                  BoxShadow(
+                      color: c.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      spreadRadius: -2),
+                ]
+              : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -866,17 +992,41 @@ class StateChip extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
                 style: TextStyle(
-                    color: c.withValues(alpha: 0.75),
+                    color: on ? c.withValues(alpha: 0.9) : c.withValues(alpha: 0.75),
                     fontSize: 9.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.2)),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(on ? onText : offText,
-                  maxLines: 1,
-                  style: TextStyle(
-                      color: c, fontSize: 12, fontWeight: FontWeight.w800)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (on) ...[
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: c,
+                        boxShadow: [
+                          BoxShadow(
+                              color: c.withValues(alpha: 0.7),
+                              blurRadius: 4,
+                              spreadRadius: 0.5),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(on ? onText : offText,
+                      maxLines: 1,
+                      style: TextStyle(
+                          color: c,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800)),
+                ],
+              ),
             ),
           ],
         ),

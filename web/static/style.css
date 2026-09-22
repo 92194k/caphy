@@ -213,6 +213,18 @@ img.feed{width:100%;border-radius:12px;background:#000;display:block}
    and completely hid the fullscreen button underneath it. */
 .detbox{position:absolute;top:56px;left:12px;background:rgba(8,14,18,.82);
   border:1px solid var(--line2);border-radius:10px;padding:11px 13px;min-width:180px}
+/* The /live page's main feed (.feedwrap.live) has no .fsbtn overlapping it
+   (that button only exists on the dashboard's small grid tiles) - so the
+   56px clearance meant for dodging .fsbtn just left a big dead gap above
+   DETECTION here, making it look sunk into the middle of a tall empty
+   video frame instead of sitting flush in the corner. Pull it back up to
+   match the sidebar thumbnails' spacing now that there's nothing to clear. */
+.feedwrap.live .detbox{top:44px}
+/* was top:12px, which sat almost exactly on top of the camera-name/
+   timestamp caption that is burned directly into the video frame itself
+   (see web/server.py's _draw_overlays(), the "CCTV-style caption bar"
+   comment) - the two overlapped, covering the label. Pushed down enough
+   to clear that caption bar. */
 .detbox .dh{color:var(--teal2);font-size:10px;letter-spacing:2px;margin-bottom:9px}
 .detbox .dr{display:flex;justify-content:space-between;align-items:center;gap:18px;
   font-size:12px;margin:6px 0;color:var(--muted)}
@@ -531,3 +543,44 @@ input:focus, select:focus{outline:none;border-color:var(--electric);
 /* Cleaner typography rhythm */
 body, .card .k, .panel h2{letter-spacing:.2px}
 h1,h2{font-weight:700}
+
+/* ---------------- custom app title bar (frameless desktop window) ----------------
+   The packaged desktop app runs the pywebview window with frameless=True (no
+   native OS title bar), so this bar is the ONLY way the app shows its logo/
+   name and lets the user minimize or close it. It's inert (just a normal
+   header) when the same page loads in an ordinary browser tab - the
+   minimize/close buttons are hidden via JS unless `window.pywebview` exists
+   (see the inline script that goes with this block), so nothing breaks for
+   anyone opening the dashboard from a phone or regular browser. */
+.app-titlebar{
+  display:none;  /* shown only inside the packaged desktop window - see JS */
+  position:fixed;top:0;left:0;right:0;z-index:1000;
+  height:36px;align-items:center;justify-content:space-between;
+  background:var(--bg2);border-bottom:1px solid var(--line2);
+  padding:0 10px 0 14px;user-select:none;
+}
+/* When the desktop-app JS confirms it's running inside pywebview, it adds
+   this class to <body> so the always-present dashboard sidebar/content
+   (which normally assume the viewport starts at y=0) shift down to make
+   room for the 36px bar above them. This only ever applies inside the
+   packaged app - an ordinary browser or phone view never gets this class,
+   so the existing dashboard layout for those is completely unaffected. */
+body.has-app-titlebar .app-titlebar{display:flex}
+body.has-app-titlebar .side{top:36px;height:calc(100vh - 36px)}
+body.has-app-titlebar .main{padding-top:36px}
+
+.app-titlebar .atb-brand{display:flex;align-items:center;gap:9px}
+.app-titlebar .atb-brand span{display:block;color:var(--muted);font-size:12px;
+  font-weight:700;letter-spacing:1.2px;text-transform:uppercase}
+.app-titlebar .atb-brand svg{width:18px;height:18px;display:block;flex-shrink:0}
+.app-titlebar .atb-btns{display:flex;align-items:center;gap:2px}
+.app-titlebar .atb-btn{
+  width:32px;height:28px;display:flex;align-items:center;justify-content:center;
+  border-radius:5px;cursor:pointer;color:var(--muted);background:transparent;border:none;
+}
+.app-titlebar .atb-btn:hover{background:var(--line);color:var(--text)}
+.app-titlebar .atb-btn.atb-close:hover{background:var(--red);color:#fff}
+.app-titlebar .atb-btn svg{width:11px;height:11px;pointer-events:none;display:block}
+/* Hidden by default; shown only inside the packaged desktop window once
+   pywebview's JS bridge confirms it's actually running there (see script). */
+.app-titlebar .atb-btns{display:none}

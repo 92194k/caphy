@@ -45,10 +45,9 @@ Then set your Storage bucket in `config.py`:  `FIREBASE_BUCKET = "your-bucket.ap
 ## How to run
 Run all commands **from the project root**.
 ```
-python main.py        # camera window: detection + tiers + siren + voice + push
-python app.py         # web dashboard at http://127.0.0.1:5000  (login: admin / admin)
+python main.py        # camera window: detection + tiers + siren + push
+python app.py         # web dashboard at http://127.0.0.1:5000 (sign up / sign in via Firebase)
 python tools/run_sync.py    # cloud sync loop (offline-safe)
-python tools/run_voice.py   # voice control only (standalone)
 python tools/self-test.py   # camera-free proof the detection logic works
 python tools/calibrate.py --distance 3.0   # calibrate real-metre distances
 python tools/battery_status.py             # check battery / power-save

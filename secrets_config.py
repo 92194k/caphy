@@ -54,10 +54,17 @@ def get_metered_api_key():
 
 
 def get_groq_api_key():
-    """Groq API key - primary cloud AI fallback for voice command
-    interpretation when the offline exact-phrase match in voice/intents.json
-    doesn't find anything. Free tier: ~14,400 requests/day for
-    llama-3.1-8b-instant, no card required. Never log or print this value."""
+    """Groq API key - single-key fallback used only if groq_api_keys (the
+    multi-key rotation list, see get_groq_api_keys() below) isn't
+    configured. Groq is the cloud AI behind the "Ask CAPHY" voice
+    assistant's natural-language classification/conversation (see
+    assistant_ai/router.py + groq_client.py); when Groq is fully
+    unreachable, assistant_ai/offline_fallback.py's local keyword matcher
+    takes over for direct commands. Free tier: generous daily request
+    limits on Groq's current default model (see assistant_ai/groq_client.py
+    DEFAULT_MODEL - check console.groq.com/docs/models for current
+    limits, they vary by model and change over time). Never log or print
+    this value."""
     env = os.environ.get("CAPHY_GROQ_API_KEY")
     if env:
         return env
@@ -79,17 +86,6 @@ def get_groq_api_keys():
         return [k for k in keys if k]
     single = get_groq_api_key()
     return [single] if single else []
-
-
-def get_gemini_api_key():
-    """Google Gemini API key - second cloud AI fallback for voice command
-    interpretation, tried after Groq is exhausted/unavailable. Free tier:
-    ~1,500 requests/day for Gemini Flash, no card required. Never log or
-    print this value."""
-    env = os.environ.get("CAPHY_GEMINI_API_KEY")
-    if env:
-        return env
-    return _load_keys_file().get("gemini_api_key", "")
 
 
 def get_smtp_email():

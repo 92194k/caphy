@@ -46,8 +46,23 @@ class _AlertsTabState extends State<AlertsTab> {
     final a = await Api.alerts(limit: 100);
     if (!mounted) return;
     // Don't fight the user mid-swipe: only replace the list if it changed.
-    final changed = a.length != _alerts.length ||
-        (a.isNotEmpty && _alerts.isNotEmpty && a.first['id'] != _alerts.first['id']);
+    //
+    // Previously this only compared list LENGTH and the FIRST item's id -
+    // a shallow check that missed real changes whenever the total count
+    // happened to stay the same (e.g. deleting a NON-newest alert from the
+    // web dashboard while a new alert also arrived around the same time,
+    // or deleting anything other than the very first/newest row) or the
+    // newest id happened to still match. That's exactly the reported
+    // "deleted some alerts on the web, some still show on the phone" bug -
+    // the phone's periodic/SSE-triggered _load() WAS running and DID fetch
+    // the correct, already-updated list from the server, but this stale
+    // "changed" check decided nothing needed to change and threw the
+    // fresh list away, keeping the old one on screen. Comparing the full
+    // ordered list of ids catches any addition, removal, or reordering,
+    // not just changes at the very front of the list.
+    final newIds = a.map((e) => e['id']).toList();
+    final oldIds = _alerts.map((e) => e['id']).toList();
+    final changed = !_idListsEqual(newIds, oldIds);
     if (quiet && !changed) {
       if (_loading) setState(() => _loading = false);
       return;
@@ -56,6 +71,14 @@ class _AlertsTabState extends State<AlertsTab> {
       _alerts = a;
       _loading = false;
     });
+  }
+
+  static bool _idListsEqual(List<dynamic> a, List<dynamic> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   @override
@@ -167,38 +190,47 @@ class _AlertsTabState extends State<AlertsTab> {
       '2': _alerts.where((a) => asInt(a['tier'], 1) == 2).length,
       '1': _alerts.where((a) => asInt(a['tier'], 1) == 1).length,
     };
+    // Previously a horizontally-scrolling row of ChoiceChips - with 4
+    // chips each carrying a "(count)" suffix, the row was always wider
+    // than the screen, so the last chip (Tier 1) was permanently hidden
+    // off to the right unless you noticed you could swipe. Only 4 filters
+    // ever exist here, so instead of scrolling, each one gets an equal
+    // Expanded share of the width - all 4 are always visible, no swipe
+    // needed. Labels dropped "Tier " (just "3"/"2"/"1") so the count still
+    // fits comfortably at this width without wrapping to a second line.
     Widget chip(String value, String label, Color color) {
       final active = _filter == value;
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: ChoiceChip(
-          selected: active,
-          onSelected: (_) => setState(() => _filter = value),
-          label: Text('$label (${counts[value]})',
-              style: TextStyle(
-                  color: active ? Colors.black : color,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12.5)),
-          backgroundColor: cPanel,
-          selectedColor: color,
-          side: BorderSide(color: active ? color : cLine),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            selected: active,
+            onSelected: (_) => setState(() => _filter = value),
+            label: Center(
+              child: Text('$label (${counts[value]})',
+                  style: TextStyle(
+                      color: active ? Colors.black : color,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12)),
+            ),
+            backgroundColor: cPanel,
+            selectedColor: color,
+            side: BorderSide(color: active ? color : cLine),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
+          ),
         ),
       );
     }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          chip('all', 'All', cTeal2),
-          chip('3', 'Tier 3', cRed),
-          chip('2', 'Tier 2', cOrange),
-          chip('1', 'Tier 1', cTeal2),
-        ]),
-      ),
+      child: Row(children: [
+        chip('all', 'All', cTeal2),
+        chip('3', 'T3', cRed),
+        chip('2', 'T2', cOrange),
+        chip('1', 'T1', cTeal2),
+      ]),
     );
   }
 
@@ -291,7 +323,7 @@ class _AlertsTabState extends State<AlertsTab> {
         showTopToast(context, 'Could not reach CAPHY - try again', error: true);
         return;
       }
-      showTopToast(context, 'Alert acknowledged ✓');
+      showTopToast(context, 'Alert acknowledged');
     } finally {
       _ackInFlight.remove(id);
     }
@@ -388,7 +420,7 @@ class _AlertsTabState extends State<AlertsTab> {
         showTopToast(context, 'Could not reach CAPHY - try again', error: true);
         return;
       }
-      showTopToast(context, 'All alerts acknowledged ✓');
+      showTopToast(context, 'All alerts acknowledged');
       await _load();
     } catch (e) {
       if (mounted) {
@@ -636,7 +668,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
       showTopToast(context, 'Could not reach CAPHY - try again', error: true);
       return;
     }
-    showTopToast(context, 'Alert acknowledged ✓');
+    showTopToast(context, 'Alert acknowledged');
     Navigator.of(context).pop();
   }
 

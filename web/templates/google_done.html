@@ -16,6 +16,75 @@
   </style>
 </head>
 <body>
+<div class="app-titlebar" id="appTitlebar">
+    <div class="atb-brand">
+      <svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="atbg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#5b7bff"></stop><stop offset="1" stop-color="#a78bfa"></stop>
+        </linearGradient></defs>
+        <path d="M48 6 L82 18 V44 C82 66 66 82 48 90 C30 82 14 66 14 44 V18 Z" fill="url(#atbg)"></path>
+      </svg>
+      <span>CAPHY Console</span>
+    </div>
+    <div class="atb-btns" id="atbBtns">
+      <button class="atb-btn" id="atbMin" title="Minimize" type="button">
+        <svg viewBox="0 0 11 11"><rect x="0" y="5" width="11" height="1.4" fill="currentColor"></rect></svg>
+      </button>
+      <button class="atb-btn" id="atbMax" title="Maximize" type="button">
+        <svg id="atbMaxIcon" viewBox="0 0 11 11"><rect x="0.75" y="0.75" width="9.5" height="9.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"></rect></svg>
+      </button>
+      <button class="atb-btn atb-close" id="atbClose" title="Close" type="button">
+        <svg viewBox="0 0 11 11"><path d="M0.5 0.5l10 10M10.5 0.5l-10 10" stroke="currentColor" stroke-width="1.3"></path></svg>
+      </button>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var ICON_MAXIMIZE = '<rect x="0.75" y="0.75" width="9.5" height="9.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"></rect>';
+    var ICON_RESTORE = '<rect x="2.5" y="0.75" width="7.75" height="7.75" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"></rect>'
+      + '<path d="M0.75 3.25V9.5a0.75 0.75 0 0 0 0.75 0.75H7.75" fill="none" stroke="currentColor" stroke-width="1.2"></path>';
+
+    function wireAppTitlebar(){
+      // Only activate inside the packaged desktop window (pywebview's JS
+      // bridge) - not in an ordinary browser tab or the phone-facing
+      // dashboard view, where there is real OS/browser chrome already and
+      // this bar would just be extra clutter with non-functional buttons.
+      if(!window.pywebview || !window.pywebview.api) return;
+      document.body.classList.add('has-app-titlebar');
+      var btns = document.getElementById('atbBtns');
+      if(btns) btns.style.display = 'flex';
+      var min = document.getElementById('atbMin');
+      var max = document.getElementById('atbMax');
+      var maxIcon = document.getElementById('atbMaxIcon');
+      var close = document.getElementById('atbClose');
+      var isMax = false;
+      function setMaxIcon(){
+        if(maxIcon) maxIcon.innerHTML = isMax ? ICON_RESTORE : ICON_MAXIMIZE;
+        if(max) max.title = isMax ? 'Restore' : 'Maximize';
+      }
+      if(min) min.onclick = function(){ window.pywebview.api.minimize_window(); };
+      if(max) max.onclick = function(){
+        window.pywebview.api.toggle_maximize_window();
+        isMax = !isMax;
+        setMaxIcon();
+      };
+      if(close) close.onclick = function(){ window.pywebview.api.close_window(); };
+      // Double-click the bar itself also toggles maximize, matching the
+      // familiar behavior of a normal app's title bar.
+      var bar = document.getElementById('appTitlebar');
+      if(bar) bar.ondblclick = function(e){
+        if(e.target.closest('.atb-btn')) return;
+        window.pywebview.api.toggle_maximize_window();
+        isMax = !isMax;
+        setMaxIcon();
+      };
+    }
+    window.addEventListener('pywebviewready', wireAppTitlebar);
+    // pywebviewready can fire before this script runs, so also check now.
+    if(window.pywebview) wireAppTitlebar();
+  })();
+  </script>
+
   <div class="box">
     <div class="icon {{ 'ok' if ok else 'fail' }}">{{ '✓' if ok else '✕' }}</div>
     <div class="title">{{ "You're signed in!" if ok else "Sign in failed" }}</div>

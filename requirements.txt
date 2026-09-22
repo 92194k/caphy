@@ -39,7 +39,11 @@ pygrabber>=0.2; sys_platform == 'win32'
 # pyttsx3, gTTS and playsound are NOT needed.
 # sounddevice stays because the software siren uses it to make a tone.
 
-# NOTE: CAPHY Assistant (assistant_ai/) matches phrases with Python's built-in
-# difflib - no rapidfuzz/fuzzywuzzy dependency. That keeps the assistant
-# zero-install and 100% offline: nothing to pip install, nothing that can
-# fail to build on a teammate's machine.
+# NOTE: CAPHY Assistant (assistant_ai/) sends the user's text to Groq
+# (cloud AI, via the `requests` library already listed above) for
+# talk/know/do/clarify classification - see assistant_ai/router.py and
+# groq_client.py. Voice control requires Groq/internet; if unreachable,
+# the app tells the user to use its own buttons or the dashboard instead
+# rather than trying an offline match. (An earlier difflib-based offline
+# keyword matcher existed and was removed 2026-08-31 to simplify scope
+# before the thesis defense - this comment used to describe that.)

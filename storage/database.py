@@ -65,6 +65,24 @@ class Database:
             synced        INTEGER DEFAULT 0,   -- 0 = not uploaded yet (for Phase 6)
             timestamp     TEXT);
 
+        -- Deletion tombstones: HARD deletes remove the alerts row and its
+        -- files immediately (no soft-delete/trash), but a hard delete alone
+        -- doesn't reliably reach every client - a phone that was offline,
+        -- on a different network, or just polling on its own schedule can
+        -- miss the live broadcast/Firestore cleanup and keep showing an
+        -- alert that's actually gone (the reported "deleted on web, still
+        -- on phone, and vice versa" bug). This table is the fix: every
+        -- delete (single or bulk) records a tombstone row here, and BOTH
+        -- the web dashboard and the phone app reconcile against
+        -- /api/alerts/tombstones (LAN) or the deleted_alerts Firestore
+        -- collection (cross-network) on every alert-list refresh - so an
+        -- alert that's still cached/shown locally but has a tombstone gets
+        -- removed from view immediately, regardless of which side deleted
+        -- it or what network either device was on at the time.
+        CREATE TABLE IF NOT EXISTS deleted_alerts(
+            alert_id   INTEGER PRIMARY KEY,
+            deleted_at TEXT);
+
         CREATE TABLE IF NOT EXISTS threat_logs(
             log_id       INTEGER PRIMARY KEY AUTOINCREMENT,
             alert_id     INTEGER,
@@ -319,6 +337,31 @@ class Database:
         self.conn.execute("DELETE FROM threat_logs WHERE alert_id=?", (alert_id,))
         self.conn.execute("DELETE FROM alerts WHERE alert_id=?", (alert_id,))
         self.conn.commit()
+
+    def record_tombstone(self, alert_id):
+        """Record that alert_id was hard-deleted, so any client (web, phone,
+        cross-network) that reconciles against get_tombstones_since() can
+        remove it from its own cached/displayed list even if it missed the
+        live delete event (was offline, on a different network, mid-poll,
+        etc). INSERT OR REPLACE so re-deleting an id that's somehow still
+        around (shouldn't happen, but harmless if it does) just refreshes
+        the timestamp instead of erroring on the PRIMARY KEY."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO deleted_alerts(alert_id, deleted_at) VALUES(?,?)",
+            (alert_id, _now()))
+        self.conn.commit()
+
+    def get_all_tombstone_ids(self, limit=2000):
+        """All known deleted alert_ids, most recent first, capped at `limit`.
+        Used for reconciliation: a client diffs this against whatever it has
+        cached/displayed and drops any match. Capped rather than unbounded
+        so this table doesn't need pruning to stay cheap to query - 2000 is
+        far more than any realistic client-side cache size, so nothing a
+        client could plausibly still be showing falls outside this window."""
+        rows = self.conn.execute(
+            "SELECT alert_id FROM deleted_alerts ORDER BY deleted_at DESC LIMIT ?",
+            (limit,)).fetchall()
+        return [r["alert_id"] for r in rows]
 
     def add_threat_log(self, alert_id, motion_area, bbox_height, est_distance, tier):
         """Save the detection detail behind an alert (used later for calibration)."""

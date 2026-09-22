@@ -104,6 +104,25 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // deleted_alerts/{device_id}_{alert_id} - tombstones for alerts that
+    // were HARD-deleted (see storage/database.py's deleted_alerts table
+    // and cloud_alerts.py's delete_alert()). A phone reading its alert
+    // list off-LAN (from the `alerts` collection above) has no way to
+    // know an alert was deleted unless the laptop's direct doc-delete
+    // reached Firestore - if that particular write failed (offline
+    // laptop, transient error) the phone would otherwise keep showing a
+    // "deleted" alert forever. This collection is the reconciliation
+    // fallback: the phone cross-checks its cached alert ids against these
+    // tombstones and drops any match, regardless of whether the direct
+    // alerts-doc delete itself succeeded. Admin-SDK only, same as alerts
+    // above - only the laptop ever writes these, a phone only ever reads
+    // its own account's tombstones.
+    match /deleted_alerts/{tombstoneId} {
+      allow read: if request.auth != null
+                   && resource.data.owner_uid == request.auth.uid;
+      allow write: if false;
+    }
+
     // commands/{deviceId}/queue/{commandId}
     // A phone may enqueue a command only for a device it owns, and may
     // only read back commands/results for devices it owns.

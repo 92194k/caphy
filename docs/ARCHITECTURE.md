@@ -100,11 +100,9 @@ still imports correctly.
 | `tools/calibrate.py` | Calibrate real-metre distances for the tier engine |
 | `tools/battery_status.py` | Check battery / power-save state |
 | `tools/cam_test.py`, `tools/list_cameras.py` | Find and test webcams |
-| `tools/mic_test.py` | Test the microphone + voice recognition |
 | `tools/multicam.py` | Multi-camera detection preview |
 | `tools/view_db.py` | Dump the alerts database to the terminal |
 | `tools/run_sync.py` | Cloud sync loop (offline-safe), standalone |
-| `tools/run_voice.py` | Voice control only, standalone |
 
 ## How a single alert flows through the layers
 

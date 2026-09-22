@@ -111,7 +111,15 @@ class _HomeTabState extends State<HomeTab> {
                         color: cText,
                         fontSize: 15,
                         fontWeight: FontWeight.bold)),
-                Text('${_alerts.length} shown',
+                // Home only ever previews a HANDFUL of alerts - the full
+                // list with filters/search lives on the Alerts tab. Showing
+                // all of them here (previously the full _alerts list, which
+                // could be dozens) made the dashboard feel cluttered and
+                // pushed the rest of the home screen below the fold for no
+                // benefit, since anyone wanting more just taps the Alerts
+                // tab. Capped to 3 - the label below reflects the cap, not
+                // the total, so it doesn't look like a miscount.
+                Text('${_alerts.take(4).length} of ${_alerts.length} shown',
                     style: const TextStyle(color: cDim, fontSize: 12)),
               ],
             ),
@@ -125,7 +133,7 @@ class _HomeTabState extends State<HomeTab> {
               panel(
                   child: const Text('No alerts yet',
                       style: TextStyle(color: cDim))),
-            ..._alerts.map((a) => _alertRow(context, a)),
+            ..._alerts.take(4).map((a) => _alertRow(context, a)),
           ],
         ),
           ),

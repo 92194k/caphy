@@ -13,11 +13,23 @@ class PersonDetector:
         from ultralytics import YOLO
         # Resolve the weights path so it works when packaged into the .exe
         # (the .pt is bundled and unpacked to a temp dir, not the cwd).
+        # BUG FIX: this used to call resource_path(os.path.basename(model_path)),
+        # which strips the "models/" directory from "models/caphy_person_best.pt"
+        # before resolving - but CAPHY.spec bundles the weights AT
+        # _MEIPASS/models/caphy_person_best.pt (datas=[('models/caphy_person_best.pt', 'models')]),
+        # keeping the models/ subfolder. Stripping it made the fallback look in
+        # the wrong place too, so BOTH the raw relative path (broken once the
+        # frozen app changes its working directory to %LOCALAPPDATA%\CAPHY)
+        # and the "fixed" fallback failed - which is exactly why Person
+        # Detection silently stayed off with a "models\\caphy_person_best.pt"
+        # not-found warning in System Logs. Passing the full relative path
+        # (not just its basename) through resource_path() preserves the
+        # models/ subfolder, matching how the .exe actually bundles it.
         import os as _os
         if not _os.path.exists(model_path):
             try:
                 from resource_path import resource_path
-                _b = resource_path(_os.path.basename(model_path))
+                _b = resource_path(model_path)
                 if _os.path.exists(_b):
                     model_path = _b
             except Exception:

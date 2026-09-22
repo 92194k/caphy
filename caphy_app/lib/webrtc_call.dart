@@ -39,6 +39,56 @@ class WebrtcCall {
   bool _configuredIceFromAnswer = false;
   List? _lastAppliedIceServers;
 
+  // Shared across every WebrtcCall instance in the app (not per-instance),
+  // keyed by deviceId. Before this, every tile that opens a call - e.g.
+  // the live-view grid's two tiles, which both call start() within the
+  // same frame on tab-open - independently ran its own
+  // devices/{deviceId}.get() just to read the laptop's published TURN
+  // servers. Same document, same near-identical timestamp, fetched twice
+  // (or more, with more camera slots) for no reason: the answer is
+  // identical every time within a call session, and the answer-time
+  // upgrade (see _onCallDocUpdate) already re-fetches fresher TURN
+  // credentials anyway once the laptop answers. Caching the in-flight
+  // Future (not just the result) means two calls starting in the same
+  // frame share the SAME pending request instead of both firing their
+  // own - cutting concurrent reads against this document from N to 1
+  // regardless of how many tiles/cameras are opening calls at once.
+  static final Map<String, Future<List<Map<String, dynamic>>>> _turnServersCache = {};
+
+  static Future<List<Map<String, dynamic>>> _fetchTurnServers(
+      fs.FirebaseFirestore db, String deviceId) {
+    return _turnServersCache.putIfAbsent(deviceId, () async {
+      final result = <Map<String, dynamic>>[];
+      try {
+        final snap = await db.collection('devices').doc(deviceId).get();
+        final published = snap.data()?['turn_servers'];
+        if (published is List) {
+          for (final e in published) {
+            if (e is Map && e['urls'] != null) {
+              result.add({
+                'urls': e['urls'],
+                if (e['username'] != null) 'username': e['username'],
+                if (e['credential'] != null) 'credential': e['credential'],
+              });
+            }
+          }
+        }
+      } catch (_) {
+        // Swallow - callers fall back to STUN-only defaults on empty list.
+      } finally {
+        // Don't keep a stale/failed result cached forever - a fresh call a
+        // few seconds later (e.g. after reconnecting) should retry rather
+        // than being stuck replaying an empty list from a transient
+        // failure. Short-lived cache: just long enough to de-duplicate
+        // calls starting within the same burst.
+        Future.delayed(const Duration(seconds: 5), () {
+          _turnServersCache.remove(deviceId);
+        });
+      }
+      return result;
+    });
+  }
+
   bool _iceServersEqual(List? a, List? b) {
     if (a == null || b == null) return false;
     if (a.length != b.length) return false;
@@ -96,23 +146,11 @@ class WebrtcCall {
     // published yet (e.g. laptop just started).
     List<Map<String, dynamic>> iceServers =
         List<Map<String, dynamic>>.from(_stunOnlyDefaults);
-    try {
-      final snap = await _fs.collection('devices').doc(deviceId).get();
-      final published = snap.data()?['turn_servers'];
-      if (published is List) {
-        for (final e in published) {
-          if (e is Map && e['urls'] != null) {
-            iceServers.add({
-              'urls': e['urls'],
-              if (e['username'] != null) 'username': e['username'],
-              if (e['credential'] != null) 'credential': e['credential'],
-            });
-          }
-        }
-      }
-    } catch (_) {
-      // Keep STUN-only defaults; the answer-time upgrade still applies.
-    }
+    // Shared/de-duplicated across concurrent calls to the same device -
+    // see _fetchTurnServers above. Falls back to STUN-only (the list
+    // above) if this returns empty for any reason; the answer-time
+    // upgrade in _onCallDocUpdate still applies on top regardless.
+    iceServers.addAll(await _fetchTurnServers(_fs, deviceId));
 
     final config = <String, dynamic>{
       'iceServers': iceServers,
@@ -143,17 +181,62 @@ class WebrtcCall {
     final offer = await _pc!.createOffer();
     await _pc!.setLocalDescription(offer);
 
-    final callRef = await _fs.collection('webrtc_calls').add({
-      'device_id': deviceId,
-      'caller_uid': uid,
-      'cam': cam,
-      'offer': {'sdp': offer.sdp, 'type': offer.type},
-      'answer': null,
-      'caller_ice': <Map<String, dynamic>>[],
-      'status': 'pending',
-      'created_at': fs.FieldValue.serverTimestamp(),
-    });
-    _callId = callRef.id;
+    // Retry-with-backoff around the create: this write's security rule
+    // (firestore.rules, match /webrtc_calls/{callId}) does its own
+    // server-side get(/devices/{deviceId}) to check ownership before
+    // allowing it, separate from the TURN-server read above. That
+    // get() can transiently fail - a just-refreshed/not-yet-propagated
+    // ID token, a brief rules-evaluation hiccup - and previously any such
+    // failure surfaced as a bare PERMISSION_DENIED with no retry, which
+    // looked identical to "you don't own this device" even when the
+    // token was simply stale for a moment. Two grid tiles opening calls
+    // in the same frame made this more visible (more simultaneous
+    // create attempts = more chances to catch a transient hiccup), but
+    // it's not fundamentally a concurrency bug - it's a single missing
+    // retry. A genuine ownership mismatch still fails all 3 attempts and
+    // surfaces the same error as before.
+    fs.DocumentReference<Map<String, dynamic>>? callRef;
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        // Force a fresh ID token before retrying - if the previous
+        // attempt failed because the token was stale, this is the actual
+        // fix; if it wasn't, this is a harmless no-op.
+        try {
+          await _auth.currentUser?.getIdToken(true);
+        } catch (_) {}
+        await Future.delayed(Duration(milliseconds: 400 * attempt));
+      }
+      try {
+        callRef = await _fs.collection('webrtc_calls').add({
+          'device_id': deviceId,
+          'caller_uid': uid,
+          'cam': cam,
+          'offer': {'sdp': offer.sdp, 'type': offer.type},
+          'answer': null,
+          'caller_ice': <Map<String, dynamic>>[],
+          'status': 'pending',
+          'created_at': fs.FieldValue.serverTimestamp(),
+        });
+        break;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (callRef == null) {
+      onError?.call('Could not start call: $lastError');
+      return;
+    }
+    // Dart's null-safety promotion doesn't carry a nullable local across
+    // closure boundaries (the Timer.periodic / onIceCandidate callbacks
+    // below are separate function bodies) - even with the null check
+    // right above, callRef itself still reads as nullable inside those
+    // closures. Rebinding to a new non-nullable local here (instead of
+    // sprinkling ! or ?. everywhere below) makes the "this is definitely
+    // non-null past this point" guarantee explicit and keeps every use
+    // below unchanged/readable.
+    final fs.DocumentReference<Map<String, dynamic>> confirmedCallRef = callRef;
+    _callId = confirmedCallRef.id;
 
     // Heartbeat: lets the laptop's call monitor (_monitor_call in
     // web/webrtc_stream.py) tell "phone is still actively watching" apart
@@ -163,14 +246,14 @@ class WebrtcCall {
     // touch its own caller_ice / viewer_heartbeat fields, never
     // answer/status, so this can't be abused to interfere with the call.
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      callRef.update({
+      confirmedCallRef.update({
         'viewer_heartbeat': DateTime.now().millisecondsSinceEpoch / 1000.0,
       }).catchError((_) {});
     });
 
     _pc!.onIceCandidate = (RTCIceCandidate candidate) {
       if (candidate.candidate == null) return;
-      callRef.update({
+      confirmedCallRef.update({
         'caller_ice': fs.FieldValue.arrayUnion([
           {
             'candidate': candidate.candidate,
@@ -181,7 +264,7 @@ class WebrtcCall {
       }).catchError((_) {});
     };
 
-    _callSub = callRef.snapshots().listen(_onCallDocUpdate, onError: (e) {
+    _callSub = confirmedCallRef.snapshots().listen(_onCallDocUpdate, onError: (e) {
       onError?.call('Call signaling error: $e');
     });
 

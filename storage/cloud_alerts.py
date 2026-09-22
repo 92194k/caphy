@@ -72,43 +72,80 @@ def _upload_media(owner_uid, device_id, local_path, subfolder):
         return None
 
 
-def delete_alert(device_id, alert_id):
+def delete_alert(device_id, alert_id, owner_uid=None):
     """Removes one alert's cloud copy (Firestore metadata doc) so a phone
-    reading off-LAN stops seeing it too.
+    reading off-LAN stops seeing it too, AND writes a tombstone doc so that
+    phone can reconcile even if this delete itself fails to reach Firestore
+    (network hiccup on the laptop's side, etc) - the tombstone write is a
+    second, independent best-effort attempt at the same "make sure the
+    phone finds out" goal, not a replacement for the direct doc delete.
 
-    This was MISSING entirely - web/server.py's /api/alert/<id>/delete only
-    ever ran `DELETE FROM alerts` against the laptop's local SQLite DB. That
-    deletes the alert everywhere the laptop itself looks (its own dashboard,
-    same-LAN phone requests), but the phone's cross-network fallback reads
-    from THIS Firestore collection instead (see api.dart's
-    _alertsFromCloud()), which nothing ever cleaned up - so a "deleted"
-    alert kept reappearing forever for anyone reading it off-LAN. Uses the
-    same deterministic doc_id publish_alert() writes with
-    (f"{device_id}_{alert_id}"), so no extra lookup/query is needed to find
-    the right doc. Best-effort, like the rest of this module - a failure
-    here must never block the local delete from succeeding.
+    The direct doc delete alone was MISSING entirely at first - web/
+    server.py's /api/alert/<id>/delete only ever ran `DELETE FROM alerts`
+    against the laptop's local SQLite DB. That deletes the alert everywhere
+    the laptop itself looks (its own dashboard, same-LAN phone requests),
+    but the phone's cross-network fallback reads from THIS Firestore
+    collection instead (see api.dart's _alertsFromCloud()), which nothing
+    ever cleaned up - so a "deleted" alert kept reappearing forever for
+    anyone reading it off-LAN. Uses the same deterministic doc_id
+    publish_alert() writes with (f"{device_id}_{alert_id}"), so no extra
+    lookup/query is needed to find the right doc.
+
+    owner_uid: needed to scope the tombstone doc so Firestore rules can
+    let only that account read it back (see firestore.rules' deleted_alerts
+    match block) - optional because the direct alerts-doc delete above is
+    the primary mechanism and must not be skipped just because the caller
+    didn't have an owner_uid handy; the tombstone write is simply skipped
+    in that case, same "best-effort, a failure here must never block
+    anything else" spirit as the rest of this module.
     """
     try:
         doc_id = f"{device_id}_{alert_id}"
         _db().collection("alerts").document(doc_id).delete()
-        return True
     except Exception as e:
         print(f"[CAPHY CloudAlerts] delete failed for alert {alert_id}: {e}")
         return False
+    if owner_uid:
+        _write_tombstone(device_id, alert_id, owner_uid)
+    return True
 
 
-def delete_alerts(device_id, alert_ids):
+def delete_alerts(device_id, alert_ids, owner_uid=None):
     """Same as delete_alert() but for several ids at once (bulk delete) -
-    one batched Firestore commit instead of N sequential deletes."""
+    one batched Firestore commit instead of N sequential deletes/writes."""
     if not alert_ids:
         return
     try:
         batch = _db().batch()
         for aid in alert_ids:
             batch.delete(_db().collection("alerts").document(f"{device_id}_{aid}"))
+            if owner_uid:
+                batch.set(_db().collection("deleted_alerts").document(f"{device_id}_{aid}"), {
+                    "owner_uid": owner_uid,
+                    "device_id": device_id,
+                    "alert_id": aid,
+                    "deleted_at": firestore.SERVER_TIMESTAMP,
+                })
         batch.commit()
     except Exception as e:
         print(f"[CAPHY CloudAlerts] batch delete failed: {e}")
+
+
+def _write_tombstone(device_id, alert_id, owner_uid):
+    """Writes one deleted_alerts/{device_id}_{alert_id} doc - see
+    delete_alert()'s docstring for why this exists alongside the direct
+    alerts-doc delete. Deterministic doc_id (same pattern as alerts docs)
+    so a duplicate delete attempt just overwrites the same doc instead of
+    piling up garbage."""
+    try:
+        _db().collection("deleted_alerts").document(f"{device_id}_{alert_id}").set({
+            "owner_uid": owner_uid,
+            "device_id": device_id,
+            "alert_id": alert_id,
+            "deleted_at": firestore.SERVER_TIMESTAMP,
+        })
+    except Exception as e:
+        print(f"[CAPHY CloudAlerts] tombstone write failed for alert {alert_id}: {e}")
 
 
 def publish_alert(owner_uid, device_id, alert_json, snapshot_local_path=None,

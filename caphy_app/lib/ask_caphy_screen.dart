@@ -106,6 +106,16 @@ class _AskCaphyScreenState extends State<AskCaphyScreen> {
   bool _listening = false;
   String _partialText = '';
 
+  // Live system snapshot for the welcome header's status card (Monitoring/
+  // Cameras/Armed/Cloud Sync) - fetched once on open via the same
+  // Api.state() every other screen already uses (LAN-first, cloud
+  // fallback, honest "unreachable" if neither works), so this card shows
+  // CAPHY's REAL state rather than hardcoded placeholder values. Null
+  // while loading; the card just doesn't render those numbers until it
+  // resolves, rather than flashing a wrong guess first.
+  Map<String, dynamic>? _sysState;
+  bool _sysStateReachable = true;
+
   final FlutterTts _tts = FlutterTts();
   bool _ttsReady = false;
 
@@ -114,6 +124,16 @@ class _AskCaphyScreenState extends State<AskCaphyScreen> {
     super.initState();
     _initSpeech();
     _initTts();
+    _loadSysState();
+  }
+
+  Future<void> _loadSysState() async {
+    final st = await Api.state();
+    if (!mounted) return;
+    setState(() {
+      _sysState = st;
+      _sysStateReachable = st != null;
+    });
   }
 
   Future<void> _initTts() async {
@@ -170,6 +190,259 @@ class _AskCaphyScreenState extends State<AskCaphyScreen> {
       // just keep whatever language was already set - still speaks, just in
       // the fallback voice, better than not speaking at all.
     }
+  }
+
+  /// Welcome/empty-state header shown above the initial greeting only -
+  /// replaces what used to be a bare "Hi! I'm CAPHY..." bubble on an
+  /// otherwise blank screen. Everything here is either real live system
+  /// state (the status card, from Api.state() - see _loadSysState) or a
+  /// shortcut that asks CAPHY a real question through the same _send()
+  /// path a typed/spoken message uses - nothing here is decorative-only
+  /// or claims a capability the assistant doesn't actually have (see
+  /// assistant_ai/knowledge.py for what CAPHY can actually answer/do).
+  Widget _welcomeHeader() {
+    final camsOnline = (_sysState?['cameras'] as List?)
+            ?.where((c) => c is Map && c['online'] == true)
+            .length ??
+        0;
+    final camsTotal = (_sysState?['cameras'] as List?)?.length ?? 0;
+    final armed = _sysState?['armed'] == true;
+
+    // Overall health dot: previously this was always a hardcoded green
+    // "Active" regardless of real state, which is misleading the moment
+    // anything is actually degraded - e.g. armed with a camera offline
+    // (exactly the situation that matters most: the system THINKS it's
+    // protecting you but one eye is blind), or the laptop unreachable
+    // altogether. Three real states instead of always-green:
+    //   red    - can't reach the laptop at all (LAN or cloud, both failed)
+    //   yellow - reachable, but something's degraded: armed with fewer
+    //            cameras online than exist, or no cameras at all
+    //   green  - reachable and nothing degraded
+    Color healthColor;
+    String healthLabel;
+    if (!_sysStateReachable) {
+      healthColor = cRed;
+      healthLabel = 'Unreachable';
+    } else if (camsTotal > 0 && camsOnline < camsTotal) {
+      healthColor = cOrange;
+      healthLabel = armed ? 'Armed - camera issue' : 'Camera issue';
+    } else if (camsTotal == 0) {
+      healthColor = cOrange;
+      healthLabel = 'No cameras configured';
+    } else {
+      healthColor = cGreen;
+      healthLabel = 'All systems normal';
+    }
+
+    Widget statCell(IconData icon, Color color, String label, String value) {
+      return Expanded(
+        child: Column(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(height: 6),
+            Text(value,
+                style: TextStyle(
+                    color: color, fontSize: 12.5, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(label, style: const TextStyle(color: cMuted, fontSize: 11)),
+          ],
+        ),
+      );
+    }
+
+    // Was 4 differently-colored, translucent-fill, colored-border cards -
+    // a very recognizable generic-AI-assistant-app pattern (every tile a
+    // different hue). Flattened to one consistent neutral panel style
+    // (same cPanel2/cLine used everywhere else in this app - status card,
+    // input bar, chips) with just the ICON keeping a small color accent in
+    // a plain circular chip behind it, so the 4 actions are still visually
+    // distinct at a glance without each tile being a different color block.
+    Widget quickTile(IconData icon, Color color, String title, String subtitle,
+        String question) {
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _send(question),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: cPanel2,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: cLine),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 16),
+                ),
+                const SizedBox(height: 10),
+                Text(title,
+                    style: const TextStyle(
+                        color: cText, fontSize: 13.5, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: cMuted, fontSize: 11)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget askChip(String label) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ActionChip(
+          onPressed: () => _send(label),
+          backgroundColor: cPanel2,
+          side: const BorderSide(color: cLine),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          label: Text(label, style: const TextStyle(color: cText, fontSize: 12.5)),
+        ),
+      );
+    }
+
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? 'Good morning!'
+        : (hour < 18 ? 'Good afternoon!' : 'Good evening!');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: cGrad),
+                child: const Icon(Icons.shield, color: Colors.white, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(greeting,
+                        style: const TextStyle(
+                            color: cTeal2, fontSize: 13, fontWeight: FontWeight.w600)),
+                    const Text("I'm CAPHY.",
+                        style: TextStyle(
+                            color: cText, fontSize: 20, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Padding(
+            padding: EdgeInsets.only(left: 70),
+            child: Text('Your AI security assistant. I\'m here to help you.',
+                style: TextStyle(color: cMuted, fontSize: 12.5)),
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+            decoration: BoxDecoration(
+              color: cPanel2,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: cLine),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 8, height: 8,
+                    decoration: BoxDecoration(color: healthColor, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('SYSTEM STATUS',
+                      style: TextStyle(
+                          color: healthColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8)),
+                  const Spacer(),
+                  Text(healthLabel,
+                      style: TextStyle(color: healthColor, fontSize: 11, fontWeight: FontWeight.w600)),
+                ]),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    statCell(Icons.wifi_tethering, _sysStateReachable ? cGreen : cRed,
+                        'Monitoring', _sysStateReachable ? 'Active' : 'Offline'),
+                    statCell(Icons.videocam, cTeal2, 'Cameras',
+                        _sysState == null ? '—' : '$camsOnline / $camsTotal Online'),
+                    statCell(Icons.shield, armed ? cRed : cMuted, 'Armed Mode',
+                        _sysState == null ? '—' : (armed ? 'Armed' : 'Disarmed')),
+                    // "Cloud Sync" here reflects whether Api.state() actually
+                    // got an answer at all (LAN or cloud fallback - see
+                    // Api.state()'s own logic), which is the honest signal
+                    // available to this screen - there's no separate cloud-
+                    // sync-specific field in /api/state to read instead.
+                    statCell(Icons.cloud_outlined, _sysStateReachable ? cTeal2 : cRed,
+                        'Cloud Sync', _sysStateReachable ? 'Connected' : 'Unreachable'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text('What can I help you with?',
+              style: TextStyle(color: cText, fontSize: 15, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          const Text('Try asking or tap a quick action below.',
+              style: TextStyle(color: cMuted, fontSize: 12)),
+          const SizedBox(height: 12),
+          Row(children: [
+            quickTile(Icons.videocam_outlined, cTeal2, 'Cameras',
+                'View live feeds or camera status', 'How are my cameras doing?'),
+            const SizedBox(width: 10),
+            quickTile(Icons.warning_amber_rounded, cRed, 'Alerts',
+                'Check recent alerts and notifications', 'Show recent alerts'),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            quickTile(Icons.gpp_good_outlined, cGreen, 'Security',
+                'Threat levels, armed mode, and settings', 'Is the system armed?'),
+            const SizedBox(width: 10),
+            quickTile(Icons.query_stats, cBlue, 'System Status',
+                'System health and performance', 'Is everything working normally?'),
+          ]),
+          const SizedBox(height: 18),
+          const Text('Try asking:', style: TextStyle(color: cMuted, fontSize: 12, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              askChip('Is anyone detected?'),
+              askChip('Show recent alerts'),
+              askChip('Is the system armed?'),
+            ]),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _speak(String text) async {
@@ -273,6 +546,18 @@ class _AskCaphyScreenState extends State<AskCaphyScreen> {
         (spokenText ?? _controller.text).trim());
     if (text.isEmpty) return;
 
+    // Stop any reply CAPHY is still speaking THE MOMENT a new message is
+    // sent - previously _tts.stop() only ran inside _speak(), right
+    // before the NEXT reply started talking, so sending message #2 while
+    // #1 was still being read aloud did nothing: the old speech kept
+    // playing right through the whole Groq round-trip for #2 and only
+    // got cut off once #2's OWN reply was ready to speak. That reads as
+    // "my new message didn't interrupt it", which is exactly the
+    // complaint - a real assistant stops talking the instant you say/type
+    // something new. Fire-and-forget (not awaited) so sending isn't
+    // delayed by however long stop() takes.
+    _tts.stop();
+
     // Show the user's message immediately, regardless of whether a
     // previous request is still in flight - queueing is invisible to the
     // user except that their message appears right away instead of the
@@ -301,7 +586,26 @@ class _AskCaphyScreenState extends State<AskCaphyScreen> {
         final text = _pendingQueue.removeAt(0);
         if (mounted) setState(() => _sending = true);
 
-        final result = await Api.assistant(text);
+        // Recent turns BEFORE this one, oldest first, so the server can
+        // build a real conversation instead of answering this message in
+        // isolation (see Api.assistant's history param / router.py's
+        // _build_messages) - this is what actually fixes "asked to check
+        // the cam, then a follow-up question and it forgot" - there was
+        // never any memory limitation, the prior turns just weren't being
+        // sent at all. The initial greeting bubble (fromUser: false, no
+        // real exchange yet) is excluded, and this is capped to the last
+        // 6 turns - only recent context is normally relevant to a
+        // follow-up, and it keeps the request small.
+        final recent = _messages
+            .where((m) => m.type != null || m.fromUser)
+            .toList();
+        final historyForThisTurn = recent
+            .skip(recent.length > 6 ? recent.length - 6 : 0)
+            .map<Map<String, String>>((m) =>
+                {'role': m.fromUser ? 'user' : 'assistant', 'text': m.text})
+            .toList();
+
+        final result = await Api.assistant(text, history: historyForThisTurn);
 
         if (!mounted) return;
         final reply = (result['reply'] as String?)?.trim().isNotEmpty == true
@@ -425,8 +729,20 @@ class _AskCaphyScreenState extends State<AskCaphyScreen> {
               child: ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                itemCount: _messages.length,
-                itemBuilder: (context, i) => _messageTile(_messages[i]),
+                // The welcome header (status card + quick actions + "Try
+                // asking" chips) only makes sense before a real
+                // conversation has started - it's an empty-state landing
+                // view, not something that should scroll along above every
+                // message once you're mid-chat. _messages.length == 1 means
+                // still just the initial greeting bubble, nothing sent yet.
+                itemCount: (_messages.length == 1 ? 1 : 0) + _messages.length,
+                itemBuilder: (context, i) {
+                  if (_messages.length == 1) {
+                    if (i == 0) return _welcomeHeader();
+                    return _messageTile(_messages[i - 1]);
+                  }
+                  return _messageTile(_messages[i]);
+                },
               ),
             ),
             // ---- one unified bar: typing and voice share the SAME row
@@ -504,9 +820,18 @@ class _AskCaphyScreenState extends State<AskCaphyScreen> {
                                           const TextStyle(color: cDim),
                                       border: InputBorder.none,
                                       isDense: true,
+                                      // Was vertical-only padding - with no
+                                      // horizontal padding at all, the hint
+                                      // text ("Ask CAPHY anything...") sat
+                                      // flush against the mic icon with no
+                                      // breathing room, which is what read
+                                      // as cramped/"shitty" here. A little
+                                      // left padding gives it proper space
+                                      // without shifting the field's overall
+                                      // height.
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                              vertical: 14),
+                                              vertical: 14, horizontal: 6),
                                     ),
                                     onSubmitted: (_) => _send(),
                                     textInputAction: TextInputAction.send,

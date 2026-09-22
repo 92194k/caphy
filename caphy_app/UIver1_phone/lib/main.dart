@@ -48,13 +48,41 @@ Future<void> main() async {
     // truth for "is anyone logged in" now.
     final user = fb.FirebaseAuth.instance.currentUser;
     if (user != null) {
+      // Firebase already has a locally cached, signed-in user at this
+      // point - that's the actual source of truth. Treat that as logged
+      // in FIRST, then try to opportunistically refresh the ID token.
+      Store.user = user.email ?? '';
+      loggedIn = true;
+
       // ID tokens expire (~1 hour) - refresh on startup so a phone that's
       // been closed for a while doesn't open to a stale/expired token.
-      final freshToken = await user.getIdToken(true);
-      if (freshToken != null) {
-        Store.token = freshToken;
-        Store.user = user.email ?? '';
-        loggedIn = true;
+      //
+      // BUG FIX: this used to be the ONLY thing that set loggedIn = true,
+      // and getIdToken(true) forces a network round-trip to Google. The
+      // reported bug - exit the app on good Wi-Fi, turn off that
+      // connection (or land on one with no real internet), reopen the
+      // app - is exactly "cold start with no internet": Firebase's local
+      // cache still has the user, but this forced refresh either throws
+      // (falls to the outer catch, which is a second safety net - see
+      // below) or can simply hang for a while on a connected-but-dead
+      // network, since it never used a timeout. Wrapping it in its own
+      // try/timeout and treating any failure here as "keep using the
+      // last-known-good cached token, don't refresh it" means a phone
+      // that was already validly signed in NEVER gets treated as logged
+      // out just because this one optional refresh couldn't complete -
+      // it only skips getting a newer token, which the app already does
+      // routinely elsewhere as tokens naturally get used and refreshed.
+      try {
+        final freshToken = await user
+            .getIdToken(true)
+            .timeout(const Duration(seconds: 6));
+        if (freshToken != null) {
+          Store.token = freshToken;
+        }
+      } catch (_) {
+        // Offline or slow network - keep whatever token is already cached
+        // in Store (from the last time this succeeded) instead of losing
+        // the signed-in state over an optional refresh.
       }
     }
 
@@ -417,13 +445,31 @@ class _DeviceGateState extends State<DeviceGate> {
   }
 
   Future<void> _check() async {
+    Api.lastError = '';
     final devices = await Api.myDevices();
+    // BUG FIX: myDevices() is a Firestore read - offline (or any other
+    // network hiccup), it can't reach Firestore, catches the error, and
+    // returns an EMPTY list, indistinguishable on its own from "this
+    // account genuinely has zero paired devices". That made DeviceGate
+    // send an already-paired phone back to the "scan to pair" onboarding
+    // screen every time it lost signal, even though nothing about the
+    // pairing had actually changed - then flip back once signal returned,
+    // which looked exactly like "goes back to scanning, comes back signed
+    // in later". myDevices() already records WHY it came back empty in
+    // Api.lastError when it's a real fetch failure (vs. a legitimately
+    // empty, no-error result) - if we have a remembered device from a
+    // previous successful pairing (Store.lastDeviceId) AND this call
+    // failed rather than genuinely returning zero, trust that we're still
+    // paired and just couldn't refresh the list right now.
+    final fetchFailed = Api.lastError.isNotEmpty;
+    final hasDevice = devices.isNotEmpty ||
+        (fetchFailed && Store.lastDeviceId != null);
     if (devices.isNotEmpty) {
       await Api.reconnectToPairedDevice();
     }
     if (!mounted) return;
     setState(() {
-      _hasDevice = devices.isNotEmpty;
+      _hasDevice = hasDevice;
       _checking = false;
     });
   }

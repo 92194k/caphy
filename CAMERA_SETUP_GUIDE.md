@@ -1,169 +1,69 @@
 # CAPHY Camera Setup Guide
 
-## Files Created
+(Rewritten 2026-08-31 to match the actual running system - the previous
+version described an older prototype flow, `camera_selector.html` at the
+repo root plus `camera_routes.py`, that is no longer used. That prototype
+also referenced a specific V380 IP camera at a fixed survey-site IP
+address, which is not part of the current design; `config.py` explicitly
+notes it was removed because it has no ONVIF/RTSP option CAPHY can use.)
 
-1. **camera_detector.py** - Scans for local & network cameras
-2. **camera_routes.py** - Flask API endpoints for camera selection
-3. **camera_selector.html** - Web UI for camera selection
-4. **camera_config.json** - Saved camera settings (auto-created)
+## How camera selection actually works today
 
----
+CAPHY supports up to 2 cameras at once (`config.MAX_CAMERAS`), each
+independently detected, named, and swapped without restarting the app.
+Only two kinds of camera are supported: a USB webcam, the laptop's
+built-in camera, or a second phone acting as a camera via a companion
+IP-camera app - no other IP/network camera brand or model is supported.
 
-## Integration Steps
+## Where to pick cameras
 
-### Step 1: Update your app.py
+1. Open the web dashboard and log in.
+2. Go to **Settings -> Cameras**. The available-camera list loads
+   automatically (calls `GET /api/cameras/available`) - no button press
+   needed. Press **Rescan** if you plug something in after the page is
+   already open.
+3. Select up to `MAX_CAMERAS` (2) cameras and confirm. This calls
+   `POST /api/cameras/select` with `{"sources": [...]}` and restarts the
+   camera workers on the new selection immediately - no app restart
+   needed.
+4. Your selection is saved to local preferences and reused automatically
+   on the next startup, including with no internet connection.
 
-Add these imports at the top:
+There is also a standalone `/camera-setup` page (served from
+`web/templates/camera_selector.html`) with the same basic
+scan/select/test flow, useful for a quick plug-and-play check outside the
+main dashboard.
 
-```python
-from camera_detector import get_camera_source
-from camera_routes import register_camera_routes
-```
+## API Endpoints (current)
 
-Then register camera routes (after creating Flask app):
-
-```python
-app = Flask(__name__)
-# ... your other setup ...
-
-# Register camera routes
-register_camera_routes(app)
-
-# ... rest of your code ...
-```
-
-### Step 2: Add camera selector route
-
-Add this route to serve the camera selector page:
-
-```python
-@app.route('/camera-setup')
-def camera_setup():
-    return open('camera_selector.html').read()
-```
-
-### Step 3: Use selected camera in detection
-
-Replace your camera initialization with:
-
-```python
-from camera_detector import get_camera_source
-
-# Instead of: cap = cv2.VideoCapture(0)
-camera_source = get_camera_source()
-cap = cv2.VideoCapture(camera_source)
-```
-
----
-
-## How to Use
-
-### For Respondents (Homeowners & Lab Personnel)
-
-1. **Open camera setup page:**
-   - Go to: `http://laptop-ip:5000/camera-setup`
-
-2. **Scan for cameras:**
-   - Click "Scan for Cameras" button
-   - System detects:
-     - Local cameras (USB, built-in)
-     - V380 at 161.248.58.9
-
-3. **Select camera:**
-   - Click radio button to select camera
-   - Camera name appears in "Selected Camera"
-
-4. **Test connection:**
-   - Click "✓ Test Connection"
-   - Confirms camera is working
-
-5. **Save:**
-   - Click "✓ Confirm & Save"
-   - Camera setting stored in `camera_config.json`
-   - System reboots with selected camera
-
-### Offline Operation
-
-- Selected camera is saved in `camera_config.json`
-- If system restarts offline, it uses saved camera automatically
-- No internet needed for camera selection to work
-
----
-
-## V380 Camera Setup
-
-Your V380 at **161.248.58.9** will auto-detect if:
-
-- V380 is powered on
-- Connected to same network (WiFi/LAN)
-- Laptop can reach 161.248.58.9
-
-### If V380 doesn't appear:
-
-1. Check V380 is powered on
-2. Check V380 is on same network
-3. Test manually: Open browser → `http://161.248.58.9`
-4. If works in browser, system will detect it
-
----
-
-## API Endpoints
-
-### GET /api/cameras
-Returns all available cameras:
+### GET /api/cameras/available
+Returns every camera the system can currently offer:
 ```json
-{
-  "local": [{"id": 0, "name": "Local Camera 0", ...}],
-  "network": [{"url": "rtsp://...", "name": "V380 IP Camera", ...}],
-  "total": 1
-}
+{"cameras": [{"source": 0, "label": "Camera 0", "active": true}],
+ "max": 2}
 ```
-
-### GET /api/cameras/saved
-Returns currently saved camera
 
 ### POST /api/cameras/select
-Select and save camera:
-```json
-{"camera": "rtsp://161.248.58.9:554/stream"}
-```
+Body: `{"sources": [0, 1]}` (integers for device indices, strings for a
+network camera URL) - applies the selection and restarts workers.
 
-### POST /api/cameras/test
-Test camera connection:
-```json
-{"camera": "rtsp://161.248.58.9:554/stream"}
-```
+### POST /api/camera/<id>/name
+Rename a camera slot: `{"name": "Front Gate"}`.
 
----
+## Adding a phone as a second camera
+
+1. Install an IP-camera app on the phone (e.g. IP Webcam) and start its
+   stream.
+2. Note the stream URL it shows (e.g. `http://192.168.1.6:4747/video`).
+3. Add that URL to `config.py`'s `EXTRA_CAMERAS` list.
+4. Restart the CAPHY server, then select it from Settings -> Cameras like
+   any other camera.
 
 ## Troubleshooting
 
 | Problem | Solution |
-|---------|----------|
-| No cameras detected | Check camera connections, refresh page |
-| V380 not showing | Confirm V380 power & network, restart V380 |
-| Test connection fails | Check network/WiFi, try different RTSP URL |
-| Camera selection won't save | Check file permissions on `camera_config.json` |
-| Offline camera doesn't work | Verify `camera_config.json` exists & is readable |
-
----
-
-## Default Behavior
-
-If no camera selected:
-- System falls back to Camera 0 (first available)
-- Prompt user to use camera selector to choose
-
----
-
-## For Survey Respondents
-
-**Simple instructions to give:**
-
-1. Visit: `http://[laptop-ip]:5000/camera-setup`
-2. Click "Scan for Cameras"
-3. Select your camera from the list
-4. Click "✓ Test Connection" to verify
-5. Click "✓ Confirm & Save" to use this camera
-
-Done! System will now use selected camera.
+|---|---|
+| No cameras detected | Check camera connections/permissions, press Rescan |
+| A camera shows the wrong/generic name | Press Rescan to refresh the device-name cache, or rename it manually via the app |
+| Selection doesn't take effect | Check the server console for an error from `restart_workers()` |
+| Phone camera won't connect | Confirm the phone and laptop are on the same Wi-Fi, and the IP-camera app's stream URL is correct in `EXTRA_CAMERAS` |

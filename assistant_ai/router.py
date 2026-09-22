@@ -10,14 +10,19 @@ before AI ever got a turn.
 
 This version does the opposite: the AI is always asked first and is the
 one doing the talk/know/do/clarify classification itself, in a single
-call, using a strict JSON response contract. There is no separate offline
-intent-matching step for the online path at all.
+call, using a strict JSON response contract.
 
-Live: wired to POST /api/assistant in web/server.py. If Groq is
-unreachable (no internet, keys exhausted, provider down), handle_request()
-falls back to assistant_ai/offline_fallback.py - a local keyword matcher
-for direct commands - rather than returning a bare error, so voice control
-degrades gracefully instead of going silent offline.
+Live: wired to POST /api/assistant in web/server.py. Voice control
+requires internet/Groq - if Groq is unreachable (no internet, all keys
+exhausted/invalid, a deprecated model, provider down), handle_request()
+returns a plain "error" response rather than trying a local fallback.
+(An earlier revision added an Ollama-based local fallback plus a
+keyword-matcher last resort for a fully offline chain; that was removed
+2026-08-31 ahead of the thesis defense deadline to simplify what needs to
+be tested and explained - CAPHY's other offline capabilities, arming/
+disarming/siren via the app's own buttons or the web dashboard, local
+detection, and local recording, are untouched by this and still require
+zero internet. Only voice/chat control needs Groq.)
 """
 
 import json
@@ -25,12 +30,11 @@ import json
 from assistant_ai.groq_client import ask_groq, GroqAllKeysFailedError
 from assistant_ai.knowledge import CAPHY_FACTS, ASSISTANT_SYSTEM_PROMPT
 from assistant_ai.actions import ALLOWED_ACTIONS, ACTION_DESCRIPTIONS, run_action, UnknownActionError
-from assistant_ai.offline_fallback import handle_offline
 
 VALID_TYPES = {"talk", "know", "do", "clarify"}
 
 
-def _build_messages(user_text, user_name=None, live_state=None):
+def _build_messages(user_text, user_name=None, live_state=None, history=None):
     action_list_text = "\n".join(
         f"- {name}: {ACTION_DESCRIPTIONS[name]}" for name in ALLOWED_ACTIONS
     )
@@ -48,11 +52,28 @@ def _build_messages(user_text, user_name=None, live_state=None):
         context_lines += ["", "CURRENT LIVE SYSTEM STATE (use this to answer status questions accurately):",
                            json.dumps(live_state)]
 
-    return [
+    messages = [
         {"role": "system", "content": ASSISTANT_SYSTEM_PROMPT},
         {"role": "system", "content": "\n".join(context_lines)},
-        {"role": "user", "content": user_text},
     ]
+
+    # Prior turns from THIS conversation, if the caller sent any (see
+    # web/server.py's api_assistant) - without this, every message was
+    # answered with zero awareness of what was just said, which is why a
+    # follow-up like "did you see anyone?" right after "check the cam" had
+    # nothing to attach to. Each turn is still just a plain chat message -
+    # the assistant's own past JSON replies aren't replayed verbatim (the
+    # model doesn't need to see its own {"type":...} wrapper, just what it
+    # actually SAID), so this reads as a normal back-and-forth conversation
+    # to the model, one user/assistant message pair at a time.
+    for turn in (history or []):
+        role = turn.get("role")
+        text = turn.get("text", "")
+        if role in ("user", "assistant") and text:
+            messages.append({"role": role, "content": text})
+
+    messages.append({"role": "user", "content": user_text})
+    return messages
 
 
 def _parse_ai_response(raw_text):
@@ -79,7 +100,7 @@ def _parse_ai_response(raw_text):
     return parsed
 
 
-def handle_request(user_text, user_name=None, live_state=None, action_handlers=None):
+def handle_request(user_text, user_name=None, live_state=None, action_handlers=None, history=None):
     """Classify user_text and, for 'do' responses, execute the action.
 
     Returns a dict always shaped like:
@@ -96,19 +117,25 @@ def handle_request(user_text, user_name=None, live_state=None, action_handlers=N
                       reflected in action_result so callers can't
                       mistake "not wired up" for "silently succeeded".
     """
-    messages = _build_messages(user_text, user_name=user_name, live_state=live_state)
+    messages = _build_messages(user_text, user_name=user_name, live_state=live_state, history=history)
 
     try:
         raw_reply = ask_groq(messages)
-    except GroqAllKeysFailedError:
-        # No internet, all Groq keys exhausted/invalid, or Groq itself down.
-        # Voice must not go fully silent offline - CAPHY's core detection,
-        # alerts, and storage already all work with zero internet, so the
-        # assistant falls back to a local keyword matcher covering direct
-        # commands (arm, disarm, siren, etc.) instead of returning a bare
-        # error. "talk"/"know" conversation still needs the AI and isn't
-        # available offline - only "do" actions and a "clarify" prompt are.
-        return handle_offline(user_text, action_handlers=action_handlers)
+    except GroqAllKeysFailedError as exc:
+        # No internet, all Groq keys exhausted/invalid, or Groq itself
+        # down. Voice control needs Groq - this returns a plain, honest
+        # error rather than trying a local fallback (removed 2026-08-31,
+        # see module docstring). Everything else in CAPHY (detection,
+        # recording, siren/arm/disarm via the app's own buttons or the
+        # web dashboard) is completely unaffected by this and needs no
+        # internet at all - only voice/chat commands do.
+        return {
+            "type": "error",
+            "reply": ("I can't reach the AI service right now - voice control needs "
+                      "an internet connection. You can still arm, disarm, or control "
+                      "the siren directly from the app's buttons or the dashboard."),
+            "error": str(exc),
+        }
 
     try:
         parsed = _parse_ai_response(raw_reply)

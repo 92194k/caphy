@@ -39,3 +39,6 @@ caphy_keys.json
 
 # ---- Device identity (per-machine, never commit) ----
 device.json
+
+# ---- Flask session signing key (per-install, never commit) ----
+flask_secret_key.txt

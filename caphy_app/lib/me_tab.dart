@@ -16,6 +16,14 @@ class _MeTabState extends State<MeTab> {
   List<Map<String, dynamic>> _devices = [];
   final Map<int, TextEditingController> _ctl = {};
   bool _connectingLocally = false;
+  // The raw server address (e.g. http://192.168.1.4:5000) means nothing to
+  // a homeowner day-to-day - QR pairing and the automatic LAN/cloud
+  // reconnect already handle connectivity with no manual IP entry needed
+  // (see Api.isLanReachable()). It's still genuinely useful for
+  // troubleshooting on the spot (confirming the phone actually paired to
+  // THIS laptop, or reading it out during a defense Q&A), so it's tucked
+  // behind a one-tap "Advanced" disclosure instead of shown by default.
+  bool _showServerDetail = false;
 
   @override
   void initState() {
@@ -244,18 +252,61 @@ class _MeTabState extends State<MeTab> {
                   color: cDim, fontSize: 11, letterSpacing: 1.5)),
           const SizedBox(height: 10),
           panel(
-            child: Row(children: [
-              const Icon(Icons.dns_outlined, color: cMuted, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                    Store.hasServerAddress
-                        ? Store.baseUrl
-                        : 'No laptop connected yet',
-                    style: TextStyle(
-                        color: Store.hasServerAddress ? cText : cDim)),
-              ),
-            ]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () => setState(() => _showServerDetail = !_showServerDetail),
+                  child: Row(children: [
+                    Icon(
+                        Store.hasServerAddress
+                            ? Icons.check_circle
+                            : Icons.dns_outlined,
+                        color: Store.hasServerAddress ? cGreen : cMuted,
+                        size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                          Store.hasServerAddress
+                              ? 'Connected to laptop'
+                              : 'No laptop connected yet',
+                          style: TextStyle(
+                              color: Store.hasServerAddress ? cText : cDim,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    Text('Advanced',
+                        style: const TextStyle(color: cMuted, fontSize: 11.5)),
+                    Icon(
+                        _showServerDetail
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        color: cMuted, size: 20),
+                  ]),
+                ),
+                if (_showServerDetail) ...[
+                  const SizedBox(height: 10),
+                  const Divider(color: cLine, height: 1),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    const Icon(Icons.dns_outlined, color: cMuted, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                          Store.hasServerAddress
+                              ? Store.baseUrl
+                              : 'Not paired yet',
+                          style: const TextStyle(
+                              color: cMuted, fontSize: 12.5, fontFamily: 'monospace')),
+                    ),
+                  ]),
+                  const SizedBox(height: 4),
+                  const Text(
+                      'You normally won\'t need this - the app finds and '
+                      'reconnects to your laptop automatically.',
+                      style: TextStyle(color: cDim, fontSize: 11)),
+                ],
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           SizedBox(

@@ -21,6 +21,8 @@ class _LiveTabState extends State<LiveTab> {
   bool _recording = false;
   bool _recordPending = false;
   bool _nv = false;
+  bool _nvPending = false;
+  int _nvGen = 0;
   Timer? _statTimer;
 
   // Whether the phone can reach the laptop directly on this WiFi right
@@ -60,6 +62,17 @@ class _LiveTabState extends State<LiveTab> {
   }
   bool _lastLanProbe = true;
   Timer? _lanProbeTimer;
+
+  // System supports up to 2 cameras (laptop + phone, see config.MAX_CAMERAS
+  // on the backend). Grid always renders this many tiles - laptop and phone
+  // are BOTH always viewable, live or not, rather than the phone tile
+  // vanishing entirely whenever it isn't currently paired/streaming.
+  static const int _maxCameraSlots = 2;
+  int get _slotCount =>
+      _cams.isEmpty ? 1 : _maxCameraSlots;
+
+  String _slotDefaultName(int camId) =>
+      camId == 0 ? 'Cam Laptop' : (camId == 1 ? 'Cam Phone' : 'Cam $camId');
 
   bool get _armed => _state['armed'] == true;
   bool get _cameraOn => _state['camera_on'] != false;
@@ -181,6 +194,16 @@ class _LiveTabState extends State<LiveTab> {
         }
         _state = newState;
         _nv = st['night_vision'] == true;
+        // Same resync as night vision above - the Record button's
+        // _recording flag was purely local before, so a recording started
+        // by voice, by a previous app session, or on a device that then
+        // got closed/reopened never made it back into this button's
+        // on-screen state. Guarded by _recordPending the same way arm/
+        // camera/emergency are, so this routine poll can't stomp on a
+        // toggle this screen just made/is making.
+        if (!_recordPending && st.containsKey('recording')) {
+          _recording = st['recording'] == true;
+        }
       });
     }
   }
@@ -238,7 +261,7 @@ class _LiveTabState extends State<LiveTab> {
         _toast('Could not reach CAPHY - try again', error: true);
         return;
       }
-      _toast(r ? 'Armed ✓' : 'Disarmed ✓');
+      _toast(r ? 'Armed' : 'Disarmed');
       await _loadStat();
     } catch (e) {
       if (myGen != _armGen) return;
@@ -273,7 +296,7 @@ class _LiveTabState extends State<LiveTab> {
         _toast('Could not reach CAPHY - try again', error: true);
         return;
       }
-      _toast(turningOff ? 'Camera off - detection paused ✓' : 'Camera on ✓');
+      _toast(turningOff ? 'Camera off - detection paused' : 'Camera on');
       await _loadStat();
     } catch (e) {
       if (myGen != _cameraGen) return;
@@ -299,24 +322,85 @@ class _LiveTabState extends State<LiveTab> {
       return;
     }
     if (!_emergency) {
+      // Second pass at this dialog - the centered-icon-in-a-glowing-circle
+      // card read as generic/"AI-modal" template rather than something
+      // that belongs in CAPHY's own UI. Redone plainer and tighter: a
+      // small icon sits inline NEXT TO the title instead of floating
+      // above it, no stacked glow shadows, body text left-aligned like
+      // real copy instead of centered like a poster, and a solid red
+      // top edge (matches the toast's own accent-spine language) instead
+      // of an all-over tinted border.
       final ok = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: cPanel,
-          title: const Text('Activate emergency mode?',
-              style: TextStyle(color: cText)),
-          content: const Text(
-              'This forces the camera on, arms the system, sounds the siren '
-              'and sends a push alert.',
-              style: TextStyle(color: cMuted)),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel', style: TextStyle(color: cMuted))),
-            TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Activate', style: TextStyle(color: cRed))),
-          ],
+        barrierColor: Colors.black.withValues(alpha: 0.6),
+        builder: (_) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              decoration: const BoxDecoration(color: cPanel),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(height: 3, color: cRed),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.warning_rounded, color: cRed, size: 20),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text('Activate emergency mode?',
+                                  style: TextStyle(
+                                      color: cText,
+                                      fontSize: 16.5,
+                                      fontWeight: FontWeight.w700)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                            'Forces the camera on, arms the system, sounds '
+                            'the siren, and sends a push alert.',
+                            style: TextStyle(color: cMuted, fontSize: 13, height: 1.4)),
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel',
+                                  style: TextStyle(
+                                      color: cMuted, fontWeight: FontWeight.w600)),
+                            ),
+                            const SizedBox(width: 4),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              style: TextButton.styleFrom(
+                                backgroundColor: cRed.withValues(alpha: 0.14),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                              child: const Text('Activate',
+                                  style: TextStyle(
+                                      color: cRed, fontWeight: FontWeight.w800)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       );
       if (ok != true) return;
@@ -332,7 +416,7 @@ class _LiveTabState extends State<LiveTab> {
         _toast('Could not reach CAPHY - try again', error: true);
         return;
       }
-      _toast(r ? 'EMERGENCY MODE ACTIVE ✓' : 'Emergency mode cancelled ✓');
+      _toast(r ? 'Emergency mode active' : 'Emergency mode cancelled');
       await _loadStat();
     } catch (e) {
       if (myGen != _emergencyGen) return;
@@ -389,7 +473,18 @@ class _LiveTabState extends State<LiveTab> {
                       Expanded(
                         flex: 3,
                         child: StateChip(
-                            label: 'Camera',
+                            // Was a plain "Camera" label - with 2 cameras
+                            // on screen at once (the side-by-side grid
+                            // below), this pill's ON/OFF state actually
+                            // describes only the currently SELECTED camera
+                            // (whichever one Arm/Siren/Snapshot/etc act on),
+                            // but nothing said which one - a reasonable
+                            // reading was "the cameras" plural, which broke
+                            // down the moment one camera was online and the
+                            // other wasn't. Now shows that camera's actual
+                            // name/number so the header always matches what
+                            // it's reporting on.
+                            label: _selectedCamLabel(),
                             on: _cameraOn,
                             onColor: cTeal2,
                             icon: Icons.videocam,
@@ -442,14 +537,21 @@ class _LiveTabState extends State<LiveTab> {
                   // ['online']) but this UI previously never read it - every
                   // tile looked equally selectable regardless of whether
                   // that camera's worker actually had a live source behind
-                  // it. Tapping an offline camera (e.g. a phone/IP camera
-                  // that's disconnected) still switched _sel to it and
-                  // silently tried to stream from it, which is why an
-                  // offline camera's tile could end up showing whatever the
+                  // it - previously that meant every tile looked equally
+                  // selectable no matter its real state, and tapping an
+                  // offline one silently switched _sel and tried to stream
+                  // from it, which could end up showing whatever the
                   // laptop's stream endpoint fell back to for that slot -
-                  // reported as "it opens the laptop cam instead". Now an
-                  // offline camera is visibly dimmed/marked and tapping it
-                  // warns instead of silently switching.
+                  // reported as "it opens the laptop cam instead". So an
+                  // offline camera is still visibly dimmed/marked here, but
+                  // tapping it now DOES select it for control (Arm/Siren/
+                  // Snapshot/etc act on whichever camera is picked, live or
+                  // not) - it just won't show a live video feed until that
+                  // camera actually reconnects. Blocking selection entirely
+                  // whenever a camera was offline was the actual bug: it
+                  // made "choose a camera to control" impossible exactly
+                  // when you'd most want to arm the system despite one
+                  // camera being down.
                   final camOnline = c['online'] != false;
                   return Expanded(
                     child: Padding(
@@ -461,15 +563,13 @@ class _LiveTabState extends State<LiveTab> {
                           onTap: on
                               ? null
                               : () {
-                                  if (!camOnline) {
-                                    _toast('$name is offline - not connected right now',
-                                        error: true);
-                                    return;
-                                  }
                                   setState(() {
                                     _sel = id;
                                     _stat = {};
                                   });
+                                  if (!camOnline) {
+                                    _toast('$name selected - offline, no live feed right now');
+                                  }
                                 },
                           child: Opacity(
                             opacity: camOnline ? 1.0 : 0.55,
@@ -522,16 +622,21 @@ class _LiveTabState extends State<LiveTab> {
                 }).toList(),
               ),
             ),
-          // Live view, CCTV-style: every known camera shown at once in a
-          // grid (1 camera = full width, 2+ = a 2-up grid) instead of
-          // forcing a pick-one-to-view selector first. Tapping any tile
-          // opens that camera fullscreen ("like a real CCTV"). The
-          // separate camera-select row above still controls which camera
-          // the Arm/Siren/Snapshot/Record/etc buttons act on - viewing and
-          // controlling are deliberately independent now, since you may
-          // want to watch both cameras while only one is "selected" for
-          // control actions.
-          _cams.length <= 1
+          // Live view, CCTV-style: BOTH camera slots shown at once in a
+          // 2-up grid, always - never collapses back to a single full-width
+          // view just because one camera (usually the phone) isn't
+          // currently connected. A slot with no matching active worker in
+          // _cams renders its own "not connected" placeholder tile instead
+          // of disappearing, so the layout stays a stable side-by-side grid
+          // whether it's 1-of-2 or 2-of-2 cameras actually live - matching
+          // the always-both-visible CCTV wall this is meant to look like.
+          // Tapping a live tile opens that camera fullscreen. The separate
+          // camera-select row above still controls which camera the
+          // Arm/Siren/Snapshot/Record/etc buttons act on - viewing and
+          // controlling are deliberately independent, since you may want to
+          // watch both cameras while only one is "selected" for control
+          // actions.
+          _slotCount <= 1
               ? _buildVideoStack(_sel, showDetection: true, big: true)
               : GridView.count(
                   crossAxisCount: 2,
@@ -539,13 +644,30 @@ class _LiveTabState extends State<LiveTab> {
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 10,
                   crossAxisSpacing: 10,
-                  childAspectRatio: 16 / 12,
-                  children: _cams
-                      .map<Widget>((c) => _buildVideoStack(
-                          c['cam'] as int,
-                          showDetection: c['cam'] == _sel,
-                          big: false))
-                      .toList(),
+                  // Was 16/12 - noticeably shorter/squarer than the phone's
+                  // actual camera aspect ratio, so each grid tile looked
+                  // cramped. 16/14 makes both tiles taller so the picture
+                  // reads bigger without the grid ever needing to scroll.
+                  childAspectRatio: 16 / 14,
+                  children: List<Widget>.generate(_slotCount, (i) {
+                    final entry = _cams.cast<Map>().where((c) => c['cam'] == i);
+                    final camOnline = entry.isNotEmpty && entry.first['online'] != false;
+                    final known = entry.isNotEmpty;
+                    // DETECTION stays visible on the selected camera's tile
+                    // whether it's online or not - Factor 1/Factor 2 are
+                    // meant to always be there for the camera you're
+                    // controlling, same as the original single-view layout,
+                    // just showing dim/"-" values while offline instead of
+                    // disappearing. What actually caused the earlier overlap
+                    // bug was DETECTION and the "Camera is off" caption both
+                    // fighting for the same space on a small tile - fixed
+                    // below by giving "Camera is off" its own row under
+                    // DETECTION instead of floating centered on top of it.
+                    return known
+                        ? _buildVideoStack(i,
+                            showDetection: i == _sel, big: false)
+                        : _buildOfflineSlot(i, showDetection: i == _sel);
+                  }),
                 ),
           const SizedBox(height: 16),
           // ---- controls (matches the web console) ----
@@ -597,7 +719,7 @@ class _LiveTabState extends State<LiveTab> {
                     _toast('Could not reach CAPHY - try again', error: true);
                     return;
                   }
-                  _toast(on ? 'Siren ON ✓' : 'Siren stopped ✓');
+                  _toast(on ? 'Siren on' : 'Siren stopped');
                   await _loadStat();
                 } catch (e) {
                   if (myGen != _sirenGen) return;
@@ -663,8 +785,20 @@ class _LiveTabState extends State<LiveTab> {
                       onTimeout: () => {'recording': _recording});
                   final on = res['recording'] == true;
                   setState(() => _recording = on);
+                  // Was previously "on == false" always meant "we just
+                  // stopped a recording and are about to save it" - but
+                  // the server can now ALSO answer with recording:false
+                  // plus an "error" when a recording never even started
+                  // (no video codec available on that laptop). Those are
+                  // two very different situations and need different
+                  // messages - the old code showed "Saving recording..."
+                  // for BOTH, which is exactly why a failed start looked
+                  // like it was just quietly saving instead of telling
+                  // you it never started.
                   if (on) {
                     _toast('Recording started');
+                  } else if (res['error'] != null) {
+                    _toast(res['error'].toString(), error: true);
                   } else {
                     _toast('Saving recording...');
                     final url = res['video_url'];
@@ -697,11 +831,40 @@ class _LiveTabState extends State<LiveTab> {
           const SizedBox(height: 8),
           Row(children: [
             Expanded(
+              // Same cancel-on-retap + hard timeout + error handling
+              // pattern as _toggleArm/_toggleCamera above - this button
+              // previously had NONE of that (no pending state, no
+              // timeout on the network call, no try/catch), which is
+              // exactly what "the app freezes when I tap a button, then
+              // it recovers after a while" looks like: a slow/stalled
+              // network call with no ceiling, and no way to cancel or
+              // even see that anything was in progress.
               child: _iconBtn(Icons.nightlight_round, _nv, () async {
-                final on = await Api.nightVision(_sel);
-                setState(() => _nv = on);
-                _toast('Night vision ${on ? "on" : "off"}');
-              }, tip: 'Night vision'),
+                if (_nvPending) {
+                  setState(() => _nvPending = false);
+                  _nvGen++;
+                  _toast('Cancelled - tap again to retry');
+                  return;
+                }
+                final myGen = ++_nvGen;
+                setState(() => _nvPending = true);
+                try {
+                  final on = await Api.nightVision(_sel)
+                      .timeout(const Duration(seconds: 18), onTimeout: () => null);
+                  if (myGen != _nvGen) return; // superseded - drop silently
+                  if (on == null) {
+                    _toast('Could not reach CAPHY - try again', error: true);
+                    return;
+                  }
+                  setState(() => _nv = on);
+                  _toast('Night vision ${on ? "on" : "off"}');
+                } catch (e) {
+                  if (myGen != _nvGen) return;
+                  _toast('Could not reach CAPHY - try again', error: true);
+                } finally {
+                  if (mounted && myGen == _nvGen) setState(() => _nvPending = false);
+                }
+              }, tip: 'Night vision', loading: _nvPending),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -798,6 +961,20 @@ class _LiveTabState extends State<LiveTab> {
     );
   }
 
+  /// Short "Cam N" / real camera name for whichever camera is currently
+  /// selected (_sel) - used by the header status pill so "Camera: ON/OFF"
+  /// always reads as "Cam 1: ON/OFF" (or a renamed camera's real name)
+  /// instead of an unlabeled, ambiguous "Camera" once 2 cameras are on
+  /// screen at the same time in the grid below.
+  String _selectedCamLabel() {
+    final entry = _cams.cast<Map>().where((c) => c['cam'] == _sel);
+    if (entry.isNotEmpty && entry.first['name'] != null &&
+        entry.first['name'].toString().trim().isNotEmpty) {
+      return entry.first['name'].toString();
+    }
+    return 'Cam ${_sel + 1}';
+  }
+
   /// Filename label for a manual snapshot/recording so it's obvious which
   /// camera it came from just by the file name in the gallery, e.g.
   /// "CAPHY_CamPhone_1737384930000.jpg" - the save helpers append their own
@@ -891,12 +1068,12 @@ class _LiveTabState extends State<LiveTab> {
     );
   }
 
-  Widget _dot(String label, bool on) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
+  Widget _dot(String label, bool on, {bool compact = false}) => Padding(
+        padding: EdgeInsets.symmetric(vertical: compact ? 1.5 : 3),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.circle, size: 9, color: on ? cGreen : cDim),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(color: cMuted, fontSize: 12)),
+          Icon(Icons.circle, size: compact ? 7 : 9, color: on ? cGreen : cDim),
+          SizedBox(width: compact ? 5 : 8),
+          Text(label, style: TextStyle(color: cMuted, fontSize: compact ? 10 : 12)),
         ]),
       );
 
@@ -1056,16 +1233,105 @@ class _LiveTabState extends State<LiveTab> {
         builder: (_) => _FullscreenView(cam: target, lanReachable: _lanReachable)));
   }
 
-  /// One camera's live tile: video + DETECTION overlay + tier badge, same
-  /// content that used to be hardcoded to just _sel. Now parameterized by
-  /// camId so the grid can render one of these per known camera.
-  /// showDetection is false for every non-selected tile in the grid - the
-  /// DETECTION panel reads _stat, which _loadStat() only ever populates
-  /// for the currently-selected/controlled camera, so showing it on every
-  /// tile would just repeat the same numbers (or stale ones) under the
-  /// wrong camera's feed.  big=true keeps the original single-camera
-  /// 16:11 aspect ratio (used when there's only one camera at all);
-  /// big=false is the smaller grid-tile version.
+  /// Placeholder tile for a camera slot (e.g. the phone) that has no known
+  /// worker at all right now - keeps that tile's spot in the 2-up grid
+  /// instead of letting the grid collapse to a single full-width laptop
+  /// view, so both "camera slots" always read as a stable side-by-side
+  /// pair. Still tappable to select that slot for the Arm/Siren/Snapshot/
+  /// etc controls (same as the picker row above) even while offline, since
+  /// "not connected right now" isn't the same as "can't be selected."
+  /// showDetection keeps Factor 1/2 visible here too when this offline slot
+  /// happens to be the currently-selected camera - DETECTION is meant to
+  /// always be present for whichever camera is selected, live or not, same
+  /// as the original single-view layout; it just reads dim/"-" until that
+  /// camera actually reconnects.
+  Widget _buildOfflineSlot(int camId, {bool showDetection = false}) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _sel = camId;
+          _stat = {};
+        });
+      },
+      child: AspectRatio(
+        aspectRatio: 16 / 14,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            children: [
+              Container(
+                color: cPanel2,
+                width: double.infinity,
+                height: double.infinity,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.videocam_off, color: cMuted, size: 26),
+                      const SizedBox(height: 8),
+                      Text(_slotDefaultName(camId),
+                          style: const TextStyle(color: cMuted, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      const Text('Not connected',
+                          style: TextStyle(color: cDim, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
+              if (showDetection)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: cLine)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('DETECTION',
+                            style: TextStyle(color: cTeal2, fontSize: 8, letterSpacing: 1)),
+                        const SizedBox(height: 3),
+                        _dot('Factor 1 · Motion', false, compact: true),
+                        _dot('Factor 2 · Person', false, compact: true),
+                      ],
+                    ),
+                  ),
+                ),
+              // showDetection is passed by the caller as `i == _sel` (see
+              // build() above) - i.e. it's already exactly "is this the
+              // selected camera", same badge as the online tile
+              // (_buildVideoStack) for the same reason: the header status
+              // pills and Arm/Siren/etc buttons act on whichever camera is
+              // selected, even one that's currently offline, and that
+              // wasn't visually obvious without this.
+              if (showDetection)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: cTeal2.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('CONTROLLING',
+                        style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.4)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVideoStack(int camId,
       {required bool showDetection, required bool big}) {
     final tier = (_stat['tier'] ?? 0) as int;
@@ -1091,80 +1357,106 @@ class _LiveTabState extends State<LiveTab> {
       child: RepaintBoundary(
         child: Stack(children: [
           AspectRatio(
-            aspectRatio: big ? 16 / 11 : 16 / 12,
+            aspectRatio: big ? 16 / 11 : 16 / 14,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 color: Colors.black,
-                child: !_lanChecked
-                    ? const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(color: cTeal),
-                            SizedBox(height: 12),
-                            Text('Camera loading…',
-                                style: TextStyle(color: cMuted, fontSize: 12.5)),
-                          ],
-                        ),
-                      )
-                    : _lanReachable
-                        ? MjpegView(
-                            key: ValueKey('stream$camId'),
-                            url: Api.streamUrl(camId),
-                            active: isSelected ? _cameraOn : true,
-                            fit: BoxFit.cover,
-                            // If the local stream stalls (the Wi-Fi
-                            // "spinner forever" case), force an immediate
-                            // re-probe rather than just giving up - if the
-                            // probe still says LAN is reachable but the
-                            // actual stream failed, treat this one probe
-                            // result as stale and mark it false directly;
-                            // if the probe already knows it's unreachable,
-                            // this is a no-op since _lanReachable will
-                            // already reflect that.
-                            onFailed: () {
-                              if (mounted) {
-                                setState(() => _lastLanProbe = false);
-                                _refreshLanProbe();
-                              }
-                            },
-                          )
-                        : (Store.lastDeviceId != null
-                            ? WebRtcView(
-                                key: ValueKey('webrtc$camId'),
-                                deviceId: Store.lastDeviceId!,
-                                cam: camId,
-                                fit: BoxFit.cover,
-                              )
-                            : const Center(
-                                child: Text('No paired device',
-                                    style: TextStyle(color: cMuted)))),
+                // Extracted into _LiveVideoTile (its own StatefulWidget,
+                // keyed per camera+mode) so this parent's _statTimer/
+                // _loadStat ticks (every 2s, via setState() up in
+                // _LiveTabState) never rebuild the video subtree itself.
+                // RepaintBoundary alone only isolates *repainting*, not
+                // the widget *rebuild* that setState() triggers above it -
+                // and on Android, flutter_webrtc's RTCVideoView is backed
+                // by a native PlatformView texture that can still go
+                // blank from that rebuild churn even inside a
+                // RepaintBoundary. This was the "grid thumbnail goes
+                // black on WebRTC (phone on mobile data) but fullscreen
+                // works fine" bug - fullscreen's _FullscreenView never
+                // had this rebuild churn above it, so it never showed
+                // the bug. Keying on lanReachable makes it swap cleanly
+                // if connectivity mode changes mid-session.
+                child: _LiveVideoTile(
+                  key: ValueKey('videotile$camId-$_lanChecked-$_lanReachable'),
+                  camId: camId,
+                  isSelected: isSelected,
+                  cameraOn: _cameraOn,
+                  lanChecked: _lanChecked,
+                  lanReachable: _lanReachable,
+                  deviceId: Store.lastDeviceId,
+                  onMjpegFailed: () {
+                    if (mounted) {
+                      setState(() => _lastLanProbe = false);
+                      _refreshLanProbe();
+                    }
+                  },
+                ),
               ),
             ),
           ),
+          // "CONTROLLING" badge - the Arm/Siren/Snapshot/Record/Night
+          // vision buttons and the header status pills (System/Camera N/
+          // Night vision) all act on whichever camera is SELECTED, not
+          // necessarily either tile in this 2-up grid. Previously the only
+          // way to tell which one was selected was the small camera-name
+          // row above the grid (Cam 1/Cam 2 pills) - easy to miss, and not
+          // visually connected to the tile itself or to the header pills
+          // above. This puts an explicit label directly on the selected
+          // tile's own video, in the corner opposite DETECTION, so it's
+          // unambiguous which camera the rest of the screen is describing
+          // without cross-referencing a separate row.
+          if (isSelected)
+            Positioned(
+              top: big ? 10 : 6,
+              right: big ? 10 : 6,
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                    horizontal: big ? 8 : 6, vertical: big ? 4 : 3),
+                decoration: BoxDecoration(
+                  color: cTeal2.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text('CONTROLLING',
+                    style: TextStyle(
+                        color: Colors.black,
+                        fontSize: big ? 10 : 8.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4)),
+              ),
+            ),
+          // DETECTION always shows for the selected camera - live or not,
+          // same as the original single-view layout (Factor 1/2 just read
+          // dim/"-" while nothing's actively streaming). On the smaller
+          // grid tiles (big=false) it's a more compact build - tighter
+          // padding, smaller text, no distance line - so it can sit in its
+          // top-left corner without reaching down into the tile's vertical
+          // center, which is what previously collided with the "Camera is
+          // off" caption that widgets.dart centers in the same tile.
           if (showDetection)
             Positioned(
-              top: 10,
-              left: 10,
+              top: big ? 10 : 6,
+              left: big ? 10 : 6,
               child: Container(
-                padding: const EdgeInsets.all(10),
+                padding: EdgeInsets.all(big ? 10 : 6),
                 decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(big ? 10 : 8),
                     border: Border.all(color: cLine)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('DETECTION',
+                    Text('DETECTION',
                         style: TextStyle(
-                            color: cTeal2, fontSize: 10, letterSpacing: 2)),
-                    const SizedBox(height: 6),
-                    _dot('Factor 1 · Motion', _stat['motion'] == true),
-                    _dot('Factor 2 · Person', _stat['person'] == true),
+                            color: cTeal2, fontSize: big ? 10 : 8, letterSpacing: big ? 2 : 1)),
+                    SizedBox(height: big ? 6 : 3),
+                    _dot('Factor 1 · Motion', _stat['motion'] == true, compact: !big),
+                    _dot('Factor 2 · Person', _stat['person'] == true, compact: !big),
+                    if (big) ...[
                     const SizedBox(height: 4),
                     Text('Est. distance ${_stat['distance'] ?? '-'} m away',
                         style: const TextStyle(color: cOrange, fontSize: 12)),
+                    ],
                   ],
                 ),
               ),
@@ -1191,6 +1483,77 @@ class _LiveTabState extends State<LiveTab> {
         ]),
       ),
     );
+  }
+}
+
+
+/// Isolated video tile: renders the loading spinner / MjpegView / WebRtcView
+/// / "no paired device" states for one camera. Pulled out of
+/// _LiveTabState.build() specifically so the parent's periodic
+/// _statTimer/_loadStat setState() calls (every 2s) never rebuild this
+/// subtree - see the long comment at its call site in _buildVideoStack()
+/// for why that rebuild churn was blanking the WebRTC video texture on
+/// Android even inside a RepaintBoundary.
+class _LiveVideoTile extends StatelessWidget {
+  final int camId;
+  final bool isSelected;
+  final bool cameraOn;
+  final bool lanChecked;
+  final bool lanReachable;
+  final String? deviceId;
+  final VoidCallback onMjpegFailed;
+
+  const _LiveVideoTile({
+    super.key,
+    required this.camId,
+    required this.isSelected,
+    required this.cameraOn,
+    required this.lanChecked,
+    required this.lanReachable,
+    required this.deviceId,
+    required this.onMjpegFailed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!lanChecked) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: cTeal),
+            SizedBox(height: 12),
+            Text('Camera loading…',
+                style: TextStyle(color: cMuted, fontSize: 12.5)),
+          ],
+        ),
+      );
+    }
+    if (lanReachable) {
+      return MjpegView(
+        key: ValueKey('stream$camId'),
+        url: Api.streamUrl(camId),
+        active: isSelected ? cameraOn : true,
+        fit: BoxFit.cover,
+        // If the local stream stalls (the Wi-Fi "spinner forever" case),
+        // force an immediate re-probe rather than just giving up - if the
+        // probe still says LAN is reachable but the actual stream failed,
+        // treat this one probe result as stale and mark it false
+        // directly; if the probe already knows it's unreachable, this is
+        // a no-op since lanReachable will already reflect that.
+        onFailed: onMjpegFailed,
+      );
+    }
+    if (deviceId != null) {
+      return WebRtcView(
+        key: ValueKey('webrtc$camId'),
+        deviceId: deviceId!,
+        cam: camId,
+        fit: BoxFit.cover,
+      );
+    }
+    return const Center(
+        child: Text('No paired device', style: TextStyle(color: cMuted)));
   }
 }
 

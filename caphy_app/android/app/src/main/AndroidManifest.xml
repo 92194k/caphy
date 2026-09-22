@@ -33,7 +33,20 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:enableOnBackInvokedCallback="false">
+            <!-- Explicitly OFF (not left unset): targetSdk 35 (Android 15) puts
+                 this app in the range where Android 13+ predictive-back
+                 gesture applies, and leaving it unset gives inconsistent
+                 behavior across OEM Android skins - reported as "the first
+                 tap on ANY navigation button does nothing (no ripple), works
+                 on a second tap" specifically on a TECNO (HiOS) device. This
+                 matches a known class of bug where the OS's predictive-back
+                 edge-gesture detector intercepts the first touch after the
+                 window regains focus, before it reaches Flutter's gesture
+                 arena. This app has no custom predictive-back animation, so
+                 disabling it removes that layer as a competing recipient for
+                 the first touch on a screen/tab. -->
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues

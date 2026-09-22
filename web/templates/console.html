@@ -475,7 +475,35 @@ async function toggleSiren(){try{await fetch('/api/siren',{method:'POST'});}catc
 async function toggleEmg(){if(!ST.emergency&&!confirm('Activate Emergency Mode?\n\nThis will:\n• Turn on the camera\n• Arm the system\n• Sound the siren\n• Send an alert to everyone on your account.\n\nProceed?'))return;try{await fetch('/api/emergency',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:!ST.emergency})});}catch(e){}refreshState();}
 let recOn=false;
 async function toggleRec(){try{const r=await fetch('/api/record/'+sel,{method:'POST'});const j=await r.json();recOn=j.recording;document.getElementById('recBtn').classList.toggle('active',recOn);}catch(e){}}
-async function snap(){try{const r=await fetch('/api/snapshot/'+sel,{method:'POST'});const j=await r.json();if(j.ok&&j.url)window.open(j.url,'_blank');}catch(e){}}
+async function snap(){
+  try{
+    const r=await fetch('/api/snapshot/'+sel,{method:'POST'});
+    const j=await r.json();
+    if(j.ok){ caphyToast('Snapshot saved to '+(j.folder||'Pictures\\CAPHY')); }
+    else { caphyToast('Snapshot failed - camera may not be ready yet', true); }
+  }catch(e){ caphyToast('Snapshot failed - could not reach the server', true); }
+}
+// Small, dependency-free toast for quick action confirmations (snapshot
+// saved, etc.) - avoids window.open()'s unreliable session-cookie sharing
+// inside the desktop app's embedded browser window.
+function caphyToast(msg, isError){
+  let el = document.getElementById('caphyToast');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'caphyToast';
+    el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);'
+      + 'background:#161b26;color:#e6edf7;border:1px solid #2a3242;border-radius:10px;'
+      + 'padding:11px 18px;font-size:13px;z-index:5000;box-shadow:0 6px 24px rgba(0,0,0,.35);'
+      + 'max-width:min(90vw,420px);text-align:center;opacity:0;transition:opacity .2s;'
+      + 'pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.style.borderColor = isError ? '#e5544e' : '#2a3242';
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(function(){ el.style.opacity = '0'; }, 3200);
+}
 
 loadStats();poll();tailLogs();loadHealth();refreshAlerts();refreshState();
 setInterval(poll,1500);setInterval(tailLogs,2000);setInterval(refreshState,2000);

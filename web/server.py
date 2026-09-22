@@ -14,6 +14,7 @@ dashboard IS a full running system. Requires the new config/alerts/tier_engine.
 import io
 import os
 import csv
+import shutil
 import json
 import queue
 import socket
@@ -84,10 +85,52 @@ def _resource_dir(*parts):
     return os.path.join(root, *parts)
 
 
+def _load_or_create_flask_secret_key():
+    """A hardcoded string literal here would mean anyone who reads this
+    source (a public thesis repo) could forge a valid Flask session
+    cookie and log into the web dashboard without ever authenticating -
+    Flask signs session cookies with this exact key, and verifies them
+    the same way, so knowing the key is equivalent to knowing everyone's
+    password. Generating a random key and persisting it to a local,
+    gitignored file (same pattern as caphy_keys.json/device.json) fixes
+    that while still keeping sessions valid across server restarts - a
+    key that changed every restart would silently log every browser out
+    each time the server restarted, which would be its own annoying bug.
+
+    BUG FIX: this used to resolve the file next to server.py itself
+    (os.path.dirname(__file__)/../flask_secret_key.txt). In DEV mode
+    that's the project folder, which is fine - but in the PACKAGED .exe,
+    server.py lives inside sys._MEIPASS, PyInstaller's one-shot temp
+    extraction folder that gets a brand-new random path every single
+    launch. That meant a fresh secret key was generated on every start of
+    the packaged app (the file was written somewhere new and then thrown
+    away with the rest of _MEIPASS on exit), which silently invalidated
+    every existing browser's session cookie on every restart - logging
+    everyone out of the web dashboard any time the app restarted, offline
+    connectivity drops included (see caphy_desktop.py's crash-watchdog
+    fix - a restart used to mean an instant, silent logout on top of it).
+    Using the same stable, writable, per-user folder that DB_PATH/
+    YOLO_MODEL/FIREBASE_KEY already use (%LOCALAPPDATA%\CAPHY, set up by
+    resource_path.use_writable_workdir() before this module is even
+    imported) makes the key persist across restarts for BOTH dev mode and
+    the packaged app, same as everything else that had this exact bug."""
+    path = os.path.join(os.getcwd(), "flask_secret_key.txt")
+    path = os.path.normpath(path)
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            key = f.read().strip()
+        if key:
+            return key
+    key = secrets.token_hex(32)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(key)
+    return key
+
+
 app = Flask(__name__,
             template_folder=_resource_dir("web", "templates"),
             static_folder=_resource_dir("web", "static"))
-app.secret_key = "caphy-local-console-secret"
+app.secret_key = _load_or_create_flask_secret_key()
 app.permanent_session_lifetime = timedelta(days=30)   # "remember this device"
 
 TIER_BGR = {1: (80, 200, 120), 2: (60, 160, 240), 3: (60, 60, 230)}
@@ -165,7 +208,9 @@ class Worker(threading.Thread):
         self.raw_frame = None    # last raw BGR frame, for the WebRTC track
         self.manual_record = False      # toggled by the phone Live tab
         self._mrec = None
-        self._mrec_path = None
+        self._mrec_path = None          # temp path the writer is currently writing to
+        self._mrec_final_dir = None     # real Videos\CAPHY-style folder to move the finished file into
+        self._mrec_last_error = None    # human-readable reason the LAST start attempt failed, if it did
         self.last_record = None         # basename of the last finished recording
         self.stats = {"online": False, "motion": False, "person": False,
                       "tier": 0, "distance": "-", "conf": "-", "fps": 0.0,
@@ -213,28 +258,53 @@ class Worker(threading.Thread):
         self._log("INFO", "settings", "updated from dashboard")
 
     def _annotate(self, frame, result):
+        # Font scale, line thickness AND box height below are all derived
+        # from the frame's own width instead of being fixed pixel/scale
+        # constants. Fixed values (font scale 0.45-0.55, 18px label bar,
+        # thickness 1-2) were tuned back when this ran on a much smaller
+        # frame; at the current FRAME_WIDTH/HEIGHT (config.py) those same
+        # absolute pixel sizes read as tiny relative to the frame, which is
+        # what actually produced the "blurry/low-res text" complaint on
+        # alert snapshots and on the 1080p-capable camera - it was never a
+        # capture-resolution problem (this frame is untouched by
+        # STREAM_WIDTH/HEIGHT, which only affects the live-view copy - see
+        # Worker._store()), it was text drawn too small for the frame.
+        # Scaling every measurement off frame width keeps the annotation
+        # crisp and proportionally sized at whatever FRAME_WIDTH is
+        # configured, including if it's later raised toward native 1080p.
+        fw = frame.shape[1]
+        scale = fw / 960.0   # 960 = the reference width these constants were tuned for
+        font_scale = max(0.45, 0.6 * scale)
+        thick = max(1, round(2 * scale))
+        label_h = max(18, round(26 * scale))
+        cap_font_scale = max(0.55, 0.7 * scale)
+        bar_h = max(28, round(36 * scale))
+
         for p in result.get("persons", []):
             x1, y1, x2, y2 = p["box"]
             c = TIER_BGR.get(p.get("tier", 2), (80, 200, 120))
-            cv2.rectangle(frame, (x1, y1), (x2, y2), c, 2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), c, thick, cv2.LINE_AA)
             lbl = f"{p.get('label','person')} {p['conf']:.2f} {p.get('distance_m','?')}m"
-            cv2.rectangle(frame, (x1, y1 - 18), (x1 + 230, y1), c, -1)
-            cv2.putText(frame, lbl, (x1 + 4, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (20, 20, 20), 1)
+            (lw, lh), _ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thick)
+            cv2.rectangle(frame, (x1, y1 - label_h), (x1 + lw + 12, y1), c, -1)
+            cv2.putText(frame, lbl, (x1 + 4, y1 - max(4, (label_h - lh) // 2)),
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                        (20, 20, 20), thick, cv2.LINE_AA)
 
         # ---- CCTV-style caption bar: camera name + date/time, burned into
         # every frame so it's ALSO in every snapshot/recording taken from it,
         # on both the PC and the phone (they both read this same frame). ----
         caption = f"{self.name}  |  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        (tw, th), _ = cv2.getTextSize(caption, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+        (tw, th), _ = cv2.getTextSize(caption, cv2.FONT_HERSHEY_SIMPLEX, cap_font_scale, thick)
         cv2.rectangle(frame, (0, 0), (tw + 20, th + 18), (0, 0, 0), -1)
-        cv2.putText(frame, caption, (10, th + 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                    (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, caption, (10, th + 8), cv2.FONT_HERSHEY_SIMPLEX, cap_font_scale,
+                    (255, 255, 255), thick, cv2.LINE_AA)
 
         if result.get("threat"):
             c = TIER_BGR[result["tier"]]
-            cv2.rectangle(frame, (0, frame.shape[0] - 28), (frame.shape[1], frame.shape[0]), c, -1)
-            cv2.putText(frame, f"THREAT - Tier {result['tier']}", (8, frame.shape[0] - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+            cv2.rectangle(frame, (0, frame.shape[0] - bar_h), (frame.shape[1], frame.shape[0]), c, -1)
+            cv2.putText(frame, f"THREAT - Tier {result['tier']}", (8, frame.shape[0] - max(6, bar_h // 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, cap_font_scale, (255, 255, 255), thick + 1, cv2.LINE_AA)
         return frame
 
     def _publish_and_push(self, aid, result, armed):
@@ -532,10 +602,43 @@ class Worker(threading.Thread):
                 elif self._mrec is not None:
                     self._mrec.release()
                     self._mrec = None
-                    # remember the finished file so the phone can download it
-                    if self._mrec_path:
-                        self.last_record = os.path.basename(self._mrec_path)
-                        self._log("INFO", "record", f"saved {os.path.abspath(self._mrec_path)}")
+                    # PART 5: verify the file genuinely exists and has real
+                    # content before doing anything else with it - never
+                    # hand a phone/dashboard a reference to a zero-byte or
+                    # missing file. Then move it out of the safe temp
+                    # folder (see _start_manual_record) into the real
+                    # Videos\CAPHY destination, so the end result the user
+                    # actually sees in their Videos library is unchanged -
+                    # only where the file was WRITTEN during recording
+                    # changed, not where it ends up.
+                    temp_path = self._mrec_path
+                    final_dir = self._mrec_final_dir or getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR)
+                    self._mrec_path = None
+                    self._mrec_final_dir = None
+                    if temp_path and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                        try:
+                            os.makedirs(final_dir, exist_ok=True)
+                            final_path = os.path.join(final_dir, os.path.basename(temp_path))
+                            shutil.move(temp_path, final_path)
+                            self.last_record = os.path.basename(final_path)
+                            self._log("INFO", "record", f"saved {os.path.abspath(final_path)}")
+                        except Exception as e:
+                            # Moving failed (e.g. the real folder truly is
+                            # inaccessible) - the recording itself is still
+                            # good, it's just sitting in the temp folder.
+                            # Report that honestly instead of claiming it's
+                            # in Videos\CAPHY when it isn't.
+                            self.last_record = os.path.basename(temp_path)
+                            self._log("WARN", "record",
+                                       f"recording saved but could not move into "
+                                       f"'{final_dir}' ({e}) - file remains at "
+                                       f"{os.path.abspath(temp_path)}")
+                    elif temp_path:
+                        # PART 5: never pretend a recording succeeded when the
+                        # file is missing or empty.
+                        self._log("WARN", "record",
+                                   f"recording stopped but '{temp_path}' is missing "
+                                   "or empty - nothing to save")
 
                 # IMPORTANT: store the frame for live viewers (MJPEG + WebRTC)
                 # RIGHT HERE, immediately after annotation - BEFORE running any
@@ -615,27 +718,99 @@ class Worker(threading.Thread):
         db.close()
 
     def _start_manual_record(self, frame, fps):
-        """Open a VideoWriter, trying codecs until one actually opens.
-        mp4v often fails silently on Windows OpenCV, so we fall back to MJPG
-        (.avi), which is available almost everywhere."""
-        vdir = getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR)
-        os.makedirs(vdir, exist_ok=True)
+        """Open an MP4 (mp4v) VideoWriter for a manual recording.
+
+        Root cause of "no video codec could be opened on this system"
+        (found via a direct on-machine diagnostic, not guesswork): mp4v,
+        avc1, MJPG and XVID all opened and wrote real, valid video files
+        successfully when tested directly against this exact camera, this
+        exact OpenCV build (5.0.0, FFmpeg-backed, prebuilt binaries) - but
+        ONLY when writing to a path with no space in it (e.g. under
+        the CAPHY project folder itself). CAPHY's real target folder is
+        the user's own Videos/CAPHY folder, whose full Windows path
+        contains a SPACE in the account name - a space-containing path
+        is a known trigger for OpenCV's FFmpeg-backed VideoWriter to
+        silently fail isOpened() on some Windows builds, even though the
+        exact same codec works fine one folder over with no space in the
+        path. Cam 1/Cam 3 hit this because of exactly which folder/timing
+        it landed on; the fix that is correct regardless of whether the
+        space in the path, OneDrive, or antivirus is the deeper reason:
+        write to a definitely-safe temp folder that can never contain a
+        space or an OneDrive-managed path (Python's own
+        tempfile.gettempdir(), joined with a fixed "CAPHY_recordings"
+        folder), then MOVE the finished file into the real destination
+        folder once recording stops and the file is confirmed to exist
+        with real (non-zero) content. That sidesteps the failure point
+        entirely instead of trying to out-guess exactly which codec/
+        folder combination this specific Windows install tolerates.
+
+        Format is standardized to MP4 (mp4v) only, per the CAPHY media
+        standard: snapshots are always .jpg, recordings are always .mp4 -
+        no AVI fallback. If mp4v itself fails to open (should not happen
+        based on the diagnostic, but checked explicitly - never assume),
+        recording is cleanly refused rather than silently claimed.
+        """
+        import tempfile
+        # Every failure path below sets self._mrec_last_error to the REAL,
+        # specific reason - this is what api_record() now reports back to
+        # the phone/dashboard instead of always printing the same generic
+        # "no video codec could be opened" text regardless of what
+        # actually went wrong. That generic message was itself part of
+        # the bug: api_record()'s own 2-second poll for self._mrec to
+        # become non-None had its OWN hardcoded fallback message, written
+        # before this function's real diagnostic logging existed - so even
+        # after this function started logging specific, useful detail to
+        # caphy.log, the phone/dashboard never saw any of it; it only ever
+        # saw that one generic line from the calling route.
+        rec_dir = os.path.join(tempfile.gettempdir(), "CAPHY_recordings")
+        try:
+            os.makedirs(rec_dir, exist_ok=True)
+        except Exception as e:
+            self._mrec = None
+            self._mrec_last_error = f"could not create temp recording folder '{rec_dir}': {e}"
+            self._log("WARN", "record", self._mrec_last_error)
+            return
+
         h, w = frame.shape[:2]
         wfps = max(min(fps, 30.0), 5.0)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         cam_label = "".join(c for c in self.name if c.isalnum()) or f"Cam{self.cam_id}"
-        # (fourcc, extension) candidates, in order of preference
-        for fourcc, ext in (("mp4v", "mp4"), ("avc1", "mp4"), ("MJPG", "avi"), ("XVID", "avi")):
-            path = os.path.join(vdir, f"CAPHY_{cam_label}_manual_{stamp}.{ext}")
-            writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*fourcc), wfps, (w, h))
-            if writer.isOpened():
-                self._mrec = writer
-                self._mrec_path = path
-                self._log("INFO", "record", f"recording -> {os.path.abspath(path)} ({fourcc})")
-                return
+        temp_path = os.path.join(rec_dir, f"CAPHY_{cam_label}_manual_{stamp}.mp4")
+
+        try:
+            writer = cv2.VideoWriter(
+                temp_path, cv2.VideoWriter_fourcc(*"mp4v"), wfps, (w, h))
+        except Exception as e:
+            self._mrec = None
+            self._mrec_last_error = f"mp4v VideoWriter raised {type(e).__name__}: {e}"
+            self._log("WARN", "record", self._mrec_last_error)
+            return
+
+        if not writer.isOpened():
             writer.release()
-        self._mrec = None
-        self._log("WARN", "record", "could not open any video codec - recording disabled")
+            self._mrec = None
+            # Clean up whatever partial/empty file cv2 may have created -
+            # PART 5's "do not create a fake/empty recording" requirement
+            # applies to the temp file too, not just the final destination.
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+            self._mrec_last_error = (
+                f"mp4v VideoWriter.isOpened() returned False for '{temp_path}' "
+                f"(frame {w}x{h}, fps {wfps:.1f}, dtype {frame.dtype})")
+            self._log("WARN", "record", self._mrec_last_error)
+            return
+
+        self._mrec = writer
+        self._mrec_path = temp_path
+        self._mrec_final_dir = getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR)
+        self._mrec_last_error = None
+        self._log("INFO", "record",
+                   f"recording -> {os.path.abspath(temp_path)} (mp4v, temp, "
+                   f"{w}x{h} @ {wfps:.1f}fps) - will move to "
+                   f"'{self._mrec_final_dir}' when stopped")
 
     def _configure_and_probe(self, cap):
         """Applies our capture settings, then reads ONE real frame and times
@@ -773,8 +948,25 @@ class Worker(threading.Thread):
         return cap
 
     def _store(self, frame, stats):
+        # `frame` here is the full FRAME_WIDTH x FRAME_HEIGHT (960x720)
+        # detection-resolution frame, already annotated - detection itself
+        # (motion/YOLO/tier, above this call) and anything else that needs
+        # full resolution (e.g. self._mrec.write(frame) for MP4 recording,
+        # which happens before _store() is reached) keep using `frame`
+        # directly and are UNAFFECTED by this. Only the copies actually
+        # handed to live viewers (self.jpeg for MJPEG, self.raw_frame for
+        # WebRTC's WorkerVideoTrack) get downscaled to config.STREAM_WIDTH/
+        # HEIGHT - see config.py for why this is a separate setting from
+        # FRAME_WIDTH/HEIGHT and why 640x360 was picked.
+        sw = getattr(config, "STREAM_WIDTH", config.FRAME_WIDTH)
+        sh = getattr(config, "STREAM_HEIGHT", config.FRAME_HEIGHT)
+        if (sw, sh) != (frame.shape[1], frame.shape[0]):
+            stream_frame = cv2.resize(frame, (sw, sh), interpolation=cv2.INTER_AREA)
+        else:
+            stream_frame = frame
+
         q = getattr(config, "JPEG_QUALITY", 80)
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, q])
+        ok, buf = cv2.imencode(".jpg", stream_frame, [cv2.IMWRITE_JPEG_QUALITY, q])
         if ok:
             with self.lock:
                 self.jpeg = buf.tobytes()
@@ -782,14 +974,43 @@ class Worker(threading.Thread):
                 # (web/webrtc_stream.py) can feed aiortc directly instead of
                 # decoding JPEG back to raw every frame - same annotated
                 # frame MJPEG and WebRTC viewers both end up seeing, just
-                # two different encodings of one camera read.
-                self.raw_frame = frame
+                # two different encodings of one camera read. Already
+                # downscaled to STREAM_WIDTH/HEIGHT above, same as self.jpeg.
+                self.raw_frame = stream_frame
                 self.stats = stats
 
     def _store_placeholder(self, text="Camera offline"):
-        img = np.full((config.FRAME_HEIGHT, config.FRAME_WIDTH, 3), 18, np.uint8)
-        cv2.putText(img, text, (40, config.FRAME_HEIGHT // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (110, 110, 110), 2)
+        # Matches the streamed (STREAM_WIDTH/HEIGHT) size, not the capture
+        # (FRAME_WIDTH/HEIGHT) size - purely cosmetic (viewers don't care
+        # about a solid-gray placeholder's exact resolution), but keeps
+        # the placeholder from being a visibly different size than the
+        # real frames that replace it once the camera comes back online.
+        sw = getattr(config, "STREAM_WIDTH", config.FRAME_WIDTH)
+        sh = getattr(config, "STREAM_HEIGHT", config.FRAME_HEIGHT)
+        img = np.full((sh, sw, 3), 18, np.uint8)
+
+        # Text was previously drawn at a FIXED pixel offset (40, sh//2) and
+        # a fixed font scale (1.0) - both tuned for the old 960px-wide
+        # placeholder. After adding STREAM_WIDTH/HEIGHT (640x360 default)
+        # for bandwidth reasons, that same fixed 40px-from-left position
+        # plus fixed-size text no longer fits/centers properly in a
+        # narrower image, and depending on how a viewer's CSS scales/crops
+        # the <img> to fit its tile, the left portion of the text (e.g.
+        # "Ca" of "Camera off") can end up rendered outside the visible
+        # area - reported as the dashboard showing "mera off" instead of
+        # "Camera off". Centering the text (measuring its actual rendered
+        # width via cv2.getTextSize, same for any string/font-scale
+        # combination) and scaling the font relative to image width fixes
+        # this at the source, independent of whatever CSS crop/scale a
+        # given viewer applies - it can never be positioned partially
+        # outside a reasonably-sized crop when it's centered to begin with.
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = max(0.55, min(1.0, sw / 960.0))
+        thickness = 2
+        (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
+        x = max(10, (sw - text_w) // 2)
+        y = (sh + text_h) // 2
+        cv2.putText(img, text, (x, y), font, font_scale, (110, 110, 110), thickness)
         ok, buf = cv2.imencode(".jpg", img)
         if ok:
             with self.lock:
@@ -1316,11 +1537,19 @@ def _build_state_snapshot():
             "camera_on": any(not w.paused for w in workers) if workers else False,
             "emergency": bool(_emergency_on),
             "siren": bool(_siren_manual),
+            # Was missing here (this cloud snapshot is what a phone off the
+            # LAN actually reads via Firestore) even though /api/state's
+            # direct-LAN response now includes it - meant a recording
+            # toggled from off-network still couldn't resync correctly.
+            # Added for the same reason recording was added to /api/state.
+            "recording": any(w.manual_record for w in workers),
+            "night_vision": any(getattr(w, "nv", None) and w.nv.enabled for w in workers),
             "webrtc_available": bool(_webrtc_ok),
             "cameras": [
                 {"cam": w.cam_id, "name": w.name,
                  "on": not w.paused,
-                 "online": bool(w.get_stats().get("online", False))}
+                 "online": bool(w.get_stats().get("online", False)),
+                 "recording": bool(w.manual_record)}
                 for w in workers
             ],
         }
@@ -1594,6 +1823,14 @@ def _execute_remote_command(device_id, cmd):
             # video's URL when stopping, same as the direct-HTTP path -
             # the phone's route through here returns that same shape.
             "record": ("POST", f"/api/record/{int(cmd_args.get('cam', 0) or 0)}", {}),
+            # Night vision had NO entry here either - Api.nightVision() in
+            # api.dart previously had no timeout AND no cross-network
+            # fallback at all (unlike every other action button here), so
+            # on a slow/flaky connection the raw HTTP call could hang
+            # indefinitely with no ceiling, which is what looked like the
+            # whole app freezing on that one button - and cross-network it
+            # simply never worked, the same gap record() used to have.
+            "nightvision": ("POST", f"/api/nightvision/{int(cmd_args.get('cam', 0) or 0)}", {}),
             "siren": ("POST", "/api/siren", {}),
             # Acknowledge (dismiss) an alert - added because the phone's
             # dismissAlert()/dismissAllAlerts() previously only ever tried
@@ -1752,7 +1989,25 @@ def _verify_bearer_uid(token):
     phone's claimed identity is trusted - everything downstream (pairing,
     devices, alerts, FCM registration) depends on this being a real,
     cryptographically-verified Firebase ID token, not a client-supplied
-    value of any kind."""
+    value of any kind.
+
+    BUG FIX: verify_id_token() needs to reach Google to fetch its public
+    signing certs (cached ~1hr, but that cache can be cold or the process
+    can be genuinely offline). When THIS LAPTOP has no internet, that call
+    raises, and the old code treated ANY exception as "invalid token" -
+    wiping this token's cache entry and returning None, which the guard()
+    before_request turns into a 401. To the phone, a 401 looks exactly
+    like being logged out, even though nothing about the token itself was
+    ever actually wrong - the laptop just couldn't phone home to re-check
+    it. Distinguishing "network/offline error" from "token is actually
+    bad": a real bad/expired/forged token fails LOCALLY inside the SDK
+    (bad signature, expired claim) - those still return None correctly, so
+    a genuinely logged-out or revoked phone is still rejected. Only a
+    network-shaped failure (can't reach Google at all) falls back to the
+    last-known-good cached UID for this exact token, if we've verified it
+    successfully before - offline continuity, not weaker security, since
+    it still requires having already proven ownership of a valid token
+    once while online."""
     if not token:
         return None
 
@@ -1769,7 +2024,19 @@ def _verify_bearer_uid(token):
         if uid:
             API_TOKENS[token] = (uid, time.time())
         return uid
-    except Exception:
+    except Exception as e:
+        is_network_error = not internet_available(use_cache=True)
+        if is_network_error and cached:
+            # Offline, but this exact token verified successfully before -
+            # keep trusting it (refresh its timestamp so it doesn't expire
+            # from the cache while we're stuck offline) instead of logging
+            # the phone out just because the laptop can't reach Google.
+            uid, _ = cached
+            API_TOKENS[token] = (uid, time.time())
+            return uid
+        # Either genuinely online (so verify_id_token's failure means the
+        # token itself is bad) or offline with no prior good verification
+        # for this token at all - correctly reject.
         API_TOKENS.pop(token, None)
         return None
 
@@ -1938,7 +2205,20 @@ def login():
     # not just intended.
     email = request.form.get("email", "").strip()
     password = request.form.get("password", "")
-    remember = request.form.get("remember") == "on"
+    # BUG FIX: this used to default to False (only True if the "Remember
+    # me" checkbox was ticked), while every OTHER login path here (Google,
+    # magic link, dual-auth signup - see session.permanent = True at the
+    # other session["user_uid"] = ... assignments in this file) already
+    # persists unconditionally. A security console you're meant to just
+    # leave running and reopen has no real reason to force a fresh login
+    # every time its window closes - so this path now matches the others:
+    # persistent by default, unless the checkbox is explicitly UNCHECKED
+    # by a value we'd actually receive (we don't - HTML checkboxes send no
+    # field at all when unchecked, so there is no way to distinguish "user
+    # unchecked it" from "field doesn't exist" server-side; defaulting to
+    # True here plus checking the box by default in the template is the
+    # combination that actually fixes the checkbox being ignored).
+    remember = request.form.get("remember", "on") == "on"
 
     if not email or not password:
         google_client_id = getattr(config, "GOOGLE_CLIENT_ID", "")
@@ -2358,6 +2638,69 @@ def _google_redirect_uri() -> str:
     return "http://127.0.0.1:5000/auth/google/callback"
 
 
+
+def _open_google_popup(auth_url):
+    """Open Google's OAuth consent screen in a small, popup-sized window
+    instead of a full browser tab/window - purely cosmetic (Google still
+    requires a REAL system browser process, embedded webviews are
+    rejected), but makes the hand-off feel more like an in-app popup and
+    less like being dumped into a whole separate browser session.
+
+    Tries Chrome/Edge's --app= "app mode" flag first, which renders with
+    no address bar / tabs / bookmarks bar - about as close to a native
+    popup as a real browser window gets - sized and centered like a login
+    popup. Falls back to the default system browser (previous behavior)
+    if neither browser executable can be found or the launch fails for
+    any reason, so sign-in always still works even if this cosmetic
+    upgrade can't."""
+    import subprocess
+    import shutil
+    import webbrowser
+
+    width, height = 480, 640
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        screen_w = user32.GetSystemMetrics(0)
+        screen_h = user32.GetSystemMetrics(1)
+        left = max(0, (screen_w - width) // 2)
+        top = max(0, (screen_h - height) // 2)
+    except Exception:
+        left, top = 200, 100
+
+    candidates = []
+    for env_var in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        base = __import__("os").environ.get(env_var)
+        if not base:
+            continue
+        candidates += [
+            base + r"\Google\Chrome\Application\chrome.exe",
+            base + r"\Microsoft\Edge\Application\msedge.exe",
+        ]
+    # also try PATH-resolved names in case of a non-standard install
+    for name in ("chrome", "msedge", "google-chrome"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
+
+    for exe in candidates:
+        try:
+            if not __import__("os").path.isfile(exe):
+                continue
+            subprocess.Popen([
+                exe,
+                "--app=" + auth_url,
+                "--window-size=%d,%d" % (width, height),
+                "--window-position=%d,%d" % (left, top),
+            ])
+            return
+        except Exception:
+            continue
+
+    # Fallback: default system browser, full window (previous behavior).
+    webbrowser.open(auth_url)
+
+
 @app.route("/auth/google/start")
 def auth_google_start():
     """
@@ -2399,8 +2742,7 @@ def auth_google_start():
     from urllib.parse import urlencode
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
 
-    import webbrowser
-    webbrowser.open(auth_url)
+    _open_google_popup(auth_url)
 
     # The pywebview window shows a "waiting for browser" page and polls
     # /api/auth/google/status - it can't just block here, since opening
@@ -2666,7 +3008,21 @@ def api_health():
     db.close()
     yolo_ok = any(w.yolo_ok for w in workers)
     nv_on = any(getattr(w, "nv", None) and w.nv.enabled for w in workers)
-    fcm_on = os.path.exists(config.FIREBASE_KEY)
+    # BUG FIX: config.FIREBASE_KEY ("firebase_key.json") is a bare relative
+    # path, checked here against the current working directory - which is
+    # %LOCALAPPDATA%\CAPHY once the packaged .exe calls _use_writable_workdir(),
+    # not where the bundled key actually unpacks to (sys._MEIPASS). Firebase
+    # itself already resolves this correctly in firebase_auth.py
+    # (FIREBASE_KEY_PATH, via resource_path()) and initializes fine either
+    # way - this status check was just looking at the wrong path, so it
+    # showed "Push Notifications: off" / "Firebase FCM: off" even when
+    # Firebase was actually connected. Check the SAME resolved path
+    # firebase_auth.py uses instead of the raw config string.
+    try:
+        from firebase_auth import FIREBASE_KEY_PATH as _fb_key_path
+        fcm_on = os.path.exists(_fb_key_path)
+    except Exception:
+        fcm_on = os.path.exists(config.FIREBASE_KEY)
 
     # Detection heartbeat: an open camera whose _last_frame_ok hasn't updated
     # in 10s+ has a detection loop that's stuck repeatedly throwing (caught
@@ -2711,7 +3067,8 @@ def api_health():
         {"name": "Firebase FCM", "status": "connected" if fcm_on else "off", "color": T if fcm_on else M},
     ]
     return jsonify({"cpu": cpu, "mem": mem, "mem_txt": mem_txt, "disk": disk,
-                    "fps": fps, "modules": modules, "detect_ok": detect_ok})
+                    "fps": fps, "modules": modules, "detect_ok": detect_ok,
+                    "is_online": is_online})
 
 
 @app.route("/")
@@ -3056,10 +3413,22 @@ def live():
       fsMain();
     }
     async function snap(){
-      try{ const r=await fetch('/api/snapshot/'+sel,{method:'POST'}); const j=await r.json();
-        if(j.ok){ toast('Snapshot saved'); window.open(j.url,'_blank'); }
+      // BUG FIX: this used to call window.open(j.url, '_blank') right
+      // after saving, to show the snapshot immediately. A NEW pywebview/
+      // WebView2 window opened that way does not reliably carry this
+      // window's session cookie with it - so the new tab hit the server's
+      // login guard with no valid session and showed {"error":
+      // "unauthorized"}, even though the snapshot itself saved
+      // successfully every single time. The misleading "is the camera
+      // on?" toast below was ALSO wrong in that case - the save had
+      // already succeeded by then; only the immediately-following attempt
+      // to view it failed. Just confirm the save and say where it went,
+      // same pattern used on the /console dashboard's snapshot button.
+      try{
+        const r=await fetch('/api/snapshot/'+sel,{method:'POST'}); const j=await r.json();
+        if(j.ok){ toast('Snapshot saved to '+(j.folder||'Pictures\\CAPHY')); }
         else { toast('Snapshot failed - is the camera on?'); }
-      }catch(e){ toast('Snapshot failed'); }
+      }catch(e){ toast('Snapshot failed - could not reach the server'); }
     }
     async function toggleNV(){
       try{ const r=await fetch('/api/nightvision/'+sel,{method:'POST'}); const j=await r.json();
@@ -3071,14 +3440,33 @@ def live():
     }
     let recOn=false;
     async function toggleRec(){
+      const b=document.getElementById('recBtn');
       try{
-        const r=await fetch('/api/record/'+sel,{method:'POST'}); const j=await r.json();
+        const r=await fetch('/api/record/'+sel,{method:'POST'});
+        const j=await r.json().catch(()=>null);
+        if(!j){
+          toast('Could not reach CAPHY - try again');
+          return;
+        }
         recOn = j.recording;
-        const b=document.getElementById('recBtn');
         b.classList.toggle('active', recOn);
         b.title = recOn ? 'Stop Recording' : 'Record';
-        toast(recOn ? 'Recording started' : 'Recording saved to Videos/CAPHY');
-      }catch(e){}
+        // Was previously ALWAYS "Recording saved to Videos/CAPHY" whenever
+        // recOn was false - including when the recording never actually
+        // started because no video codec could be opened. That's a false
+        // success message shown for a real failure, and the empty
+        // catch(e){} below meant even a network error produced no
+        // feedback at all. Now: a real start failure shows the server's
+        // own error text, and a genuine save still shows the old message.
+        if(j.error){
+          toast(j.error);
+        }else{
+          toast(recOn ? 'Recording started' : 'Recording saved to Videos/CAPHY');
+        }
+      }catch(e){
+        toast('Could not reach CAPHY - try again');
+        b.classList.remove('active');
+      }
     }
     function toast(msg){
       let t=document.getElementById('webtoast');
@@ -3270,6 +3658,18 @@ def live():
       .ctrlbtn.siren{background:var(--red);color:#fff;border-color:var(--red)}
       .ctrlbtn.siren:hover{filter:brightness(1.1);color:#fff}
       .ctrlbtn.siren.active,.ctrlbtn.emg.active{background:var(--red);color:#fff;border-color:var(--red)}
+      /* Recording needs to read as distinctly "live/urgent" rather than
+         the same flat teal fill every other toggle uses when active -
+         that's what made it "look shitty": Record active looked no
+         different from Arm active or Night Vision active. Solid red fill
+         (like Siren) plus a soft pulsing glow animation gives it its own
+         unmistakable identity, closer to a real camera app's REC light. */
+      #recBtn.active{background:var(--red);color:#fff;border-color:var(--red);
+        animation:recPulse 1.4s ease-in-out infinite}
+      @keyframes recPulse{
+        0%,100%{box-shadow:0 0 0 0 rgba(240,89,107,0.55)}
+        50%{box-shadow:0 0 0 8px rgba(240,89,107,0)}
+      }
 
       /* fullscreen: only an Exit button, top-right, auto-hiding */
       .fsexit{position:fixed;top:18px;right:18px;display:none;align-items:center;
@@ -3354,16 +3754,32 @@ def _save_snapshot(cam):
     if not (0 <= cam < len(workers)):
         return None
     w = workers[cam]
-    jpg = w.get_jpeg()
-    if not jpg:
+    # Was: reused w.get_jpeg(), the live MJPEG stream's own JPEG bytes -
+    # already encoded at config.JPEG_QUALITY (55), tuned for a lightweight
+    # live-view stream, not for a saved evidence photo. Re-encoding fresh
+    # from the raw frame at SNAPSHOT_JPEG_QUALITY (85) gives manual
+    # snapshots the same "clearly readable evidence" quality standard as
+    # automatic alert snapshots (storage/alerts.py), instead of a lower
+    # quality that happened to be whatever the stream was already using.
+    raw = w.get_frame()
+    if raw is None:
         w._log("WARN", "snapshot", "no frame available yet - camera starting or off")
         return None
+    quality = getattr(config, "SNAPSHOT_JPEG_QUALITY", 85)
+    ok, buf = cv2.imencode(".jpg", raw, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    if not ok:
+        w._log("WARN", "snapshot", "JPEG encode failed")
+        return None
+    jpg = buf.tobytes()
     try:
         os.makedirs(config.CAPTURES_DIR, exist_ok=True)
         name = f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}_cam{cam}.jpg"
         full = os.path.abspath(os.path.join(config.CAPTURES_DIR, name))
         with open(full, "wb") as f:
             f.write(jpg)
+        if not os.path.exists(full) or os.path.getsize(full) == 0:
+            w._log("WARN", "snapshot", f"write appeared to succeed but '{full}' is missing/empty")
+            return None
         w._log("INFO", "snapshot", f"saved {full}")
         return name
     except Exception as e:
@@ -3375,7 +3791,8 @@ def _save_snapshot(cam):
 def api_snapshot(cam):
     name = _save_snapshot(cam)
     return jsonify({"ok": bool(name), "name": name,
-                    "url": (f"/snapshot/{name}" if name else None)})
+                    "url": (f"/snapshot/{name}" if name else None),
+                    "folder": config.CAPTURES_DIR})
 
 
 @app.route("/api/nightvision/<int:cam>", methods=["POST"])
@@ -3434,13 +3851,93 @@ def api_record(cam):
     if 0 <= cam < len(workers):
         w = workers[cam]
         was_recording = w.manual_record
+        # Recording needs an actual open camera device producing frames -
+        # the capture loop skips its ENTIRE detection/recording block
+        # while a camera is paused/off (see "camera OFF: release the
+        # device entirely, run no detection" in the main loop), so
+        # _start_manual_record() is never even called in that state.
+        # Previously that silently produced the exact same generic "no
+        # video codec" message as a real codec failure, which is why
+        # turning a camera off (or pressing Record before it finishes
+        # opening - DirectShow can take a few seconds) looked identical
+        # to a genuine encoder problem. Caught explicitly here now, with
+        # a message that actually says what's wrong.
+        if not was_recording and w.paused:
+            return jsonify({
+                "recording": False,
+                "error": f"{w.name} is currently off - turn the camera on "
+                          "before recording",
+            })
+        if not was_recording and not w.get_stats().get("online", False):
+            # Camera isn't paused, but hasn't delivered a real frame yet -
+            # e.g. it was JUST turned on and DirectShow/Media Foundation is
+            # still opening it (typically 0.3-2s, occasionally longer).
+            # Recording needs a real frame to size the VideoWriter against,
+            # so this is refused with a message telling the user to wait a
+            # moment, rather than silently failing with the same generic
+            # codec-sounding error a moment later.
+            return jsonify({
+                "recording": False,
+                "error": f"{w.name} is still starting up - wait a moment "
+                          "and try again",
+            })
         w.manual_record = not w.manual_record
         w._log("INFO", "record", "manual recording " + ("started" if w.manual_record else "stopped"))
         resp = {"recording": w.manual_record}
+        # When STARTING: this only flips a flag here - the actual
+        # VideoWriter is opened by _start_manual_record() on the capture
+        # thread's NEXT frame, and it can fail there for reasons this
+        # route has no visibility into (no codec on this Windows install
+        # actually opens, disk full, no permission to write the target
+        # folder). Previously this always answered {"recording": true}
+        # regardless, so the phone showed "Recording started" and the
+        # button stayed lit even when NOTHING was being written to disk -
+        # that's what "not saving" on the PC actually was: a silently
+        # failed writer with no error path back to the UI at all. Now
+        # poll briefly for the writer to actually come up, and if it
+        # never does, report failure and flip manual_record back off so
+        # the button doesn't stay stuck showing "recording".
+        if not was_recording and w.manual_record:
+            # Poll a bit longer than before (up to ~4s, was ~2s) - opening
+            # the writer now also does os.makedirs() on a temp folder
+            # first (see _start_manual_record), a small extra step that
+            # was not there when 2s was originally chosen.
+            for _ in range(40):
+                if w._mrec is not None or w._mrec_last_error is not None:
+                    break
+                time.sleep(0.1)
+            if w._mrec is None:
+                w.manual_record = False
+                # Report the REAL reason _start_manual_record actually
+                # failed for (set on self._mrec_last_error) instead of one
+                # hardcoded generic message regardless of cause - this
+                # route used to print its own fallback text unconditionally
+                # whenever the poll above timed out, which meant even
+                # after _start_manual_record started logging specific,
+                # useful detail, neither the phone nor the dashboard ever
+                # saw any of it - only ever this one generic line.
+                real_reason = w._mrec_last_error or (
+                    "recording did not start within the expected time - "
+                    "see caphy.log for detail")
+                w._log("WARN", "record", f"reporting failure to caller: {real_reason}")
+                return jsonify({
+                    "recording": False,
+                    "error": f"Could not start recording - {real_reason}",
+                })
         # when STOPPING, return the finished file so the phone can save it to
-        # its gallery. The writer closes on the next frame, so poll briefly.
+        # its gallery. The writer only finalizes on the NEXT processed frame
+        # after manual_record flips false (see the capture loop), and
+        # closing/flushing the video container itself takes real time too -
+        # under load (YOLOv8 inference running on the same frame, a slow
+        # camera, etc.) that can easily take longer than the ~2s this used
+        # to wait. When it timed out, the phone was told "no video_url" and
+        # showed "Recording saved on PC" even though the file was actually
+        # about to finish fine - just a false negative from polling too
+        # briefly. Bumped to ~6s, which comfortably covers a slow frame
+        # under load without blocking this request for long in the normal
+        # case (it still returns the moment last_record actually appears).
         if was_recording and not w.manual_record:
-            for _ in range(20):                 # up to ~2s
+            for _ in range(60):                 # up to ~6s
                 if w.last_record:
                     break
                 time.sleep(0.1)
@@ -3868,7 +4365,7 @@ def api_camera_name(cam):
     return jsonify({"ok": False}), 400
 
 
-# ==================== Camera Auto-Detection & Selection (V380, USB, etc) ====================
+# ==================== Camera Auto-Detection & Selection (USB/built-in only - see camera_detector.py's docstring for why V380/network-camera scanning was removed) ====================
 @app.route("/camera-setup")
 def camera_setup_page():
     """Serve camera selector UI for plug-and-play setup"""
@@ -4261,7 +4758,20 @@ def api_state():
         "armed": _is_armed(),
         "camera_on": any(not w.paused for w in workers) if workers else False,
         "cameras": [{"cam": w.cam_id, "name": w.name, "on": not w.paused,
-                     "online": w.get_stats().get("online", False)} for w in workers],
+                     "online": w.get_stats().get("online", False),
+                     "recording": bool(w.manual_record)} for w in workers],
+        # Was completely missing from this endpoint - a recording started
+        # from the Live tab button, from a voice command ("start
+        # recording"), or from a previous app session had NO way to ever
+        # be reflected back to the phone's UI except the literal response
+        # of the one HTTP call that started it. If the app was closed and
+        # reopened, or the recording was started/stopped from somewhhere
+        # else, the button's local on-screen state silently went stale and
+        # showed "not recording" while the laptop kept writing video
+        # forever (or the reverse) - this is what "keeps on recording"
+        # actually was. Now any camera actively manual-recording is
+        # reflected here so the phone can resync on every 2s poll.
+        "recording": any(w.manual_record for w in workers),
         "night_vision": any(getattr(w, "nv", None) and w.nv.enabled for w in workers),
         "siren": bool(_siren_manual),
         "emergency": bool(_emergency_on),
@@ -4364,36 +4874,131 @@ def api_restore_alert(aid):
 
 @app.route("/api/alert/<int:aid>/delete", methods=["POST"])
 def api_delete_alert(aid):
-    """Permanently delete an alert and its associated files (snapshot/video)."""
+    """Permanently delete an alert and its associated files (snapshot/video).
+
+    Hardened after a report of "snapshot file got deleted but the alert
+    row was still there afterward" - i.e. this endpoint was reporting
+    {"ok": true, "deleted": true} in a case where the row deletion either
+    never happened or didn't actually match anything. Two real gaps found
+    on inspection, both fixed here:
+
+      1. The DELETE statements' rowcount was never checked. If the DELETE
+         FROM alerts WHERE alert_id=? matched zero rows for ANY reason
+         (id already gone, a concurrent request already deleted it, a
+         type mismatch somewhere upstream), this endpoint still returned
+         ok=true/deleted=true unconditionally - lying to the caller. Now
+         it checks db.conn.total_changes / cursor.rowcount and returns a
+         clear ok=false, deleted=false, reason="alert_not_found" instead
+         of a false positive.
+
+      2. No exception handling around the DB writes. If DELETE or commit()
+         raised (locked DB, disk I/O error, WAL checkpoint hiccup under
+         concurrent access from the Flask dashboard's own polling), that
+         exception propagated as a raw 500 with no {"ok": false} payload
+         the phone/web JS could show the user - and worse, since the file
+         had ALREADY been removed by that point (file deletion happens
+         before the DB writes), the result was exactly "file gone, DB row
+         still there" with no visible error. Now file removal only
+         proceeds after the DB delete is confirmed to have actually
+         removed the row, so a DB-side failure can no longer leave an
+         orphaned deleted-file/still-there-row split state.
+    """
     db = Database(config.DB_PATH)
     try:
-        row = db.conn.execute("SELECT snapshot_path, video_path FROM alerts WHERE alert_id=?", (aid,)).fetchone()
-        if row:
-            # Delete associated files
-            for path_col in ("snapshot_path", "video_path"):
-                path = row[path_col]
-                if path and os.path.exists(path):
-                    try:
-                        os.remove(path)
-                    except Exception:
-                        pass  # Log but don't fail if file deletion fails
-            # Delete from database
-            db.conn.execute("DELETE FROM alerts WHERE alert_id=?", (aid,))
+        row = db.conn.execute(
+            "SELECT snapshot_path, video_path FROM alerts WHERE alert_id=?", (aid,)
+        ).fetchone()
+        if not row:
+            return jsonify({"ok": False, "alert_id": aid, "deleted": False,
+                             "reason": "alert_not_found"}), 404
+
+        # DB delete FIRST, files SECOND (reversed from before) - this way
+        # a DB-side failure (exception, or a rowcount of 0 for some
+        # reason) leaves the files untouched and the alert still fully
+        # intact/recoverable, instead of the previous order where a DB
+        # failure AFTER the files were already removed produced exactly
+        # the "file gone, row still there" bug being fixed here.
+        try:
+            cur = db.conn.execute("DELETE FROM alerts WHERE alert_id=?", (aid,))
+            deleted_rows = cur.rowcount
             db.conn.execute("DELETE FROM threat_logs WHERE alert_id=?", (aid,))
             db.conn.commit()
+        except Exception as e:
+            db.conn.rollback()
+            print(f"[CAPHY] delete_alert {aid}: DB delete failed, files NOT touched: {e}")
+            return jsonify({"ok": False, "alert_id": aid, "deleted": False,
+                             "reason": f"db_error: {e}"}), 500
+
+        if deleted_rows == 0:
+            # Row vanished between the SELECT above and the DELETE (e.g. a
+            # concurrent duplicate delete request) - not an error exactly,
+            # but still not something THIS request can claim credit for,
+            # and files must stay untouched since we can no longer prove
+            # this request is the one that should own removing them.
+            return jsonify({"ok": False, "alert_id": aid, "deleted": False,
+                             "reason": "alert_already_deleted"}), 409
+
+        # Only now, with the DB delete CONFIRMED (rowcount=1, committed),
+        # remove the associated files.
+        for path_col in ("snapshot_path", "video_path"):
+            path = row[path_col]
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    # The DB row is already gone at this point - a failed
+                    # file removal is now just an orphaned file on disk,
+                    # not a data-integrity problem, so log and move on
+                    # rather than reporting the whole delete as failed.
+                    print(f"[CAPHY] delete_alert {aid}: DB row removed but "
+                          f"failed to remove file {path}: {e}")
+
+        # Record a tombstone BEFORE the Firestore/broadcast calls below -
+        # this is the reconciliation record that fixes "deleted on web,
+        # still shows on phone (or vice versa)": every alert-list refresh
+        # on both web and phone now cross-checks against tombstones (LAN:
+        # /api/alerts/tombstones, cross-network: the deleted_alerts
+        # Firestore collection) and drops any alert that has one, even if
+        # the live broadcast/cloud-delete below was missed entirely (phone
+        # was offline, on a different network, or just polling on its own
+        # schedule). This is what makes the delete a REAL hard delete that
+        # every client eventually converges on, not just "gone from
+        # whichever client made the request right now."
+        db.record_tombstone(aid)
+
         # Also remove the Firestore copy - this was missing entirely, which
         # is why a "deleted" alert kept reappearing for anyone reading it
         # off-LAN (see cloud_alerts.delete_alert()'s docstring for the full
         # explanation). Best-effort: a cloud failure here must not turn a
-        # successful local delete into a reported failure.
+        # successful local delete into a reported failure - the tombstone
+        # above plus the phone's OWN best-effort cloud tombstone write (see
+        # cloud_alerts.delete_alert()) is the real safety net if this
+        # particular Firestore call fails.
         try:
             from identity import get_device_identity
             from storage.cloud_alerts import delete_alert as _cloud_delete_alert
-            _cloud_delete_alert(get_device_identity()["device_id"], aid)
+            _cloud_delete_alert(get_device_identity()["device_id"], aid,
+                                owner_uid=_current_device_owner_uid())
         except Exception as e:
             print(f"[CAPHY] cloud alert delete failed (local delete still succeeded): {e}")
         _broadcast_alert({"event": "changed", "reason": "deleted", "alert_id": aid})
         return jsonify({"ok": True, "alert_id": aid, "deleted": True})
+    finally:
+        db.close()
+
+
+@app.route("/api/alerts/tombstones")
+def api_alert_tombstones():
+    """List of hard-deleted alert_ids (most recent first), for a client to
+    reconcile its own cached/displayed alert list against - see the long
+    comment on storage/database.py's deleted_alerts table for why this
+    exists. Called by both the web dashboard's alert-list refresh and the
+    phone app's Api.alerts() (LAN path) on every load, and its Firestore
+    twin (deleted_alerts collection) is what the phone's cross-network
+    fallback reconciles against instead."""
+    db = Database(config.DB_PATH)
+    try:
+        return jsonify({"ok": True, "deleted_ids": db.get_all_tombstone_ids()})
     finally:
         db.close()
 
@@ -4414,33 +5019,69 @@ def api_delete_many():
     if not ids:
         return jsonify({"ok": False, "error": "no ids given"}), 400
 
+    # Diagnostic logging - added while tracking down reports of "deleted"
+    # alerts reappearing/staying visible. Prints exactly what the browser
+    # asked to delete and what actually happened to each id, so a failure
+    # (row not found, DB error, etc) shows up in the server console instead
+    # of only failing silently on the client.
+    print(f"[CAPHY] delete_many: requested ids={ids}")
+
     db = Database(config.DB_PATH)
     deleted = []
+    skipped_not_found = []
     try:
+        # Same "DB delete first, confirm rowcount, THEN remove files" fix
+        # as api_delete_alert above, plus one more gap this version had on
+        # top of that: commit() previously happened ONCE after the whole
+        # loop, not per-row. If a DELETE partway through the loop raised
+        # (locked DB, disk error), every row processed before that point
+        # had ALREADY had its file removed from disk, but the transaction
+        # holding all their DELETEs (including the earlier successful
+        # ones) never reached commit() - so those earlier alerts ended up
+        # in exactly the reported "file gone, DB row still there" state
+        # too, not just the one that triggered the exception. Now each
+        # alert commits its own delete individually, so one bad id can't
+        # roll back or block the ones before/after it in the batch.
         for aid in ids:
             row = db.conn.execute(
                 "SELECT snapshot_path, video_path FROM alerts WHERE alert_id=?", (aid,)).fetchone()
             if not row:
+                print(f"[CAPHY] delete_many: id {aid} not found in DB - already deleted, or never existed")
+                skipped_not_found.append(aid)
+                continue
+            try:
+                cur = db.conn.execute("DELETE FROM alerts WHERE alert_id=?", (aid,))
+                if cur.rowcount == 0:
+                    db.conn.rollback()
+                    continue   # already deleted by something else - skip, don't touch its files
+                db.conn.execute("DELETE FROM threat_logs WHERE alert_id=?", (aid,))
+                db.conn.commit()
+            except Exception as e:
+                db.conn.rollback()
+                print(f"[CAPHY] delete_many: DB delete failed for alert {aid}, "
+                      f"its file NOT touched: {e}")
                 continue
             for path_col in ("snapshot_path", "video_path"):
                 path = row[path_col]
                 if path and os.path.exists(path):
                     try:
                         os.remove(path)
-                    except Exception:
-                        pass
-            db.conn.execute("DELETE FROM alerts WHERE alert_id=?", (aid,))
-            db.conn.execute("DELETE FROM threat_logs WHERE alert_id=?", (aid,))
+                    except Exception as e:
+                        print(f"[CAPHY] delete_many: DB row {aid} removed but "
+                              f"failed to remove file {path}: {e}")
+            db.record_tombstone(aid)
             deleted.append(aid)
-        db.conn.commit()
+        print(f"[CAPHY] delete_many: deleted={deleted} skipped_not_found={skipped_not_found}")
         if deleted:
             # Same Firestore cleanup as the single-delete route above -
             # without this, bulk-deleted alerts also kept reappearing for
-            # anyone reading them off-LAN.
+            # anyone reading them off-LAN. Tombstones (above) are the real
+            # safety net if this fails - same reasoning as api_delete_alert.
             try:
                 from identity import get_device_identity
                 from storage.cloud_alerts import delete_alerts as _cloud_delete_alerts
-                _cloud_delete_alerts(get_device_identity()["device_id"], deleted)
+                _cloud_delete_alerts(get_device_identity()["device_id"], deleted,
+                                     owner_uid=_current_device_owner_uid())
             except Exception as e:
                 print(f"[CAPHY] cloud alerts batch delete failed (local delete still succeeded): {e}")
             _broadcast_alert({"event": "changed", "reason": "deleted_many", "alert_ids": deleted})
@@ -4466,11 +5107,31 @@ def api_dismiss_all():
 def video_file(name):
     name = os.path.basename(name)
     # recordings live in VIDEOS_DIR now, older ones in CAPTURES_DIR - check both
+    found_path = None
     for d in (getattr(config, "VIDEOS_DIR", config.CAPTURES_DIR), config.CAPTURES_DIR):
-        path = os.path.abspath(os.path.join(d, name))
-        if os.path.exists(path):
-            return send_file(path)
-    abort(404)
+        candidate = os.path.abspath(os.path.join(d, name))
+        if os.path.exists(candidate):
+            found_path = candidate
+            break
+    if not found_path:
+        abort(404)
+    # Same transient-lock fix as /snapshot/<name>: VIDEOS_DIR/CAPTURES_DIR
+    # live in the real Windows Videos/Pictures libraries, which OneDrive
+    # commonly syncs - it can hold a brief exclusive lock right after a
+    # file is finished writing (a recording's cv2.VideoWriter.release(),
+    # or OneDrive's own post-write hash/upload pass), throwing
+    # PermissionError ("Access is denied") on a read that happens in that
+    # narrow window. Short retry-with-backoff instead of failing outright.
+    import time as _time
+    last_err = None
+    for attempt in range(5):
+        try:
+            return send_file(found_path)
+        except PermissionError as e:
+            last_err = e
+            _time.sleep(0.15 * (attempt + 1))
+    print(f"[CAPHY] video '{found_path}' still locked after retries: {last_err}")
+    abort(503)
 
 
 @app.route("/api/media/delete", methods=["POST"])
@@ -4625,6 +5286,27 @@ def api_assistant():
     if not user_text:
         return jsonify({"type": "error", "reply": "I didn't catch anything - could you say that again?"}), 400
 
+    # Optional recent conversation turns from the phone, e.g.
+    # [{"role": "user", "text": "check the cam"}, {"role": "assistant", "text": "..."}]
+    # so a follow-up question ("did you see anyone?") isn't sent to Groq as
+    # a completely isolated, context-free message - previously every single
+    # request was built as just [system, system, THIS message], so the
+    # model had no way to know what "it"/"that"/a bare follow-up referred
+    # to. This was never a memory/ML limitation - the server just never
+    # received or sent the prior turns at all. Bounded to a handful of
+    # recent turns (not the whole chat) to keep the request small and
+    # because only recent context is usually relevant to a follow-up.
+    raw_history = data.get("history") or []
+    history = []
+    if isinstance(raw_history, list):
+        for turn in raw_history[-8:]:
+            if not isinstance(turn, dict):
+                continue
+            role = turn.get("role")
+            text = (turn.get("text") or "").strip()
+            if role in ("user", "assistant") and text:
+                history.append({"role": role, "text": text})
+
     from assistant_ai.router import handle_request
 
     # session.get("display_name") only exists for browser dashboard
@@ -4644,6 +5326,7 @@ def api_assistant():
         user_name=user_name,
         live_state=_assistant_live_state(),
         action_handlers=_assistant_action_handlers(),
+        history=history,
     )
     return jsonify(result)
 
@@ -4984,9 +5667,19 @@ def history():
       if(!ok) return;
       try{{
         const r = await fetch('/api/alert/'+id+'/delete',{{method:'POST'}});
-        const d = await r.json();
-        if(d && d.ok) removeRowsFromDom([id]);
-      }}catch(e){{}}
+        const d = await r.json().catch(()=>null);
+        if(d && d.ok) {{
+          removeRowsFromDom([id]);
+        }} else {{
+          // Previously silent - a failed delete (already-deleted,
+          // DB error, etc) looked identical to a successful one from the
+          // user's side, since the row just stayed on screen with no
+          // feedback either way. Now says WHY when the server told us.
+          alert('Could not delete: ' + (d && d.reason ? d.reason : ('HTTP ' + r.status)));
+        }}
+      }}catch(e){{
+        alert('Could not delete: ' + e);
+      }}
     }}
 
     // ---- Select mode: checkboxes, Select All (scoped to what's on screen
@@ -5097,11 +5790,27 @@ def history():
           method: 'POST', headers: {{'Content-Type':'application/json'}},
           body: JSON.stringify({{ids: ids}})
         }});
-        const d = await r.json();
+        const d = await r.json().catch(()=>null);
         if(d && d.ok){{
-          removeRowsFromDom(d.deleted || ids);
+          removeRowsFromDom(d.deleted && d.deleted.length ? d.deleted : ids);
+          if(!d.deleted || d.deleted.length < ids.length){{
+            // Some requested ids were never found/deleted server-side (already
+            // gone, or a stale id from a page that didn't refresh) - previously
+            // this was indistinguishable from full success. Now it's visible.
+            alert('Note: only ' + (d.deleted ? d.deleted.length : 0) + ' of ' + ids.length +
+                  ' selected alert(s) were actually deleted. The rest may have already been removed.');
+          }}
+        }} else {{
+          // Previously an empty catch + no else here meant ANY failure -
+          // a non-401 error, a malformed response, an exception - looked
+          // identical to success: select mode just quietly closed and the
+          // rows stayed on screen with zero feedback. This is exactly the
+          // "I deleted it and it's still there" symptom - now it says why.
+          alert('Could not delete selected alerts: ' + (d && d.error ? d.error : ('HTTP ' + r.status)));
         }}
-      }}catch(e){{}}
+      }}catch(e){{
+        alert('Could not delete selected alerts: ' + e);
+      }}
       exitSelectMode();
     }}
 
@@ -5163,7 +5872,36 @@ def history():
       es.onerror = function(){{
         const dot = document.getElementById('liveDot'); if(dot) dot.style.background = 'var(--red)';
       }};
-      es.onmessage = function(){{
+      es.onmessage = function(ev){{
+        let payload = null;
+        try {{ payload = JSON.parse(ev.data); }} catch(e) {{}}
+        // Delete/dismiss/restore events (pushed by this SAME laptop's own
+        // /api/alert/.../delete route, whether the request came from this
+        // browser, the dashboard on another tab, or the PHONE app over
+        // LAN) carry {{event:'changed', reason:...}}. Those are applied
+        // in place immediately - this is what makes a phone-initiated
+        // delete disappear from this table with no manual refresh, the
+        // same way a delete clicked right here already does via
+        // removeRowsFromDom(). A brand-new alert payload has no 'event'
+        // key (it's the raw alert row) and intentionally still only
+        // shows the banner, so an in-progress filter/page never gets
+        // yanked out from under the user by a detection firing elsewhere.
+        if(payload && payload.event === 'changed'){{
+          if(payload.reason === 'deleted' && payload.alert_id != null){{
+            removeRowsFromDom([payload.alert_id]);
+            return;
+          }}
+          if(payload.reason === 'deleted_many' && Array.isArray(payload.alert_ids)){{
+            removeRowsFromDom(payload.alert_ids);
+            return;
+          }}
+          if(payload.reason === 'dismissed_all'){{
+            location.reload();
+            return;
+          }}
+          // 'dismissed' / 'restored' don't change what a delete-focused
+          // view needs to show right now - fall through to the banner.
+        }}
         const banner = document.getElementById('newAlertBanner');
         if(banner) banner.style.display = 'block';
       }};
@@ -5248,9 +5986,29 @@ def history():
 def snapshot(name):
     import os
     path = os.path.abspath(os.path.join(config.CAPTURES_DIR, os.path.basename(name)))
-    if os.path.exists(path):
-        return send_file(path)
-    abort(404)
+    if not os.path.exists(path):
+        abort(404)
+    # BUG FIX: "Access is denied" (PermissionError) opening a snapshot that
+    # DOES exist, right after it was just saved. CAPTURES_DIR lives inside
+    # the real Windows Pictures library (config._gallery_dir()), which on
+    # most machines is silently redirected/synced by OneDrive - OneDrive
+    # can hold a brief exclusive lock on a file for a moment right after
+    # it's written while it hashes/uploads it, before handing it back for
+    # normal reads. send_file() opening it in that exact window throws
+    # PermissionError instead of just waiting. A short retry-with-backoff
+    # (this lock is normally gone within a few hundred ms) fixes it
+    # without weakening any actual permission check - this route already
+    # requires a logged-in session via the before_request guard above.
+    import time as _time
+    last_err = None
+    for attempt in range(5):
+        try:
+            return send_file(path)
+        except PermissionError as e:
+            last_err = e
+            _time.sleep(0.15 * (attempt + 1))
+    print(f"[CAPHY] snapshot '{path}' still locked after retries: {last_err}")
+    abort(503)
 
 
 @app.route("/export")
@@ -5317,7 +6075,21 @@ def logs():
 
     yolo_ok = any(w.yolo_ok for w in workers)
     nv_on = any(getattr(w, "nv", None) and w.nv.enabled for w in workers)
-    fcm_on = os.path.exists(config.FIREBASE_KEY)
+    # BUG FIX: config.FIREBASE_KEY ("firebase_key.json") is a bare relative
+    # path, checked here against the current working directory - which is
+    # %LOCALAPPDATA%\CAPHY once the packaged .exe calls _use_writable_workdir(),
+    # not where the bundled key actually unpacks to (sys._MEIPASS). Firebase
+    # itself already resolves this correctly in firebase_auth.py
+    # (FIREBASE_KEY_PATH, via resource_path()) and initializes fine either
+    # way - this status check was just looking at the wrong path, so it
+    # showed "Push Notifications: off" / "Firebase FCM: off" even when
+    # Firebase was actually connected. Check the SAME resolved path
+    # firebase_auth.py uses instead of the raw config string.
+    try:
+        from firebase_auth import FIREBASE_KEY_PATH as _fb_key_path
+        fcm_on = os.path.exists(_fb_key_path)
+    except Exception:
+        fcm_on = os.path.exists(config.FIREBASE_KEY)
     _now_ts = time.time()
     _open_workers = [w for w in workers if not w.paused]
     stalled = any((_now_ts - getattr(w, "_last_frame_ok", 0)) > 10
@@ -5794,6 +6566,24 @@ def settings():
           const el = document.getElementById('pairQr');
           el.innerHTML = '';
           pairQrObj = new QRCode(el, { text: JSON.stringify(d.payload), width: 200, height: 200 });
+          // qrcodejs sets a title/alt on whichever element it renders
+          // (img and/or canvas, depending on version/browser) to the raw
+          // text it encoded - the full pairing payload: device_id, LAN IP,
+          // nonce, port - which showed up as a plain-text tooltip on
+          // hover. Strip title/alt off every child right after rendering,
+          // and keep re-stripping for a moment in case the library
+          // finishes drawing asynchronously.
+          function _stripQrTooltip(){
+            el.querySelectorAll('*').forEach(function(node){
+              node.removeAttribute('title');
+              if(node.tagName === 'IMG') node.setAttribute('alt', 'CAPHY pairing QR code');
+            });
+            el.removeAttribute('title');
+          }
+          _stripQrTooltip();
+          setTimeout(_stripQrTooltip, 50);
+          setTimeout(_stripQrTooltip, 200);
+          setTimeout(_stripQrTooltip, 600);
           document.getElementById('pairStatus').textContent =
             'Code expires in ' + Math.round(d.expires_in/60) + ' min \\u00b7 scan with the CAPHY app';
           // Refresh a bit BEFORE expiry so an on-screen code is always valid.
@@ -6060,35 +6850,34 @@ def settings():
     lan_ip = _local_ip()
     sec_offline = f"""
       <div class="sechead">Offline Mode</div>
-      <div class="subd">Continue using CAPHY without internet.</div>
+      <div class="subd">Works without internet.</div>
       <p style="color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:16px">
-        <b>No internet?</b> Your phone and this laptop can still talk to each other
-        over Wi-Fi. Just keep them on the same network, and everything works
-        locally. When internet comes back, the app switches automatically &mdash;
-        no setup needed.
+        No internet at home? Keep your phone and this laptop on the same
+        Wi-Fi and CAPHY keeps working. It switches back automatically once
+        the internet returns.
       </p>
 
       <div class="secheadsmall">Laptop Address</div>
       {_irow("Local Wi-Fi address", f"http://{lan_ip}:5000")}
       <div style="color:var(--dim);font-size:11.5px;margin:6px 2px 18px;line-height:1.6">
-        The app finds this automatically. Usually you won't need to type it.
+        Found automatically — you won't need to type this.
       </div>
 
-      <div class="secheadsmall">How to use Offline Mode</div>
+      <div class="secheadsmall">How to Use It</div>
       <div style="color:var(--muted);font-size:13px;line-height:1.9;padding:12px;background:var(--panel);border-radius:8px">
-        ✓ Keep laptop and phone on the same Wi-Fi (or create a phone hotspot and connect the laptop)<br>
-        ✓ Keep CAPHY running on this laptop<br>
-        ✓ Open the CAPHY app on your phone &mdash; it switches automatically when offline<br>
-        ✓ You'll see an "Offline mode" banner when using local Wi-Fi
+        ✓ Same Wi-Fi on both devices (or a phone hotspot with the laptop connected)<br>
+        ✓ Keep CAPHY running on the laptop<br>
+        ✓ Open the app — it switches to offline mode on its own<br>
+        ✓ An "Offline mode" banner appears when you're on local Wi-Fi
       </div>
 
-      <div class="secheadsmall" style="margin-top:18px">Available Offline</div>
+      <div class="secheadsmall" style="margin-top:18px">What Works Offline</div>
       {_irow("Live camera", "✓ Yes")}
       {_irow("Arm, disarm, siren", "✓ Yes")}
-      {_irow("Motion detection", "✓ Yes (always works)")}
-      {_irow("Push notifications", "✗ No (needs internet)")}
-      {_irow("Remote Viewing", "✗ No (needs internet)")}
-      {_irow("Cloud Backup", "✗ No (resumes when online)")}
+      {_irow("Motion detection", "✓ Yes, always")}
+      {_irow("Push notifications", "✗ Needs internet")}
+      {_irow("Remote viewing (away from home)", "✗ Needs internet")}
+      {_irow("Cloud backup", "✗ Resumes when back online")}
     """
 
     sections = {"detection": sec_detection, "cameras": sec_cameras, "alerts": sec_alerts,
@@ -6146,7 +6935,9 @@ def video_feed(cam=0):
             jpg = workers[cam].get_jpeg() if 0 <= cam < len(workers) else None
             if jpg is None:
                 if placeholder is None:
-                    img = np.full((config.FRAME_HEIGHT, config.FRAME_WIDTH, 3), 18, np.uint8)
+                    sw = getattr(config, "STREAM_WIDTH", config.FRAME_WIDTH)
+                    sh = getattr(config, "STREAM_HEIGHT", config.FRAME_HEIGHT)
+                    img = np.full((sh, sw, 3), 18, np.uint8)
                     placeholder = cv2.imencode(".jpg", img)[1].tobytes()
                 jpg = placeholder
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"

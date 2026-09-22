@@ -713,10 +713,27 @@ class Api {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return [];
     try {
+      // BUG FIX: "connect locally when offline" (real Wi-Fi/LAN, but no
+      // actual internet reaching Firestore's servers) is the single worst
+      // case for a default Firestore .get() call - the socket looks
+      // reachable, so the SDK spends a long internal timeout actually
+      // trying the server before EVER falling back to its local cache,
+      // instead of failing fast. That long stall was outliving whatever
+      // this screen's "still checking" state assumed, and depending on
+      // exactly how/when it eventually gave up, could still end up
+      // reporting zero devices - sending an already-paired phone back to
+      // the QR/onboarding screen even on a LAN it could otherwise use
+      // fine. GetOptions(source: cache) skips the server attempt entirely
+      // and reads only Firestore's local on-device cache - instant, and
+      // this is exactly the data DeviceGate needs (has this account EVER
+      // paired a device before), not a live server read. A short
+      // .timeout() is still kept as a hard backstop in case the cache
+      // read itself is ever slow for some other reason.
       final q = await _fs
           .collection('devices')
           .where('owner_uid', isEqualTo: uid)
-          .get();
+          .get(const fs.GetOptions(source: fs.Source.cache))
+          .timeout(const Duration(seconds: 5));
       return q.docs.map((d) {
         final m = Map<String, dynamic>.from(d.data());
         m['device_id'] = d.id;
@@ -730,8 +747,31 @@ class Api {
         return m;
       }).toList();
     } catch (e) {
-      lastError = 'Could not check paired devices: $e';
-      return [];
+      // Cache read failed too (e.g. truly first-ever launch with an empty
+      // cache) - fall back to asking the real server, since at that point
+      // there is nothing local left to lose by waiting for it.
+      try {
+        final q2 = await _fs
+            .collection('devices')
+            .where('owner_uid', isEqualTo: uid)
+            .get()
+            .timeout(const Duration(seconds: 6));
+        return q2.docs.map((d) {
+          final m = Map<String, dynamic>.from(d.data());
+          m['device_id'] = d.id;
+          final lastSeen = m['last_seen'];
+          if (lastSeen is fs.Timestamp) {
+            final age = DateTime.now().difference(lastSeen.toDate());
+            m['online'] = age.inSeconds <= 45;
+          } else {
+            m['online'] = false;
+          }
+          return m;
+        }).toList();
+      } catch (e2) {
+        lastError = 'Could not check paired devices: $e2';
+        return [];
+      }
     }
   }
 
