@@ -265,9 +265,20 @@ class Database:
                 "INSERT INTO users(username, password_hash, role, created_at) VALUES(?,?,?,?)",
                 ("admin", hashlib.sha256(b"admin").hexdigest(), "Homeowner", _now()))
         if self.conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0:
+            # BUG FIX: this used to hardcode 0.5 here, completely separate
+            # from config.PERSON_CONF - raising the confidence threshold in
+            # config.py alone would silently do nothing for a fresh install,
+            # since this seeded DB row overrides it the moment Settings is
+            # ever saved/read. Reading the same config value keeps the two
+            # in sync.
+            try:
+                import config as _config
+                default_person_conf = float(getattr(_config, "PERSON_CONF", 0.65))
+            except Exception:
+                default_person_conf = 0.65
             self.conn.execute(
                 "INSERT INTO settings(sensitivity, person_conf, armed, night_vision) VALUES(?,?,?,?)",
-                (1500, 0.5, 1, 0))
+                (1500, default_person_conf, 1, 0))
         self.conn.commit()
 
     def add_alert(self, tier, distance_m, confidence, snapshot_path, video_path, camera=None,

@@ -57,7 +57,41 @@ MOTION_BLUR        = 5
 # ---- Factor 2: Person (YOLOv8) ----
 YOLO_MODEL      = "models/caphy_person_best.pt"   # custom-trained CAPHY person model (committed to git so teammates get it)
 PERSON_CLASS_ID = 0
-PERSON_CONF     = 0.50
+
+# Raised from 0.50 -> 0.65: the confidence floor is the single biggest lever
+# against a color/lighting/shadow glitch getting reported as a "person" by
+# YOLO in the first place. 0.65 is still comfortably inside the range a real,
+# clearly-visible human at Tier 1-3 distance scores in practice (this
+# project's own evaluation data - see EVAL_LOGGING below - showed real
+# detections consistently well above 0.7), while cutting off the low-
+# confidence "maybe" range where a weird shadow or color blob is most likely
+# to slip through. Still fully configurable via Settings (the person_conf
+# slider) or here.
+PERSON_CONF     = 0.65
+
+# ---- Factor 2 extra evidence checks (still AI-only - never color, ----
+# ---- brightness, or motion-area based; see detection/two_factor.py) ----
+# YOLO passing its confidence threshold on a single frame is not, by
+# itself, enough evidence to declare "a person is here" - that is exactly
+# how a one-off misfire on a color change, a moving shadow, or a stray
+# reflection could turn into a false alert. Two more independent checks:
+#
+#   1. SIZE - the box must be big enough to plausibly be a real, nearby
+#      human, not a tiny fragment of noise/clutter. Filters out spurious
+#      sub-detections without penalizing a real person legitimately far
+#      away at Tier 1 (still well above these floors at 1080p capture).
+#   2. PERSISTENCE - the SAME evaluation must keep finding an accepted
+#      person for several YOLO passes IN A ROW (with a little tolerance
+#      for a missed pass here and there) before CAPHY calls it confirmed.
+#      A real person keeps being detected as a person, frame after frame;
+#      a lighting flicker or a one-frame shadow artifact does not.
+#
+# Both apply on TOP of the confidence threshold above - all three must
+# agree before an alert can ever fire.
+PERSON_MIN_BOX_HEIGHT_FRAC  = 0.06     # box height must be >= 6% of frame height
+PERSON_MIN_BOX_AREA_FRAC    = 0.0025   # AND box area must be >= 0.25% of frame area
+PERSON_CONSECUTIVE_REQUIRED = 3        # this many YOLO evaluations in a row must confirm a person...
+PERSON_CONSECUTIVE_GRACE    = 1        # ...tolerating up to this many missed evaluations without losing progress
 
 # ---- Threat tiers (distance in meters) ----
 DISTANCE_K      = 1350.0  # = 900.0 * (1080/720), rescaled for the FRAME_HEIGHT=1080 bump above - keeps the same real-world meter readings as before

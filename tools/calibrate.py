@@ -127,7 +127,10 @@ def _take_reading(distance, source, samples):
         ok, frame = cap.read()
         if not ok:
             break
-        persons = person.detect(frame)
+        # PersonDetector.detect() now returns (persons, best_rejected) - see
+        # detection/person_detector.py - the second value is debug-only info
+        # about the best non-qualifying detection, not needed here.
+        persons, _best_rejected = person.detect(frame)
         if persons:
             p = max(persons, key=lambda x: x["box"][3] - x["box"][1])
             x1, y1, x2, y2 = p["box"]

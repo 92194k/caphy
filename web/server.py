@@ -239,7 +239,12 @@ class Worker(threading.Thread):
             self.yolo_ok = True
         except Exception as e:
             self._log("WARN", "yolo", f"not loaded ({e})")
-        self.engine = TwoFactorDetector(self.motion, self.person, self.tier, config.PERSON_EVERY_N)
+        self.engine = TwoFactorDetector(
+            self.motion, self.person, self.tier, config.PERSON_EVERY_N,
+            min_box_height_frac=getattr(config, "PERSON_MIN_BOX_HEIGHT_FRAC", 0.06),
+            min_box_area_frac=getattr(config, "PERSON_MIN_BOX_AREA_FRAC", 0.0025),
+            consecutive_required=getattr(config, "PERSON_CONSECUTIVE_REQUIRED", 3),
+            consecutive_grace=getattr(config, "PERSON_CONSECUTIVE_GRACE", 1))
         self.highest = config.HIGHEST_SECURITY
 
     def _log(self, level, mod, msg):
@@ -539,10 +544,25 @@ class Worker(threading.Thread):
                 self.tier.set_armed(armed)
 
                 if result["motion"] and result["ran_yolo"]:
+                    # Accept/reject debug logging (why THIS evaluation did or
+                    # didn't count as a confirmed person) - class, confidence,
+                    # consecutive-evaluation count, and the specific rejection
+                    # reason, per the two-factor gate in detection/two_factor.py.
                     if result["threat"]:
-                        self._log("DETECT", "yolo", f"person conf={result['persons'][0]['conf']:.2f} tier={result['tier']}")
+                        p0 = result["persons"][0]
+                        self._log("DETECT", "yolo",
+                                  f"CONFIRMED person conf={p0['conf']:.2f} tier={result['tier']} "
+                                  f"consecutive={result['consecutive_hits']}/{result['consecutive_required']}")
                     else:
-                        self._log("DETECT", "yolo", "motion, no person - ignored")
+                        reason = result.get("reject_reason") or "no_person"
+                        br = result.get("best_rejected")
+                        extra = ""
+                        if br:
+                            what = "person(below threshold)" if br.get("is_person_class") else br.get("cls_name", "?")
+                            extra = f" closest_match=class:{what} conf={br['conf']:.2f}"
+                        self._log("DETECT", "yolo",
+                                  f"NOT person - {reason} candidates={result.get('candidate_persons', 0)} "
+                                  f"consecutive={result['consecutive_hits']}/{result['consecutive_required']}{extra}")
 
                     # ---- evaluation data (thesis Chapter 4) ----
                     # Logged only when EVAL_LOGGING is on, so normal runs don't
@@ -6260,7 +6280,7 @@ def settings():
                 except ValueError:
                     pct = 60
                 sens = round(4000 - pct / 100 * 3900)         # % -> min pixel-change area
-                conf = request.form.get("person_conf", 0.5)
+                conf = request.form.get("person_conf", getattr(config, "PERSON_CONF", 0.65))
                 t1 = request.form.get("tier1", config.TIER1_MIN_DIST)
                 t3 = request.form.get("tier3", config.TIER3_MAX_DIST)
                 night = 1 if request.form.get("night") == "on" else 0
@@ -6354,7 +6374,7 @@ def settings():
     active = request.args.get("tab", "detection")
     min_area = float(s["sensitivity"] or 1500)
     mot_pct = max(0, min(100, round((4000 - min_area) / 3900 * 100)))
-    pconf = float(s["person_conf"] or 0.5)
+    pconf = float(s["person_conf"] or getattr(config, "PERSON_CONF", 0.65))
     prefs = load_prefs()
     t1 = prefs.get("tier1", config.TIER1_MIN_DIST)
     t3 = prefs.get("tier3", config.TIER3_MAX_DIST)

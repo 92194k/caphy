@@ -38,6 +38,13 @@ class PersonDetector:
         self.person_class = person_class
         self.conf = conf
         self.imgsz = imgsz            # smaller = faster inference
+        # Internal-only floor passed to the model call itself (see detect()) -
+        # deliberately much lower than self.conf so a sub-threshold or
+        # wrong-class detection still comes back from YOLO instead of being
+        # silently dropped before this code can see and log it. This is NOT
+        # a relaxation of what counts as an accepted person - self.conf is
+        # still the only threshold that decides that.
+        self._debug_conf_floor = 0.10
 
         # Ultralytics defaults to CPU unless a device is explicitly given -
         # it does NOT auto-detect and use an available NVIDIA GPU on its
@@ -63,16 +70,60 @@ class PersonDetector:
             print(f"[CAPHY] Could not check for GPU, using CPU ({e})")
 
     def detect(self, frame):
-        """Return a list of persons: [{'box': (x1,y1,x2,y2), 'conf': float}, ...]."""
+        """Return (persons, best_rejected).
+
+        persons: [{'box': (x1,y1,x2,y2), 'conf': float}, ...] - ONLY boxes
+                 YOLO itself classified as the trained "person" class AND
+                 at/above self.conf. This is the sole piece of evidence
+                 CAPHY ever treats as "this might be a person" - nothing
+                 about color, brightness, or motion size feeds into it.
+
+        best_rejected: debug info about the single highest-confidence
+                 detection this frame that did NOT qualify as an accepted
+                 person (wrong class, or right class but under threshold),
+                 or None if YOLO found nothing at all. Never used as
+                 detection evidence - purely so the pipeline can log WHY a
+                 motion event was rejected (see detection/two_factor.py
+                 and Worker.run()'s "DETECT" log line), e.g. "closest match
+                 was class=chair conf=0.31" instead of just "no person".
+
+        BUG FIX (evidence quality): this used to call the model with
+        classes=[self.person_class] and conf=self.conf, which means any
+        detection that didn't already qualify was silently discarded by
+        ultralytics itself before this code ever saw it - there was no way
+        to tell "YOLO saw nothing" apart from "YOLO saw a person-shaped
+        thing at 0.40 confidence, just under our 0.65 floor" apart from
+        "YOLO saw a chair". Running with NO class filter and a low internal
+        floor, then doing the real accept/reject filtering here in Python,
+        costs nothing extra (ultralytics' classes= argument only filters
+        results AFTER inference, it does not skip work) and turns every
+        rejection into a debuggable, loggable reason instead of a silent
+        "nothing happened".
+        """
         results = self.model(
-            frame, verbose=False, classes=[self.person_class], conf=self.conf,
+            frame, verbose=False, conf=self._debug_conf_floor,
             imgsz=self.imgsz, device=self.device)
 
         persons = []
+        best_rejected = None
         for r in results:
+            names = getattr(r, "names", None) or getattr(self.model, "names", {})
             for b in r.boxes:
-                if int(b.cls[0]) != self.person_class:
-                    continue
+                cls_id = int(b.cls[0])
+                conf = float(b.conf[0])
                 x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
-                persons.append({"box": (x1, y1, x2, y2), "conf": float(b.conf[0])})
-        return persons
+                if cls_id == self.person_class and conf >= self.conf:
+                    persons.append({"box": (x1, y1, x2, y2), "conf": conf})
+                    continue
+                # Track the single best non-qualifying detection this frame,
+                # purely for logging - never fed back into any accept/reject
+                # decision.
+                if best_rejected is None or conf > best_rejected["conf"]:
+                    best_rejected = {
+                        "box": (x1, y1, x2, y2),
+                        "conf": conf,
+                        "cls_id": cls_id,
+                        "cls_name": names.get(cls_id, str(cls_id)) if isinstance(names, dict) else str(cls_id),
+                        "is_person_class": cls_id == self.person_class,
+                    }
+        return persons, best_rejected
