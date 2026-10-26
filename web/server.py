@@ -244,7 +244,8 @@ class Worker(threading.Thread):
             min_box_height_frac=getattr(config, "PERSON_MIN_BOX_HEIGHT_FRAC", 0.06),
             min_box_area_frac=getattr(config, "PERSON_MIN_BOX_AREA_FRAC", 0.0025),
             consecutive_required=getattr(config, "PERSON_CONSECUTIVE_REQUIRED", 3),
-            consecutive_grace=getattr(config, "PERSON_CONSECUTIVE_GRACE", 1))
+            consecutive_grace=getattr(config, "PERSON_CONSECUTIVE_GRACE", 1),
+            stationary_grace=getattr(config, "PERSON_STATIONARY_GRACE", 6))
         self.highest = config.HIGHEST_SECURITY
 
     def _log(self, level, mod, msg):
@@ -837,9 +838,22 @@ class Worker(threading.Thread):
         it. Returns (ok, elapsed_seconds) - ok is False if the camera never
         opened or that first read failed outright."""
         try:
+            # FOURCC MUST be set BEFORE width/height on Windows/DirectShow -
+            # changing pixel format after resolution is already picked can
+            # be ignored by some camera drivers. See config.CAMERA_FOURCC's
+            # comment for why this is the actual fix for "1080p camera is
+            # laggy" (most webcams default to an uncompressed format that
+            # can't reach 30fps at 1080p over USB2 - MJPG lets the camera's
+            # own hardware compress each frame before sending it over USB).
+            fourcc = getattr(config, "CAMERA_FOURCC", None)
+            if fourcc:
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
             cap.set(cv2.CAP_PROP_BUFFERSIZE, getattr(config, "CAP_BUFFERSIZE", 1))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
+            fps = getattr(config, "CAMERA_FPS", None)
+            if fps:
+                cap.set(cv2.CAP_PROP_FPS, fps)
         except Exception:
             pass
         if not cap.isOpened():
@@ -955,9 +969,21 @@ class Worker(threading.Thread):
 
         cap = cv2.VideoCapture(src)
         try:
+            # Same MJPG/FPS request as the Windows DirectShow/MSMF path
+            # above (_configure_and_probe) - harmless no-op for a source
+            # that doesn't support it (RTSP/IP cameras typically ignore
+            # this and keep their own stream format), but fixes the same
+            # "1080p is laggy over USB2" issue for a local camera that
+            # reaches this fallback path instead.
+            fourcc = getattr(config, "CAMERA_FOURCC", None)
+            if fourcc:
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
             cap.set(cv2.CAP_PROP_BUFFERSIZE, getattr(config, "CAP_BUFFERSIZE", 1))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
+            fps = getattr(config, "CAMERA_FPS", None)
+            if fps:
+                cap.set(cv2.CAP_PROP_FPS, fps)
         except Exception:
             pass
         if not cap.isOpened():

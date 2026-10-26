@@ -47,13 +47,26 @@ Nothing in this file ever looks at frame colors, pixel brightness, or the
 raw motion-detector's area/magnitude as evidence that something is a person -
 those numbers exist only for Factor 1's cheap "did anything move at all?"
 gate and for the thesis evaluation log, never for this decision.
+
+A STANDING-STILL PERSON IS STILL A PERSON
+------------------------------------------
+Motion (Factor 1) is only required to START a confirmation - it is not
+required to KEEP one. A background-subtraction motion detector correctly
+reports "no motion" once a person stops moving, but that person has not
+vanished from the actual video frame, so YOLO can and still does see them.
+Once a person is CONFIRMED, this file keeps evaluating YOLO on the raw frame
+even while motion is absent, and only drops the confirmation if YOLO ALSO
+stops finding them for PERSON_STATIONARY_GRACE evaluations in a row (config
+.py). A scene that was never confirmed and currently has no motion is still
+left alone immediately, exactly as before - this only affects someone who
+has already cleared the full two-factor bar at least once.
 """
 
 
 class TwoFactorDetector:
     def __init__(self, motion_detector, person_detector=None, tier_engine=None,
                  person_every_n=1, min_box_height_frac=0.06, min_box_area_frac=0.0025,
-                 consecutive_required=3, consecutive_grace=1):
+                 consecutive_required=3, consecutive_grace=1, stationary_grace=6):
         self.motion = motion_detector
         self.person = person_detector
         self.tier = tier_engine
@@ -65,19 +78,26 @@ class TwoFactorDetector:
         self.min_box_height_frac = float(min_box_height_frac)
         self.min_box_area_frac = float(min_box_area_frac)
 
-        # ---- temporal persistence / hysteresis ----
+        # ---- temporal persistence / hysteresis (INITIAL confirmation - motion-gated) ----
         self.consecutive_required = max(1, int(consecutive_required))
         self.consecutive_grace = max(0, int(consecutive_grace))
         self._consecutive_hits = 0
         self._consecutive_misses = 0
         self._confirmed = False
 
+        # ---- stationary hold (keeps an ALREADY-confirmed person even once
+        # they stop moving; see process() for why) ----
+        self.stationary_grace = max(0, int(stationary_grace))
+        self._stationary_misses = 0
+
     def reset(self):
-        """Forget the current person entirely. Call when motion clears, or
-        when persistence has been lost for longer than the grace window."""
+        """Forget the current person entirely. Call when there is no motion
+        and no one is currently confirmed, or when persistence/stationary
+        hold has been lost for longer than its grace window."""
         self._last_persons = []
         self._consecutive_hits = 0
         self._consecutive_misses = 0
+        self._stationary_misses = 0
         self._confirmed = False
         if self.tier is not None:
             self.tier.reset()
@@ -101,6 +121,7 @@ class TwoFactorDetector:
                   "persons": [], "threat": False, "tier": 0, "mask": None,
                   "candidate_persons": 0, "confirmed": False,
                   "consecutive_hits": 0, "consecutive_required": self.consecutive_required,
+                  "stationary_misses": 0, "stationary_grace": self.stationary_grace,
                   "reject_reason": None, "best_rejected": None}
 
         moved, area, mask = self.motion.detect(frame)
@@ -108,12 +129,25 @@ class TwoFactorDetector:
         result["motion_area"] = area
         result["mask"] = mask
 
-        if not moved:
-            self.reset()              # threat cleared, next person starts from scratch
-            result["reject_reason"] = "no_motion"
-            return result
         if self.person is None:
+            if not moved:
+                self.reset()
             result["reject_reason"] = "no_person_model"
+            return result
+
+        # Factor 1 (motion) gates the INITIAL confirmation: a person can only
+        # start being confirmed while real motion is present (hits only ever
+        # accumulate below when moved is True). BUT a person who has ALREADY
+        # been confirmed and then simply stops moving (stands still) is not
+        # gone - a background-subtraction motion detector reporting "no
+        # motion" for a static body is expected and correct, it is not
+        # evidence the person left. So once confirmed, keep calling YOLO on
+        # the raw frame (which still shows them, motion or not) instead of
+        # instantly clearing them the moment motion stops. A scene that was
+        # never confirmed and has no motion is left alone exactly as before.
+        if not moved and not self._confirmed:
+            self.reset()
+            result["reject_reason"] = "no_motion"
             return result
 
         # frame-skip: run YOLO every Nth frame, reuse the last ACCEPTED boxes otherwise
@@ -125,13 +159,21 @@ class TwoFactorDetector:
             rejected_small = len(raw_persons) - len(accepted)
 
             if accepted:
-                self._consecutive_hits += 1
-                self._consecutive_misses = 0
+                if moved:
+                    self._consecutive_hits += 1
+                    self._consecutive_misses = 0
+                else:
+                    # Already-confirmed, stationary person: YOLO still sees
+                    # them, so just hold the confirmation. This does not
+                    # advance _consecutive_hits - that count is reserved for
+                    # the motion-gated INITIAL confirmation - it only clears
+                    # the stationary-miss counter below.
+                    self._stationary_misses = 0
                 if self.tier is not None:
                     for p in accepted:
                         p.update(self.tier.classify(p["box"]))
                 self._last_persons = accepted
-            else:
+            elif moved:
                 self._consecutive_misses += 1
                 if self._consecutive_misses > self.consecutive_grace:
                     # Genuinely gone (missed longer than the grace window) -
@@ -140,6 +182,7 @@ class TwoFactorDetector:
                     self._consecutive_hits = 0
                     self._confirmed = False
                     self._last_persons = []
+                    self._stationary_misses = 0
                     if self.tier is not None:
                         self.tier.reset()
                 # else: within the grace window - deliberately keep
@@ -147,6 +190,20 @@ class TwoFactorDetector:
                 # missed evaluation (e.g. a person turned side-on for a
                 # moment) doesn't wipe out an otherwise-real detection. This
                 # is the "hysteresis" half of the persistence check.
+            else:
+                # Confirmed, no motion, AND YOLO also failed to find them
+                # this evaluation - they may genuinely have left (or slipped
+                # out of frame) while standing still. Tolerate a few misses
+                # (PERSON_STATIONARY_GRACE) before giving up, same hysteresis
+                # idea as the motion-gated path above.
+                self._stationary_misses += 1
+                if self._stationary_misses > self.stationary_grace:
+                    self._consecutive_hits = 0
+                    self._confirmed = False
+                    self._last_persons = []
+                    self._stationary_misses = 0
+                    if self.tier is not None:
+                        self.tier.reset()
 
             if self._consecutive_hits >= self.consecutive_required:
                 self._confirmed = True
@@ -163,6 +220,7 @@ class TwoFactorDetector:
 
         result["ran_yolo"] = ran
         result["consecutive_hits"] = self._consecutive_hits
+        result["stationary_misses"] = self._stationary_misses
         result["confirmed"] = self._confirmed
 
         if self._confirmed and self._last_persons:

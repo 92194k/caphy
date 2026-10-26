@@ -92,6 +92,13 @@ PERSON_MIN_BOX_HEIGHT_FRAC  = 0.06     # box height must be >= 6% of frame heigh
 PERSON_MIN_BOX_AREA_FRAC    = 0.0025   # AND box area must be >= 0.25% of frame area
 PERSON_CONSECUTIVE_REQUIRED = 3        # this many YOLO evaluations in a row must confirm a person...
 PERSON_CONSECUTIVE_GRACE    = 1        # ...tolerating up to this many missed evaluations without losing progress
+PERSON_STATIONARY_GRACE     = 6        # once CONFIRMED, a person who stops moving still gets
+                                        # checked by YOLO every evaluation (motion is no longer
+                                        # required to keep them); this many YOLO evaluations in a
+                                        # row must fail to find them before they are dropped. This
+                                        # fixes a stationary person being un-detected the moment
+                                        # they stop moving (motion detector reports no motion for a
+                                        # still body, but YOLO can still see them in the raw frame).
 
 # ---- Threat tiers (distance in meters) ----
 DISTANCE_K      = 1350.0  # = 900.0 * (1080/720), rescaled for the FRAME_HEIGHT=1080 bump above - keeps the same real-world meter readings as before
@@ -306,6 +313,25 @@ POWER_SAVE_SKIP   = 2      # in power-save mode, run YOLO every Nth frame
 PERSON_EVERY_N = 8     # run YOLO every Nth frame (higher = smoother video, less CPU)
 PERSON_IMGSZ   = 256   # YOLO input size (lower = much faster; 320 fastest, 640 most accurate)
 CAP_BUFFERSIZE = 1     # keep only the newest frame (kills lag/delay build-up)
+
+# The single biggest real-world cause of "the 1080p camera is laggy": most
+# USB webcams, when OpenCV doesn't request a pixel format, default to an
+# UNCOMPRESSED format (YUY2/YUYV) at high resolutions - 1920x1080 YUY2 is
+# ~4.1MB PER FRAME, which is more data than USB2 can move at a real 30fps,
+# so the camera driver itself throttles the frame rate no matter how fast
+# the PC's CPU/GPU is (this shows as low FPS with LOW CPU usage - the
+# bottleneck is the USB cable, not CAPHY's code). Requesting MJPG makes the
+# camera's own onboard hardware compress each frame to a small JPEG before
+# it ever reaches the PC over USB, which is what actually unlocks a real
+# 1080p30 feed on most consumer webcams - the standard, well-documented fix
+# for this exact symptom. Purely a capture-transport format: CAPHY still
+# receives full, uncompressed-in-memory 1080p frames for detection/
+# recording either way - image quality and detection accuracy are
+# unaffected. If a specific camera doesn't support MJPG, cv2 simply ignores
+# the request and keeps its previous format, so this is safe to leave on
+# even for a camera that doesn't need it.
+CAMERA_FOURCC = "MJPG"
+CAMERA_FPS    = 30     # explicitly request 30fps - many cameras otherwise default lower
 JPEG_QUALITY   = 55    # MJPEG stream quality 1-100 (low = lightest stream)
 # Separate, higher quality specifically for saved snapshots (manual
 # Live-tab snapshots AND automatic alert snapshots) - these are kept as
